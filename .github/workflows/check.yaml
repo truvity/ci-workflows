@@ -32,6 +32,26 @@ on:
         required: false
         type: string
         default: hosted
+      go-cache-bucket:
+        description: ARC only — from the caller's org variable, never hard-coded here.
+        required: false
+        type: string
+        default: ''
+      go-cache-region:
+        required: false
+        type: string
+        default: ''
+      goproxy:
+        required: false
+        type: string
+        default: ''
+      env-json:
+        description: >-
+          Extra environment as a JSON object, for repo-specific values the
+          shared workflow should not know about (e.g. AWS_CONFIG_FILE).
+        required: false
+        type: string
+        default: '{}'
       timeout-minutes:
         required: false
         type: number
@@ -57,5 +77,15 @@ jobs:
       - uses: truvity/ci-workflows/.github/actions/setup-devbox@master
         with:
           execution: ${{ inputs.execution }}
+          go-cache-bucket: ${{ inputs.go-cache-bucket }}
+          go-cache-region: ${{ inputs.go-cache-region }}
+          goproxy: ${{ inputs.goproxy }}
+
+      - name: Caller-supplied environment
+        if: inputs.env-json != '{}'
+        run: |
+          echo '${{ inputs.env-json }}' \
+            | python3 -c 'import json,sys,os; [print(f"{k}={v}") for k,v in json.load(sys.stdin).items()]' \
+            >> "$GITHUB_ENV"
 
       - run: devbox run -- just ${{ matrix.recipe }}
