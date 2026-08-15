@@ -51,14 +51,16 @@ jobs:
         run: |
           last=$(git log -1 --format=%H -- .github/actions/setup-devbox)
           fail=0
-          for pin in $(grep -ho 'setup-devbox@[0-9a-f]\{40\}' .github/workflows/*.yaml | cut -d@ -f2 | sort -u); do
+          # Process substitution, not a pipe: a piped `while` runs in a
+          # subshell and `fail` would never escape it.
+          while read -r pin; do
             if git merge-base --is-ancestor "$last" "$pin" 2>/dev/null; then
               echo "ok    ${pin:0:12}"
             else
               echo "STALE ${pin:0:12} predates ${last:0:12} (last change to the action)"
               fail=1
             fi
-          done
+          done < <(grep -ho 'setup-devbox@[0-9a-f]\{40\}' .github/workflows/*.yaml | cut -d@ -f2 | sort -u)
           [ "$fail" = 0 ] || {
             echo "::error::A pinned setup-devbox SHA is older than the action itself."
             echo "Open a follow-up PR repointing every pin at ${last:0:12} or later."
