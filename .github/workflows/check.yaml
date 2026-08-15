@@ -20,6 +20,14 @@ on:
         description: 'JSON array of Justfile recipes, e.g. ''["build","test","lint"]''.'
         required: true
         type: string
+      command-prefix:
+        description: >-
+          Task runner in front of each recipe. `just` for the Justfile
+          estate; `moon` for bar, whose entrypoint is `moon ci` and whose
+          parallelism comes from its own task graph.
+        required: false
+        type: string
+        default: just
       runner:
         description: >-
           Runner label. Hosted repos leave the default; ARC callers pass
@@ -88,4 +96,4 @@ jobs:
             | python3 -c 'import json,sys,os; [print(f"{k}={v}") for k,v in json.load(sys.stdin).items()]' \
             >> "$GITHUB_ENV"
 
-      - run: devbox run -- just ${{ matrix.recipe }}
+      - run: devbox run -- ${{ inputs.command-prefix }} ${{ matrix.recipe }}
