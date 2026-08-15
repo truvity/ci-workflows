@@ -36,7 +36,12 @@ on:
         type: string
         default: ubuntu-latest
       execution:
-        description: hosted | arc
+        description: >-
+          Ignored, kept so pinned callers keep resolving (an unknown input
+          is a hard error for a reusable workflow, so removing it would
+          break every consumer on its next bump). The setup action now
+          DETECTS whether nix and devbox are baked into the runner image
+          instead of being told.
         required: false
         type: string
         default: hosted
@@ -84,16 +89,23 @@ jobs:
 
       - uses: truvity/ci-workflows/.github/actions/setup-devbox@master
         with:
-          execution: ${{ inputs.execution }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy }}
 
+      # Through env, not spliced into the script: a ${{ }} expression is
+      # pasted in before bash parses the line, so a value carrying a quote
+      # or $( ) would run as code. This workflow is public and callable by
+      # repos we do not own.
       - name: Caller-supplied environment
         if: inputs.env-json != '{}'
         run: |
-          echo '${{ inputs.env-json }}' \
-            | python3 -c 'import json,sys,os; [print(f"{k}={v}") for k,v in json.load(sys.stdin).items()]' \
+          python3 -c 'import json,os; [print(f"{k}={v}") for k,v in json.loads(os.environ["ENV_JSON"]).items()]' \
             >> "$GITHUB_ENV"
+        env:
+          ENV_JSON: ${{ inputs.env-json }}
 
-      - run: devbox run -- ${{ inputs.command-prefix }} ${{ matrix.recipe }}
+      - run: devbox run -- $COMMAND_PREFIX $RECIPE
+        env:
+          COMMAND_PREFIX: ${{ inputs.command-prefix }}
+          RECIPE: ${{ matrix.recipe }}
