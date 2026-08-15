@@ -1,0 +1,39 @@
+# This repository's own CI. Two gates, both earned the hard way.
+name: self-check
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A workflow with a syntax error does not go red -- GitHub declines to
+      # run it, which reads as "no CI configured" rather than as a failure.
+      # An estate-wide edit mangled runs-on in ten files on 2026-08-15 and it
+      # surfaced only because sibling PRs could not satisfy a required check.
+      - name: actionlint
+        run: |
+          curl -fsSL -o actionlint.tgz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          tar xzf actionlint.tgz actionlint
+          ./actionlint -color
+
+      # This repository is PUBLIC and its history cannot be unpublished.
+      # Everything particular -- account ids, role ARNs, registry hosts,
+      # bucket names, internal DNS -- belongs in the caller's org variables.
+      - name: leak canary
+        run: ./hack/leak-canary.sh

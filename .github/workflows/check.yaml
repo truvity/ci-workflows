@@ -1,0 +1,61 @@
+# The workhorse. One reusable workflow for every repository in both
+# organizations, every language, on either runner flow.
+#
+# It fans the caller's Justfile recipes out into PARALLEL jobs, one per
+# recipe, each reported under its own name — so a red check says "lint"
+# rather than "check", and the recipes no longer queue behind each other.
+# The recipes already exist in every repo's Justfile; only CI was
+# collapsing them into a single `just check`.
+#
+# Cost note: N recipes means N runners. On public repositories hosted
+# minutes are free, so fan out freely. On ARC each job is currently a whole
+# node (one-runner-per-node sizing, INF-550), so keep the list short there
+# until density lands.
+name: check
+
+on:
+  workflow_call:
+    inputs:
+      recipes:
+        description: 'JSON array of Justfile recipes, e.g. ''["build","test","lint"]''.'
+        required: true
+        type: string
+      runner:
+        description: >-
+          Runner label. Hosted repos leave the default; ARC callers pass
+          their scale-set name (vars.CI_RUNNER_LABEL).
+        required: false
+        type: string
+        default: ubuntu-latest
+      execution:
+        description: hosted | arc
+        required: false
+        type: string
+        default: hosted
+      timeout-minutes:
+        required: false
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  recipe:
+    name: ${{ matrix.recipe }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      # Every recipe reports its own verdict, and one failure does not hide
+      # the others — the point of splitting them in the first place.
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJSON(inputs.recipes) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@master
+        with:
+          execution: ${{ inputs.execution }}
+
+      - run: devbox run -- just ${{ matrix.recipe }}
