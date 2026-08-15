@@ -87,7 +87,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@master
+      # Pinned to a SHA in THIS repository, not @master: a caller's pin of
+      # check.yaml has to determine the action too, or it is not a pin.
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@52073e0888d4d63684d020bcedb3705663e93572
         with:
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}

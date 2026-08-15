@@ -20,6 +20,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the pin check below asks whether a pinned SHA is
+          # at-or-after the action's last change, and a depth-1 clone knows
+          # neither commit.
+          fetch-depth: 0
 
       # A workflow with a syntax error does not go red -- GitHub declines to
       # run it, which reads as "no CI configured" rather than as a failure.
@@ -31,6 +36,34 @@ jobs:
             https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
+
+      # The reusable workflows pin the composite action by SHA, which means
+      # the pin can go stale: change the action, forget the pin, and every
+      # consumer keeps bootstrapping with the old one while master looks
+      # fine. Nothing else would notice.
+      #
+      # Master-only by construction. Inside a PR that edits the action, the
+      # commit to pin does not exist yet -- rebase-merge rewrites it -- so
+      # the correct sequence is genuinely two PRs: land the action, then
+      # pin it. This gate is what makes forgetting the second one loud.
+      - name: pins are current
+        if: github.event_name == 'push'
+        run: |
+          last=$(git log -1 --format=%H -- .github/actions/setup-devbox)
+          fail=0
+          for pin in $(grep -ho 'setup-devbox@[0-9a-f]\{40\}' .github/workflows/*.yaml | cut -d@ -f2 | sort -u); do
+            if git merge-base --is-ancestor "$last" "$pin" 2>/dev/null; then
+              echo "ok    ${pin:0:12}"
+            else
+              echo "STALE ${pin:0:12} predates ${last:0:12} (last change to the action)"
+              fail=1
+            fi
+          done
+          [ "$fail" = 0 ] || {
+            echo "::error::A pinned setup-devbox SHA is older than the action itself."
+            echo "Open a follow-up PR repointing every pin at ${last:0:12} or later."
+            exit 1
+          }
 
       # This repository is PUBLIC and its history cannot be unpublished.
       # Everything particular -- account ids, role ARNs, registry hosts,

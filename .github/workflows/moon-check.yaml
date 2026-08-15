@@ -1,0 +1,109 @@
+# CI for a moon monorepo. A sibling of check.yaml, not a variant of it:
+# where check.yaml fans Justfile recipes into parallel jobs, a moon repo
+# gets its parallelism from moon's own task graph, and `moon ci` scopes
+# itself to the projects a change actually affects. Splitting that into a
+# matrix would fight the tool.
+#
+# The class is growing, which is why this is shared rather than inlined:
+# bar today, and dms and eudi as the Truvity side consolidates into
+# monorepos.
+name: moon-check
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      command:
+        description: The moon entrypoint. `ci` scopes to affected projects.
+        required: false
+        type: string
+        default: ci
+      aws-config-file:
+        required: false
+        type: string
+        default: ''
+      go-cache-bucket:
+        required: false
+        type: string
+        default: ''
+      go-cache-region:
+        required: false
+        type: string
+        default: ''
+      goproxy:
+        required: false
+        type: string
+        default: ''
+      env-json:
+        description: Repo-specific environment the shared workflow should not know.
+        required: false
+        type: string
+        default: '{}'
+      timeout-minutes:
+        required: false
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  moon:
+    name: moon ${{ inputs.command }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # moon compares against the base ref to decide what is affected;
+          # a shallow clone leaves it unable to tell and it runs everything.
+          fetch-depth: 0
+
+      # Pinned, and pinned to a SHA in THIS repository: a caller who pins
+      # this workflow expects that pin to determine everything it runs. A
+      # floating @master here would quietly exempt the action from their
+      # pin. self-check enforces that this stays current.
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@52073e0888d4d63684d020bcedb3705663e93572
+        with:
+          proto: "true"
+          aws-config-file: ${{ inputs.aws-config-file }}
+          go-cache-bucket: ${{ inputs.go-cache-bucket }}
+          go-cache-region: ${{ inputs.go-cache-region }}
+          goproxy: ${{ inputs.goproxy }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # golangci-lint's analysis cache only — the one thing no specialized
+      # cache covers: build and test outputs ride GOCACHEPROG, modules ride
+      # the module proxy, nix rides the read-through.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          # devbox.lock in the key: a toolchain bump strands a cache whose
+          # objects reference the old nix path, and it fails at exec time.
+          key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
+          restore-keys: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
+
+      - name: Caller-supplied environment
+        if: inputs.env-json != '{}'
+        # Through env, never spliced into the script text: a ${{ }}
+        # expression is pasted in before bash parses the line, so a value
+        # carrying a quote or $( ) would execute.
+        #
+        # CAVEAT worth knowing before you use this: devbox.json's own `env`
+        # WINS over anything set here, for the same variable name, inside
+        # `devbox run`. Measured in bar across four runs (2026-08-16) with a
+        # deliberate conflict. Variables devbox.json does not set pass
+        # through normally -- which is why the cache wiring works.
+        run: |
+          python3 -c 'import json,os; [print(f"{k}={v}") for k,v in json.loads(os.environ["ENV_JSON"]).items()]' \
+            >> "$GITHUB_ENV"
+        env:
+          ENV_JSON: ${{ inputs.env-json }}
+
+      - run: devbox run -- moon "$MOON_COMMAND"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MOON_COMMAND: ${{ inputs.command }}
