@@ -105,7 +105,7 @@ jobs:
         env:
           ENV_JSON: ${{ inputs.env-json }}
 
-      - run: devbox run -- $COMMAND_PREFIX $RECIPE
+      - run: devbox run -- "$COMMAND_PREFIX" "$RECIPE"
         env:
           COMMAND_PREFIX: ${{ inputs.command-prefix }}
           RECIPE: ${{ matrix.recipe }}
