@@ -25,6 +25,10 @@ neither organization has. Public is therefore what lets `trust-form`
 consume these directly — no mirror repository, no sync job, no drift
 check. It is safe because of rule 2.
 
+Preparing a repository so employees and CI resolve the same tools —
+PATH order, tool ownership, and the `init_hook` substitution trap — is
+**[docs/devbox.md](docs/devbox.md)**.
+
 ## check.yaml
 
 Runs a repository's own Justfile recipes as **parallel jobs**, one per
