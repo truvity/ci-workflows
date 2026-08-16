@@ -24,9 +24,15 @@ on:
     inputs:
       recipes:
         description: >-
-          JSON array of recipes, run IN ORDER in one job, e.g.
-          '["build","test","lint"]'. The working tree is checked for
-          modifications after each one.
+          JSON array of the recipes this repository wants, e.g.
+          '["build","test","lint"]'. It is a SET, not a sequence — the
+          ORDER is the canonical one below, so nine repositories cannot
+          each invent their own. The working tree is checked for
+          modifications after every one.
+
+          A recipe not in the canonical list needs a step adding here.
+          That is deliberate friction: the vocabulary is small and shared
+          on purpose.
         required: true
         type: string
       command:
@@ -120,7 +126,8 @@ jobs:
       # devbox.lock in the key: a toolchain bump strands a cache whose
       # objects reference the old nix store path, and that fails at exec
       # time rather than missing cleanly.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: golangci-cache
         with:
           path: ~/.cache/golangci-lint
           key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
@@ -142,46 +149,81 @@ jobs:
         env:
           ENV_JSON: ${{ inputs.env-json }}
 
-      # One step, because GitHub cannot generate steps from a list. Each
-      # recipe gets its own ::group:: so the log reads like separate
-      # steps, and the error names the recipe — the diagnostic the old
-      # per-recipe jobs gave, without the per-recipe runners.
+      # A NAMED STEP PER RECIPE, each guarded on the caller's list. The
+      # log then shows "build", "test", "lint" with their own durations
+      # and their own ticks, rather than one opaque "Recipes" step — and
+      # a red mark names what broke, which was the whole argument for
+      # splitting recipes in the first place.
       #
-      # The clean-tree assertion after EACH recipe is the half that never
-      # existed: nothing verified a recipe left the tree as it found it,
-      # so a `build` that writes a generated file, or a linter invoked
-      # with --fix, went unnoticed. Checking after each one names the
-      # culprit instead of reporting a dirty tree at the end.
-      - name: Recipes
-        run: |
-          set -uo pipefail
+      # The order here IS the estate's order. A caller supplies a set;
+      # this decides the sequence, so build precedes test (and warms the
+      # local Go build cache for it) everywhere, identically.
+      - name: build
+        if: contains(fromJSON(inputs.recipes), 'build')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: build, command: "${{ inputs.command }}" }
 
-          mapfile -t recipes < <(python3 -c 'import json,os; print("\n".join(json.loads(os.environ["RECIPES"])))')
+      - name: test
+        if: contains(fromJSON(inputs.recipes), 'test')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: test, command: "${{ inputs.command }}" }
 
-          for recipe in "${recipes[@]}"; do
-            echo "::group::${COMMAND} ${recipe}"
+      - name: lint
+        if: contains(fromJSON(inputs.recipes), 'lint')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: lint, command: "${{ inputs.command }}" }
 
-            if ! devbox run -- "$COMMAND" "$recipe"; then
-              echo "::endgroup::"
-              echo "::error::${recipe} failed"
-              exit 1
-            fi
+      - name: lint-workflows
+        if: contains(fromJSON(inputs.recipes), 'lint-workflows')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: lint-workflows, command: "${{ inputs.command }}" }
 
-            # --porcelain respects .gitignore, and the setup action hides
-            # its own .prototools mutation with assume-unchanged, so a
-            # clean repository reads clean here.
-            dirty=$(git status --porcelain)
-            if [ -n "$dirty" ]; then
-              echo "::endgroup::"
-              echo "::error::${recipe} modified the working tree:"
-              printf '%s\n' "$dirty"
-              echo "Commit the result, or make the recipe read-only."
-              exit 1
-            fi
+      - name: lint-provenance
+        if: contains(fromJSON(inputs.recipes), 'lint-provenance')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: lint-provenance, command: "${{ inputs.command }}" }
 
-            echo "::endgroup::"
-          done
-        env:
-          COMMAND: ${{ inputs.command }}
-          RECIPES: ${{ inputs.recipes }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: chart-lint
+        if: contains(fromJSON(inputs.recipes), 'chart-lint')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: chart-lint, command: "${{ inputs.command }}" }
+
+      - name: leak-canary
+        if: contains(fromJSON(inputs.recipes), 'leak-canary')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: leak-canary, command: "${{ inputs.command }}" }
+
+      - name: verify-generate
+        if: contains(fromJSON(inputs.recipes), 'verify-generate')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: verify-generate, command: "${{ inputs.command }}" }
+
+      - name: vuln
+        if: contains(fromJSON(inputs.recipes), 'vuln')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: vuln, command: "${{ inputs.command }}" }
+
+      # Last on purpose: it regenerates, so anything it disturbs is its
+      # own doing rather than an earlier recipe's.
+      - name: drift-check
+        if: contains(fromJSON(inputs.recipes), 'drift-check')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: drift-check, command: "${{ inputs.command }}" }
+
+      # moon's single entrypoint. It is not one of the recipes above
+      # because `moon ci` IS the whole sequence, decided by moon's task
+      # graph rather than by this list.
+      - name: ci
+        if: contains(fromJSON(inputs.recipes), 'ci')
+        uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
+        with: { recipe: ci, command: "${{ inputs.command }}" }
+
+      # if: always() — otherwise a failing build or test kills the job
+      # before the post step, and the golangci cache is never written.
+      # That is precisely when you are iterating and want it warm: the
+      # old per-recipe jobs saved it because lint had a job of its own.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.golangci-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/golangci-lint
+          key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
