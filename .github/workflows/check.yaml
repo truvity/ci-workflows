@@ -1,30 +1,38 @@
 # The workhorse. One reusable workflow for every repository in both
-# organizations, every language, on either runner flow.
+# organizations, every language, either task runner, either runner flow.
 #
-# It fans the caller's Justfile recipes out into PARALLEL jobs, one per
-# recipe, each reported under its own name — so a red check says "lint"
-# rather than "check", and the recipes no longer queue behind each other.
-# The recipes already exist in every repo's Justfile; only CI was
-# collapsing them into a single `just check`.
+# ONE JOB, RUN IN ORDER. The recipes run sequentially in a single job
+# rather than fanning out, because the bootstrap dominates: nix plus
+# devbox is ~36s, and six recipes previously meant six runners paying it
+# six times — on ARC, six whole nodes (one-runner-per-node until
+# INF-550) for a couple of minutes of actual work.
 #
-# Cost note: N recipes means N runners. On public repositories hosted
-# minutes are free, so fan out freely. On ARC each job is currently a whole
-# node (one-runner-per-node sizing, INF-550), so keep the list short there
-# until density lands.
+# Sequential also makes the work cheaper, not only the setup: `build`
+# and `test` in the same workspace share the local Go build cache, so
+# `test` stops recompiling what `build` just produced. The cost is
+# honest and worth stating — wall-clock is now the SUM of the recipes
+# rather than the slowest of them.
+#
+# It serves `moon` repositories too. A monorepo is the same shape with a
+# different task runner and a one-item list: `command: moon`,
+# `recipes: '["ci"]'`, `fetch-depth: 0`. That is why there is no
+# separate moon-check.yaml any more.
 name: check
 
 on:
   workflow_call:
     inputs:
       recipes:
-        description: 'JSON array of Justfile recipes, e.g. ''["build","test","lint"]''.'
+        description: >-
+          JSON array of recipes, run IN ORDER in one job, e.g.
+          '["build","test","lint"]'. The working tree is checked for
+          modifications after each one.
         required: true
         type: string
-      command-prefix:
+      command:
         description: >-
-          Task runner in front of each recipe. `just` for the Justfile
-          estate; `moon` for bar, whose entrypoint is `moon ci` and whose
-          parallelism comes from its own task graph.
+          Task runner in front of each recipe — `just` for the Justfile
+          estate, `moon` for monorepos.
         required: false
         type: string
         default: just
@@ -35,16 +43,28 @@ on:
         required: false
         type: string
         default: ubuntu-latest
-      execution:
+      fetch-depth:
         description: >-
-          Ignored, kept so pinned callers keep resolving (an unknown input
-          is a hard error for a reusable workflow, so removing it would
-          break every consumer on its next bump). The setup action now
-          DETECTS whether nix and devbox are baked into the runner image
-          instead of being told.
+          0 for repositories whose task runner compares against the base
+          ref — moon decides what is affected that way, and a shallow
+          clone silently makes it run everything.
+        required: false
+        type: number
+        default: 1
+      proto:
+        description: auto | true | false. Leave it alone; the action detects .prototools.
         required: false
         type: string
-        default: hosted
+        default: auto
+      aws-config-file:
+        description: >-
+          Workspace-relative path to a CI-shaped AWS config (e.g.
+          aws-ci.ini). Resolved to an absolute path INSIDE the action,
+          which is the only place that can: the github.workspace context
+          is EMPTY when a caller evaluates it in `with:`.
+        required: false
+        type: string
+        default: ''
       go-cache-bucket:
         description: ARC only — from the caller's org variable, never hard-coded here.
         required: false
@@ -58,23 +78,6 @@ on:
         required: false
         type: string
         default: ''
-      aws-config-file:
-        description: >-
-          Workspace-relative path to a CI-shaped AWS config (e.g.
-          aws-ci.ini). Resolved to an absolute path INSIDE the action,
-          which is the only place that can: the github.workspace context
-          is EMPTY when a caller evaluates it in `with:`, so routing this
-          through env-json silently produced AWS_CONFIG_FILE=/aws-ci.ini.
-        required: false
-        type: string
-        default: ''
-      proto:
-        description: >-
-          auto | true | false. Leave it alone: the action installs proto
-          exactly when the repo has a .prototools.
-        required: false
-        type: string
-        default: auto
       env-json:
         description: >-
           Extra environment as a JSON object, for repo-specific values the
@@ -91,33 +94,46 @@ permissions:
   contents: read
 
 jobs:
-  recipe:
-    name: ${{ matrix.recipe }}
+  check:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
-    strategy:
-      # Every recipe reports its own verdict, and one failure does not hide
-      # the others — the point of splitting them in the first place.
-      fail-fast: false
-      matrix:
-        recipe: ${{ fromJSON(inputs.recipes) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: ${{ inputs.fetch-depth }}
 
-      # Pinned to a SHA in THIS repository, not @master: a caller's pin of
-      # check.yaml has to determine the action too, or it is not a pin.
       - uses: truvity/ci-workflows/.github/actions/setup-devbox@83db2219dc4de7c1cee3cd01e9c2cc85544e7fe9
         with:
-          aws-config-file: ${{ inputs.aws-config-file }}
           proto: ${{ inputs.proto }}
+          aws-config-file: ${{ inputs.aws-config-file }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Through env, not spliced into the script: a ${{ }} expression is
+      # golangci-lint's analysis cache — the one thing no other cache
+      # covers: build and test outputs ride GOCACHEPROG or the plain Go
+      # cache, modules ride the proxy, nix rides the read-through. It was
+      # missing from every Justfile consumer while moon-check had it, and
+      # lint is the slowest recipe in the estate (119s on gitops).
+      #
+      # devbox.lock in the key: a toolchain bump strands a cache whose
+      # objects reference the old nix store path, and that fails at exec
+      # time rather than missing cleanly.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
+          restore-keys: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
+
+      # Through env, never spliced into the script: a ${{ }} expression is
       # pasted in before bash parses the line, so a value carrying a quote
-      # or $( ) would run as code. This workflow is public and callable by
-      # repos we do not own.
+      # or $( ) would execute.
+      #
+      # CAVEAT worth knowing: devbox.json's own `env` WINS over anything
+      # set here, for the same variable name, inside `devbox run`.
+      # Measured in bar across four runs (2026-08-16) with a deliberate
+      # conflict. Variables devbox.json does not set pass through.
       - name: Caller-supplied environment
         if: inputs.env-json != '{}'
         run: |
@@ -126,7 +142,46 @@ jobs:
         env:
           ENV_JSON: ${{ inputs.env-json }}
 
-      - run: devbox run -- "$COMMAND_PREFIX" "$RECIPE"
+      # One step, because GitHub cannot generate steps from a list. Each
+      # recipe gets its own ::group:: so the log reads like separate
+      # steps, and the error names the recipe — the diagnostic the old
+      # per-recipe jobs gave, without the per-recipe runners.
+      #
+      # The clean-tree assertion after EACH recipe is the half that never
+      # existed: nothing verified a recipe left the tree as it found it,
+      # so a `build` that writes a generated file, or a linter invoked
+      # with --fix, went unnoticed. Checking after each one names the
+      # culprit instead of reporting a dirty tree at the end.
+      - name: Recipes
+        run: |
+          set -uo pipefail
+
+          mapfile -t recipes < <(python3 -c 'import json,os; print("\n".join(json.loads(os.environ["RECIPES"])))')
+
+          for recipe in "${recipes[@]}"; do
+            echo "::group::${COMMAND} ${recipe}"
+
+            if ! devbox run -- "$COMMAND" "$recipe"; then
+              echo "::endgroup::"
+              echo "::error::${recipe} failed"
+              exit 1
+            fi
+
+            # --porcelain respects .gitignore, and the setup action hides
+            # its own .prototools mutation with assume-unchanged, so a
+            # clean repository reads clean here.
+            dirty=$(git status --porcelain)
+            if [ -n "$dirty" ]; then
+              echo "::endgroup::"
+              echo "::error::${recipe} modified the working tree:"
+              printf '%s\n' "$dirty"
+              echo "Commit the result, or make the recipe read-only."
+              exit 1
+            fi
+
+            echo "::endgroup::"
+          done
         env:
-          COMMAND_PREFIX: ${{ inputs.command-prefix }}
-          RECIPE: ${{ matrix.recipe }}
+          COMMAND: ${{ inputs.command }}
+          RECIPES: ${{ inputs.recipes }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
