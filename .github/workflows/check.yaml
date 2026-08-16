@@ -166,6 +166,42 @@ jobs:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
 
+      # The high-water mark, straight from the kernel. cgroup v2 keeps it
+      # for free, so a job can report what it ACTUALLY needed instead of
+      # leaving everyone to infer it from a snapshot — which is how the
+      # estate ended up sizing runners at 10Gi against a measurement
+      # taken on one node, and OOM-killing on another (INF-550).
+      #
+      # Per recipe, because each recipe is its own job here: `lint` and
+      # `build` have very different appetites and averaging them is how
+      # the number stopped meaning anything.
+      - name: peak memory
+        if: always()
+        run: |
+          peak=/sys/fs/cgroup/memory.peak
+          max=/sys/fs/cgroup/memory.max
+          # Hosted runners are not in a memory-limited cgroup; nothing to
+          # report and nothing to warn about.
+          [ -r "$peak" ] || exit 0
+
+          used=$(( $(cat "$peak") / 1048576 ))
+          limit=$(cat "$max")
+          case "$limit" in
+            max) echo "- **${RECIPE}** peak ${used} MiB (no cgroup limit)" >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;
+          esac
+
+          limit=$(( limit / 1048576 ))
+          pct=$(( used * 100 / limit ))
+          echo "- **${RECIPE}** peak ${used} MiB of ${limit} MiB (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+
+          # Loud before it is fatal: an OOM kill shows up as a runner that
+          # vanishes mid-step, which reads as a hang rather than a limit.
+          if [ "$pct" -ge 85 ]; then
+            echo "::warning::${RECIPE} peaked at ${pct}% of the memory limit (${used}/${limit} MiB)"
+          fi
+        env:
+          RECIPE: ${{ matrix.recipe }}
+
       # if: always() — otherwise a failing lint kills the job before the
       # post step and the cache is never written, which is exactly when
       # someone is iterating and most wants it warm.
