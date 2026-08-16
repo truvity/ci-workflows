@@ -186,18 +186,40 @@ jobs:
 
           used=$(( $(cat "$peak") / 1048576 ))
           limit=$(cat "$max")
+
+          # memory.events separates "filled the cgroup" from "was killed".
+          # memory.peak counts reclaimable page cache, so touching the
+          # limit is routine — the kernel evicts cache and moves on. What
+          # matters is `max` (allocation stalled at the ceiling) and
+          # `oom_kill` (it did not survive). Reporting only the peak would
+          # make every cache-heavy job look like it is about to die.
+          hits=0; kills=0
+          if [ -r /sys/fs/cgroup/memory.events ]; then
+            hits=$(awk '$1=="max"{print $2}' /sys/fs/cgroup/memory.events)
+            kills=$(awk '$1=="oom_kill"{print $2}' /sys/fs/cgroup/memory.events)
+          fi
+
           case "$limit" in
-            max) echo "- **${RECIPE}** peak ${used} MiB (no cgroup limit)" >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;
+            max) line="**${RECIPE}** peak ${used} MiB (no cgroup limit)" ;;
+            *)
+              limit=$(( limit / 1048576 ))
+              pct=$(( used * 100 / limit ))
+              line="**${RECIPE}** peak ${used} MiB of ${limit} MiB (${pct}%), ${hits} limit hits, ${kills} OOM kills"
+              ;;
           esac
 
-          limit=$(( limit / 1048576 ))
-          pct=$(( used * 100 / limit ))
-          echo "- **${RECIPE}** peak ${used} MiB of ${limit} MiB (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+          # Both places on purpose. The summary is where a human looks;
+          # the log is the only one a script can read, and sizing runners
+          # (INF-550) means collecting this across many runs, not reading
+          # it off a web page one at a time.
+          echo "$line"
+          echo "- $line" >> "$GITHUB_STEP_SUMMARY"
 
-          # Loud before it is fatal: an OOM kill shows up as a runner that
-          # vanishes mid-step, which reads as a hang rather than a limit.
-          if [ "$pct" -ge 85 ]; then
-            echo "::warning::${RECIPE} peaked at ${pct}% of the memory limit (${used}/${limit} MiB)"
+          # Allocation stalling at the ceiling is the actionable signal —
+          # it precedes the kill, and the kill itself is invisible from
+          # GitHub (the runner just stops, and the step reads as hung).
+          if [ "${hits:-0}" -gt 0 ]; then
+            echo "::warning::${RECIPE} hit its memory limit ${hits}x (peak ${used} MiB); raise the limit or lower GOMAXPROCS"
           fi
         env:
           RECIPE: ${{ matrix.recipe }}
