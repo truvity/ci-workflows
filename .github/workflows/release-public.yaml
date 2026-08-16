@@ -1,0 +1,110 @@
+# Tag-triggered release for the PUBLIC estate: goreleaser, then any
+# Helm charts, both to GHCR.
+#
+# "public" is in the name because the private half is a different
+# workflow, not a flag on this one — ECR instead of GHCR, ARC runners
+# instead of hosted, and a different identity to reach either. A repo
+# publishing to ECR shares almost nothing with this but the word
+# "release". That workflow arrives when it has a consumer; writing it
+# now would ship untested release machinery, and release machinery can
+# only be tested by a real tag.
+#
+# NO `secrets: inherit` is needed. Every public repo's release runs
+# plain goreleaser (not goreleaser-pro, which is bar's) and pushes with
+# the automatic GITHUB_TOKEN. The caller does need to grant the
+# permissions below, because a reusable workflow cannot widen them.
+#
+#   jobs:
+#     release:
+#       permissions:
+#         contents: write
+#         packages: write
+#       uses: truvity/ci-workflows/.github/workflows/release-public.yaml@<sha>
+#       with:
+#         charts: '["github-roster"]'
+name: release-public
+
+on:
+  workflow_call:
+    inputs:
+      charts:
+        description: >-
+          JSON array of chart directory names under charts/. Empty for
+          binaries only (ocictl, pulumi-zitadel). More than one is
+          normal — zitadel-operator ships its CRDs as a second chart.
+        required: false
+        type: string
+        default: '[]'
+      chart-registry:
+        required: false
+        type: string
+        default: oci://ghcr.io/truvity/charts
+      ko-docker-repo:
+        required: false
+        type: string
+        default: ghcr.io/truvity
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      timeout-minutes:
+        required: false
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser derives the changelog from history; a shallow
+          # clone gives it nothing to derive from.
+          fetch-depth: 0
+
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@83db2219dc4de7c1cee3cd01e9c2cc85544e7fe9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ko-build/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+
+      - name: GoReleaser
+        run: devbox run -- goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KO_DOCKER_REPO: ${{ inputs.ko-docker-repo }}
+
+      # The git tag is the sole version authority: a chart's own version
+      # field is a placeholder that never moves, and is stamped here.
+      - name: Package and push charts
+        if: inputs.charts != '[]'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          CHARTS: ${{ inputs.charts }}
+          REGISTRY: ${{ inputs.chart-registry }}
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME#v}"
+          echo "$GITHUB_TOKEN" | devbox run -- helm registry login ghcr.io -u "$ACTOR" --password-stdin
+
+          mapfile -t charts < <(python3 -c 'import json,os; print("\n".join(json.loads(os.environ["CHARTS"])))')
+
+          for chart in "${charts[@]}"; do
+            echo "::group::${chart} ${version}"
+            devbox run -- helm package "charts/${chart}" \
+              --version "$version" --app-version "$version" --destination dist/
+            devbox run -- helm push "dist/${chart}-${version}.tgz" "$REGISTRY"
+            echo "::endgroup::"
+          done
