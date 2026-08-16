@@ -1,0 +1,98 @@
+# Weekly `devbox update`, opened as a pull request.
+#
+# Renovate structurally cannot do this: devbox.json and devbox.lock are
+# in its ignorePaths, because nix packages are resolved by devbox, not
+# by a package manager Renovate understands.
+#
+# Promoted from truvity/workstation, the only copy in the estate that
+# has ever succeeded — every other repository carried the pre-migration
+# token form and had been dying at step one since 2026-07-27 without
+# producing a single red mark (INF-556).
+#
+# CALLERS MUST PASS `secrets: inherit`, and the repository must already
+# have a `dependencies` label — the final `gh pr create --label` fails
+# without one, after the branch has been pushed.
+#
+#   jobs:
+#     devbox-update:
+#       uses: truvity/ci-workflows/.github/workflows/devbox-update.yaml@<sha>
+#       secrets: inherit
+name: devbox-update
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      base:
+        required: false
+        type: string
+        default: master
+      label:
+        required: false
+        type: string
+        default: dependencies
+      timeout-minutes:
+        required: false
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          client-id: ${{ vars.RENOVATE_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+
+      # Checkout with the App token, not GITHUB_TOKEN: the default is
+      # contents:read here, so the push below would 403.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.token.outputs.token }}
+
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@83db2219dc4de7c1cee3cd01e9c2cc85544e7fe9
+        with:
+          # Nothing here runs a repo recipe, so proto is dead weight.
+          proto: "false"
+          github-token: ${{ steps.token.outputs.token }}
+
+      - run: devbox update
+
+      - name: Open a pull request if anything moved
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          BASE: ${{ inputs.base }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- devbox.json devbox.lock; then
+            echo "devbox packages already current"
+            exit 0
+          fi
+
+          branch="chore/devbox-update-$(date +%Y%m%d)"
+          git config user.name "truvity-renovate[bot]"
+          git config user.email "truvity-renovate[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add devbox.json devbox.lock
+          git commit -m "chore(deps): update devbox packages"
+          git push origin "$branch"
+
+          gh pr create \
+            --title "chore(deps): update devbox packages" \
+            --body "Automated weekly \`devbox update\`. Nix packages are outside Renovate's reach — devbox.json and devbox.lock are in its ignorePaths." \
+            --base "$BASE" \
+            --label "$LABEL"
+
+          # Arm auto-merge; it lands when the required checks pass.
+          gh pr merge --auto --rebase "$branch"

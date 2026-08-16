@@ -1,0 +1,65 @@
+# Self-hosted Renovate, daily.
+#
+# CALLERS MUST PASS `secrets: inherit`. A called workflow receives NONE
+# of the caller's secrets otherwise — `vars` resolve, secrets do not —
+# and the failure is the ugly kind: create-github-app-token reports
+# "'client-id' … must be set to a non-empty string", which reads like a
+# malformed workflow rather than a missing entitlement.
+#
+#   jobs:
+#     renovate:
+#       uses: truvity/ci-workflows/.github/workflows/renovate.yaml@<sha>
+#       secrets: inherit
+#
+# TWO entitlement gates, both silent (INF-556). The repository must be
+# in scope for `RENOVATE_CLIENT_ID` and `RENOVATE_APP_PRIVATE_KEY`, AND
+# the App must be installed on it — the second yields
+# `Failed to create token for "<repo>": Not Found`, which looks like a
+# missing repository. Gate 1 is a `gh api` call; gate 2 needs an
+# Organization Owner.
+name: renovate
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      log-level:
+        required: false
+        type: string
+        default: info
+      timeout-minutes:
+        required: false
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # client-id + vars.RENOVATE_CLIENT_ID, never app-id +
+      # secrets.RENOVATE_APP_ID. The org migrated to the client-id form
+      # and RENOVATE_APP_ID no longer exists as a secret; the old form is
+      # what killed devbox-update across the whole public estate for
+      # three weeks without a single red mark.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          client-id: ${{ vars.RENOVATE_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+
+      - uses: renovatebot/github-action@e09d604f8f803bb527bd8321ed5be06c460b8682 # v46.2.2
+        with:
+          token: ${{ steps.token.outputs.token }}
+        env:
+          LOG_LEVEL: ${{ inputs.log-level }}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          GITHUB_COM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
