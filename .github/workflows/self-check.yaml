@@ -49,20 +49,28 @@ jobs:
       - name: pins are current
         if: github.event_name == 'push'
         run: |
-          last=$(git log -1 --format=%H -- .github/actions/setup-devbox)
           fail=0
+          # Every action in this repo, not just setup-devbox: a second
+          # one arrived (recipe/) and a gate that names one action only
+          # protects one action only.
+          #
           # Process substitution, not a pipe: a piped `while` runs in a
           # subshell and `fail` would never escape it.
-          while read -r pin; do
-            if git merge-base --is-ancestor "$last" "$pin" 2>/dev/null; then
-              echo "ok    ${pin:0:12}"
-            else
-              echo "STALE ${pin:0:12} predates ${last:0:12} (last change to the action)"
-              fail=1
-            fi
-          done < <(grep -ho 'setup-devbox@[0-9a-f]\{40\}' .github/workflows/*.yaml | cut -d@ -f2 | sort -u)
+          while read -r action; do
+            name=$(basename "$action")
+            last=$(git log -1 --format=%H -- "$action")
+
+            while read -r pin; do
+              if git merge-base --is-ancestor "$last" "$pin" 2>/dev/null; then
+                echo "ok    ${name} @ ${pin:0:12}"
+              else
+                echo "STALE ${name} @ ${pin:0:12} predates ${last:0:12}"
+                fail=1
+              fi
+            done < <(grep -ho "${name}@[0-9a-f]\{40\}" .github/workflows/*.yaml | cut -d@ -f2 | sort -u)
+          done < <(find .github/actions -mindepth 1 -maxdepth 1 -type d | sort)
           [ "$fail" = 0 ] || {
-            echo "::error::A pinned setup-devbox SHA is older than the action itself."
+            echo "::error::A pinned action SHA is older than the action itself."
             echo "Open a follow-up PR repointing every pin at ${last:0:12} or later."
             exit 1
           }
