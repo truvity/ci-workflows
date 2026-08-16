@@ -62,8 +62,8 @@ on:
         description: >-
           Workspace-relative path to a CI-shaped AWS config (e.g.
           aws-ci.ini). Resolved to an absolute path INSIDE the action,
-          which is the only place that can: `${{ github.workspace }}` is
-          empty when a caller evaluates it in `with:`, so routing this
+          which is the only place that can: the github.workspace context
+          is EMPTY when a caller evaluates it in `with:`, so routing this
           through env-json silently produced AWS_CONFIG_FILE=/aws-ci.ini.
         required: false
         type: string
