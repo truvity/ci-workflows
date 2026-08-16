@@ -58,10 +58,25 @@ on:
         required: false
         type: string
         default: ''
+      aws-config-file:
+        description: >-
+          Workspace-relative path to a CI-shaped AWS config (e.g.
+          aws-ci.ini). Resolved to an absolute path INSIDE the action,
+          which is the only place that can: `${{ github.workspace }}` is
+          empty when a caller evaluates it in `with:`, so routing this
+          through env-json silently produced AWS_CONFIG_FILE=/aws-ci.ini.
+        required: false
+        type: string
+        default: ''
+      proto:
+        description: Install the proto toolchain (repos with a .prototools).
+        required: false
+        type: string
+        default: 'false'
       env-json:
         description: >-
           Extra environment as a JSON object, for repo-specific values the
-          shared workflow should not know about (e.g. AWS_CONFIG_FILE).
+          shared workflow should not know about.
         required: false
         type: string
         default: '{}'
@@ -89,8 +104,10 @@ jobs:
 
       # Pinned to a SHA in THIS repository, not @master: a caller's pin of
       # check.yaml has to determine the action too, or it is not a pin.
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@52073e0888d4d63684d020bcedb3705663e93572
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@4a897544db748b33209f071c89d1fc4a0dcf1e47
         with:
+          aws-config-file: ${{ inputs.aws-config-file }}
+          proto: ${{ inputs.proto }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy }}
