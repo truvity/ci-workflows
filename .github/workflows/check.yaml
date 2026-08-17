@@ -116,6 +116,14 @@ on:
         required: false
         type: string
         default: ''
+      go-private:
+        description: >-
+          Module path prefix to fetch directly over git rather than
+          through the proxy — e.g. "github.com/truvity". Requires the
+          module-token secret.
+        required: false
+        type: string
+        default: ''
       goproxy:
         required: false
         type: string
@@ -131,6 +139,14 @@ on:
         required: false
         type: number
         default: 30
+    secrets:
+      module-token:
+        description: >-
+          Token with contents:read on the private module repositories.
+          Declared explicitly rather than relying on `secrets: inherit`:
+          the existing callers do not inherit, and a called workflow
+          receives no secrets it has not declared.
+        required: false
 
 permissions:
   contents: read
@@ -164,6 +180,8 @@ jobs:
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy }}
+          go-private: ${{ inputs.go-private }}
+          module-token: ${{ secrets.module-token }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Only the lint job. Build and test outputs ride GOCACHEPROG or the
