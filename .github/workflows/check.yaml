@@ -44,9 +44,39 @@ on:
         description: >-
           Runner label. Hosted repos leave the default; ARC callers pass
           their scale-set name (vars.CI_RUNNER_LABEL).
+
+          This is the runner every recipe gets unless it is named in
+          `small-recipes` below. It is deliberately the BIG one: an
+          unlisted recipe, or one whose name is misspelled in that list,
+          lands here and merely costs more, rather than landing on a
+          runner too small for it and being OOM-killed — a failure that
+          uploads no log and reads as a hang.
         required: false
         type: string
         default: ubuntu-latest
+      small-recipes:
+        description: >-
+          JSON array of recipes that run on `small-runner` instead. Opt
+          DOWN, never up: list only recipes whose peak memory you have
+          measured, and leave anything unproven on the default.
+
+          Recipes are not one population. On gitops the three linters
+          peak at a flat ~4.0Gi while build and lint want 13-20Gi, so a
+          single profile means an actionlint job over a handful of YAML
+          files holds an entire 32Gi node for 34 seconds. The
+          peak-memory line each job prints is the evidence for moving
+          one here.
+        required: false
+        type: string
+        default: '[]'
+      small-runner:
+        description: >-
+          Scale-set label for `small-recipes` (vars.CI_RUNNER_LABEL_SMALL).
+          Defaults to `runner`, so listing recipes without setting this
+          changes nothing.
+        required: false
+        type: string
+        default: ""
       fetch-depth:
         description: >-
           0 for repositories whose task runner compares against the base
@@ -108,7 +138,13 @@ permissions:
 jobs:
   recipe:
     name: ${{ matrix.recipe }}
-    runs-on: ${{ inputs.runner }}
+    # Resolved per matrix entry, so `name:` stays the recipe and the
+    # status contexts do not move. Renaming a job renames the required
+    # check and wedges every open PR — twice already.
+    runs-on: >-
+      ${{ (contains(fromJSON(inputs.small-recipes), matrix.recipe)
+           && inputs.small-runner != '')
+          && inputs.small-runner || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
       # Every recipe reports its own verdict, and one failure does not
