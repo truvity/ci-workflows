@@ -43,7 +43,7 @@ on:
       runner:
         description: >-
           Runner label. Hosted repos leave the default; ARC callers pass
-          their scale-set name (vars.CI_RUNNER_LABEL).
+          their scale-set name (vars.CI_RUNNER_LABEL_LARGE).
 
           This is the runner every recipe gets unless it is named in
           `small-recipes` below. It is deliberately the BIG one: an
