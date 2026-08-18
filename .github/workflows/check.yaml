@@ -156,8 +156,9 @@ on:
           GitLab's package or container registry while CI/CD is mid-move.
 
           OPTIONAL, and unset for every Truvity caller: a caller that
-          passes nothing gets no variable, and the step is a no-op. Only
-          the trust-form organization supplies it today.
+          passes nothing leaves it empty, which is indistinguishable from
+          how recipes behaved before it existed. Only the trust-form
+          organization supplies it today.
         required: false
       module-app-private-key:
         description: >-
@@ -181,6 +182,14 @@ jobs:
            && inputs.small-runner != '')
           && inputs.small-runner || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    # Plain job env, deliberately NOT written through $GITHUB_ENV. Any
+    # `echo "K=$V" >> $GITHUB_ENV` lets a value containing a newline
+    # define FURTHER variables — CodeQL flags it, and it is right to.
+    # Set here the value is passed, never parsed. Unset by every Truvity
+    # caller, in which case this is an empty string and recipes behave
+    # exactly as they did before the secret existed.
+    env:
+      GITLAB_TOKEN: ${{ secrets.gitlab-token }}
     strategy:
       # Every recipe reports its own verdict, and one failure does not
       # hide the others — the point of separate jobs in the first place.
@@ -234,17 +243,6 @@ jobs:
             >> "$GITHUB_ENV"
         env:
           ENV_JSON: ${{ inputs.env-json }}
-
-      # Absent for every Truvity repository — see the secret's description.
-      # Tested in the shell rather than with `if: secrets.x != ''`: the
-      # secrets context is not dependably available in a step condition,
-      # and a wrong guess there fails open, silently, as "no credential".
-      - name: GitLab registry credential
-        run: |
-          [ -n "${GITLAB_TOKEN:-}" ] || exit 0
-          echo "GITLAB_TOKEN=${GITLAB_TOKEN}" >> "$GITHUB_ENV"
-        env:
-          GITLAB_TOKEN: ${{ secrets.gitlab-token }}
 
       - uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
         with:
