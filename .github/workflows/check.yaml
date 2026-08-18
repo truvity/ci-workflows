@@ -120,7 +120,16 @@ on:
         description: >-
           Module path prefix to fetch directly over git rather than
           through the proxy — e.g. "github.com/truvity". Requires the
-          module-token secret.
+          module-app-client-id input and module-app-private-key
+          secret.
+        required: false
+        type: string
+        default: ''
+      module-app-client-id:
+        description: >-
+          Client id of a GitHub App with contents:read on the private
+          module repositories. Public App metadata, hence an input.
+          Required when go-private is set.
         required: false
         type: string
         default: ''
@@ -140,12 +149,12 @@ on:
         type: number
         default: 30
     secrets:
-      module-token:
+      module-app-private-key:
         description: >-
-          Token with contents:read on the private module repositories.
-          Declared explicitly rather than relying on `secrets: inherit`:
-          the existing callers do not inherit, and a called workflow
-          receives no secrets it has not declared.
+          Private key for module-app-client-id. Declared explicitly
+          rather than relying on `secrets: inherit`: the existing callers
+          do not inherit, and a called workflow receives no secret it has
+          not declared.
         required: false
 
 permissions:
@@ -173,7 +182,7 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@b3fb5012588fbb178b6159212bc9c4a785e99d01
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@f085cfeaf8aec5487b238e1a3e79f1aee004b9b1
         with:
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
@@ -181,7 +190,8 @@ jobs:
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy }}
           go-private: ${{ inputs.go-private }}
-          module-token: ${{ secrets.module-token }}
+          module-app-client-id: ${{ inputs.module-app-client-id }}
+          module-app-private-key: ${{ secrets.module-app-private-key }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Only the lint job. Build and test outputs ride GOCACHEPROG or the
