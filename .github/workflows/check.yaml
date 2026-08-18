@@ -149,6 +149,16 @@ on:
         type: number
         default: 30
     secrets:
+      gitlab-token:
+        description: >-
+          Read-only GitLab deploy token, exported to recipes as
+          GITLAB_TOKEN. For repositories whose dependencies still live in
+          GitLab's package or container registry while CI/CD is mid-move.
+
+          OPTIONAL, and unset for every Truvity caller: a caller that
+          passes nothing gets no variable, and the step is a no-op. Only
+          the trust-form organization supplies it today.
+        required: false
       module-app-private-key:
         description: >-
           Private key for module-app-client-id. Declared explicitly
@@ -224,6 +234,17 @@ jobs:
             >> "$GITHUB_ENV"
         env:
           ENV_JSON: ${{ inputs.env-json }}
+
+      # Absent for every Truvity repository — see the secret's description.
+      # Tested in the shell rather than with `if: secrets.x != ''`: the
+      # secrets context is not dependably available in a step condition,
+      # and a wrong guess there fails open, silently, as "no credential".
+      - name: GitLab registry credential
+        run: |
+          [ -n "${GITLAB_TOKEN:-}" ] || exit 0
+          echo "GITLAB_TOKEN=${GITLAB_TOKEN}" >> "$GITHUB_ENV"
+        env:
+          GITLAB_TOKEN: ${{ secrets.gitlab-token }}
 
       - uses: truvity/ci-workflows/.github/actions/recipe@44fa84daf3675478a133d21f6a3f6f2ba349bd30
         with:
