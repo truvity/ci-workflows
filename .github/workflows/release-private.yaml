@@ -1,0 +1,208 @@
+# Tag-triggered release for the PRIVATE estate: artifacts to ECR in the
+# stable account, reached by tag-scoped GitHub OIDC.
+#
+# The sibling of release-public.yaml, and a SEPARATE workflow rather
+# than a flag on it — deliberately. A reusable workflow can narrow the
+# caller's permissions but never widen them, so a merged workflow would
+# have to declare the union and force every caller to hold it: GHCR
+# callers would carry id-token, ECR callers would carry packages. Two
+# workflows keep each caller's grant minimal.
+#
+# IDENTITY: tag-scoped GitHub OIDC, and NOT the Zitadel broker, even
+# where the caller reaches its cluster that way. `id-token: write` mints
+# a GitHub JWT, STS trades it for temporary credentials on a role whose
+# trust policy pins the tag ref (repo:<org>/<repo>:ref:refs/tags/...).
+# Two properties follow, and both are the reason:
+#
+#   1. The condition lives in AWS IAM — the same system that issues the
+#      credential — not in a service we operate.
+#   2. A release does not depend on our cluster being healthy, which is
+#      exactly when a fix most needs shipping.
+#
+# A pod-identity association cannot express either: it is pool-level,
+# so anything scheduled on that pool inherits it, and nothing about it
+# is ref-aware.
+#
+# NOTHING PARTICULAR LIVES HERE. This repository is public: account ids,
+# role ARNs and registry hosts arrive as inputs from the caller.
+name: release-private
+
+on:
+  workflow_call:
+    inputs:
+      role-to-assume:
+        description: >-
+          Full ARN of the release role to assume. One role per project,
+          trusting that project's tag refs only — so the ARN names both
+          the account and the blast radius.
+        required: true
+        type: string
+      ecr-registries:
+        description: >-
+          Comma-separated ECR account ids to log into. Name ONLY the
+          registries this release publishes to: unlike a credential
+          helper, which is lazy and consulted per push, this login is
+          eager and FAILS on an account the role cannot reach.
+        required: true
+        type: string
+      command:
+        description: >-
+          The release command, run inside devbox. Varies by project —
+          plain goreleaser for some, a pipeline driver for others — so
+          it is the caller's to state.
+        required: true
+        type: string
+      aws-region:
+        required: false
+        type: string
+        default: eu-central-1
+      require-green-checks:
+        description: >-
+          Refuse to build unless every check run on the tagged commit
+          has settled green. A stable artifact built from a commit whose
+          tests never finished is the failure this exists to prevent.
+        required: false
+        type: boolean
+        default: true
+      strip-local-tools:
+        description: >-
+          Default false: goreleaser's clean-tree gate refuses a dirty
+          workspace, and the strip edits a tracked .prototools.
+        required: false
+        type: string
+        default: "false"
+      proto:
+        required: false
+        type: string
+        default: auto
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      timeout-minutes:
+        required: false
+        type: number
+        default: 30
+    secrets:
+      goreleaser-key:
+        description: goreleaser-pro licence, for callers that use it.
+        required: false
+
+# A floor, not a ceiling. release-public.yaml carried `contents: read`
+# here and it silently dropped the packages:write its own callers were
+# told to grant — the bug surfaced on the first release that ever called
+# it, because it had no callers to expose it sooner.
+#
+#   contents:  read   — checkout; this half publishes to ECR, not to
+#                       GitHub Releases, so write is not needed
+#   id-token:  write  — mint the GitHub JWT that STS trades for the role
+#   checks:    read   — the gate reads the tagged commit's check runs;
+#                       without it the token gets 403 rather than a
+#                       verdict
+permissions:
+  contents: read
+  id-token: write
+  checks: read
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser derives the changelog from history; a shallow
+          # clone gives it nothing to derive from.
+          fetch-depth: 0
+
+      # The filter and its regression test live in the SAME step on
+      # purpose: a standalone copy of either drifts from the other, and
+      # a test nothing executes cannot catch a reintroduced bug. Both
+      # run on every release.
+      - name: Require green checks on the tagged commit
+        if: inputs.require-green-checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # --slurp gives an array of PAGES: --paginate applies a filter
+          # per page, so grouping without flattening keeps an older
+          # page's cancelled run. max_by(.id) and never .started_at — a
+          # QUEUED run has started_at=null, jq sorts null lowest, and
+          # the gate would then pick an older COMPLETED run and release
+          # on stale green. The release's own run is excluded; it is
+          # in_progress by definition.
+          cat > /tmp/release-gate.jq <<'JQ'
+          [.[].check_runs[] | select(.name != "release")]
+          | group_by(.name)
+          | map(max_by(.id))
+          | .[]
+          | "\(.name)\t\(.conclusion // "pending")"
+          JQ
+
+          sample='[{"check_runs":[{"id":100,"name":"check","started_at":"2026-08-15T01:00:00Z","conclusion":"success"},
+                                  {"id":101,"name":"suite","started_at":"2026-08-15T01:00:00Z","conclusion":"cancelled"},
+                                  {"id":102,"name":"release","started_at":"2026-08-15T01:00:00Z","conclusion":null}]},
+                   {"check_runs":[{"id":200,"name":"check","started_at":null,"conclusion":null},
+                                  {"id":201,"name":"suite","started_at":"2026-08-15T01:05:00Z","conclusion":"success"}]}]'
+          got=$(echo "$sample" | jq -r -f /tmp/release-gate.jq | sort | tr '\t' '=' | paste -sd' ' -)
+          want='check=pending suite=success'
+          [ "$got" = "$want" ] || { echo "::error::release gate self-test failed: got [$got] want [$want]"; exit 1; }
+          echo "gate self-test PASS: newest-queued beats older success; pages flattened; own run excluded"
+
+          RUNS=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" \
+            --paginate --slurp | jq -r -f /tmp/release-gate.jq)
+          echo "checks on ${GITHUB_SHA}:"; echo "$RUNS" | sed 's/^/  /'
+
+          if ! echo "$RUNS" | grep -qP '^check\tsuccess$'; then
+            echo '::error::the tagged commit has no successful check run — releases build only from check-green commits'
+            exit 1
+          fi
+          BAD=$(echo "$RUNS" | grep -vP '\t(success|neutral|skipped)$' || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::not-green checks on the tagged commit:"; echo "$BAD"
+            exit 1
+          fi
+          echo "all checks green on ${GITHUB_SHA}"
+
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@f085cfeaf8aec5487b238e1a3e79f1aee004b9b1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          proto: ${{ inputs.proto }}
+          strip-local-tools: ${{ inputs.strip-local-tools }}
+
+      # GitHub-hosted carries only buildx's default `docker` driver,
+      # which cannot produce attestations — goreleaser's dockers_v2 asks
+      # for them. setup-buildx-action creates a docker-container builder
+      # that can; QEMU covers the non-native arch of a multi-platform
+      # manifest.
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ inputs.role-to-assume }}
+          aws-region: ${{ inputs.aws-region }}
+
+      # The official action rather than a hand-rolled credential helper.
+      # It consumes the role assumed directly above and writes the auth
+      # entry that helm and oras read from ~/.docker/config.json — the
+      # Docker credential store resolves a static `auths` entry exactly
+      # as it resolves a credHelpers one.
+      - uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+        with:
+          registries: ${{ inputs.ecr-registries }}
+          mask-password: "true"
+
+      - name: Release
+        run: devbox run -- ${{ inputs.command }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.goreleaser-key }}
+          # No profiles on a runner: the default credential chain must
+          # resolve the job's OIDC role from env. A stray AWS_PROFILE
+          # overrides it and surfaces as a confusing 403 several layers
+          # down, not as "wrong profile".
+          GEMAAL_AWS_AMBIENT: "1"
