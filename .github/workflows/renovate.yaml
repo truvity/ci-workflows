@@ -1,6 +1,8 @@
 # Self-hosted Renovate, daily.
 #
-# CALLERS MUST PASS `secrets: inherit`. A called workflow receives NONE
+# SAME-ORG callers pass `secrets: inherit`; CROSS-ORG callers must pass
+# the key explicitly (see the secrets: block below). A called workflow
+# receives NONE
 # of the caller's secrets otherwise — `vars` resolve, secrets do not —
 # and the failure is the ugly kind: create-github-app-token reports
 # "'client-id' … must be set to a non-empty string", which reads like a
@@ -34,6 +36,19 @@ on:
         required: false
         type: number
         default: 30
+    secrets:
+      # Declared, not merely inherited, so that callers in ANOTHER
+      # organization can pass it explicitly.
+      #
+      # `secrets: inherit` does not carry secrets across an org boundary.
+      # Measured 2026-08-19: trust-form callers reached this workflow
+      # with `vars` resolving correctly and every secret empty, and it
+      # made no difference whether the secret was set at organization or
+      # at repository level. The same-org callers keep working unchanged
+      # — `inherit` fills a declared secret of the same name.
+      RENOVATE_APP_PRIVATE_KEY:
+        description: The Renovate App's private key.
+        required: false
 
 permissions:
   contents: read
