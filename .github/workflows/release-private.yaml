@@ -153,7 +153,8 @@ jobs:
 
           RUNS=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" \
             --paginate --slurp | jq -r -f /tmp/release-gate.jq)
-          echo "checks on ${GITHUB_SHA}:"; echo "$RUNS" | sed 's/^/  /'
+          echo "checks on ${GITHUB_SHA}:"
+          while IFS= read -r line; do printf '  %s\n' "$line"; done <<< "$RUNS"
 
           if ! echo "$RUNS" | grep -qP '^check\tsuccess$'; then
             echo '::error::the tagged commit has no successful check run — releases build only from check-green commits'
