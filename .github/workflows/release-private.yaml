@@ -131,28 +131,36 @@ jobs:
           # page's cancelled run. max_by(.id) and never .started_at — a
           # QUEUED run has started_at=null, jq sorts null lowest, and
           # the gate would then pick an older COMPLETED run and release
-          # on stale green. The release's own run is excluded; it is
-          # in_progress by definition.
+          # on stale green.
+          #
+          # Its own run is excluded BY RUN ID, not by name. bar's copy
+          # matched `.name != "release"` and that broke the moment the
+          # job moved into a reusable workflow: the check run is then
+          # named "<caller-job> / <called-job>", so the filter stopped
+          # matching, the gate saw itself as pending, and every release
+          # refused itself. The run id cannot drift with a job name.
           cat > /tmp/release-gate.jq <<'JQ'
-          [.[].check_runs[] | select(.name != "release")]
+          [.[].check_runs[] | select(((.details_url // "") | contains("/runs/" + $runid + "/")) | not)]
           | group_by(.name)
           | map(max_by(.id))
           | .[]
           | "\(.name)\t\(.conclusion // "pending")"
           JQ
 
-          sample='[{"check_runs":[{"id":100,"name":"check","started_at":"2026-08-15T01:00:00Z","conclusion":"success"},
-                                  {"id":101,"name":"suite","started_at":"2026-08-15T01:00:00Z","conclusion":"cancelled"},
-                                  {"id":102,"name":"release","started_at":"2026-08-15T01:00:00Z","conclusion":null}]},
-                   {"check_runs":[{"id":200,"name":"check","started_at":null,"conclusion":null},
-                                  {"id":201,"name":"suite","started_at":"2026-08-15T01:05:00Z","conclusion":"success"}]}]'
-          got=$(echo "$sample" | jq -r -f /tmp/release-gate.jq | sort | tr '\t' '=' | paste -sd' ' -)
+          # The self-test names its own run "release / release" on
+          # purpose: that is the shape that broke the name-based filter.
+          sample='[{"check_runs":[{"id":100,"name":"check","details_url":"https://x/actions/runs/111/job/1","conclusion":"success"},
+                                  {"id":101,"name":"suite","details_url":"https://x/actions/runs/111/job/2","conclusion":"cancelled"},
+                                  {"id":102,"name":"release / release","details_url":"https://x/actions/runs/999/job/3","conclusion":null}]},
+                   {"check_runs":[{"id":200,"name":"check","details_url":"https://x/actions/runs/222/job/4","conclusion":null},
+                                  {"id":201,"name":"suite","details_url":"https://x/actions/runs/222/job/5","conclusion":"success"}]}]'
+          got=$(echo "$sample" | jq -r --arg runid "999" -f /tmp/release-gate.jq | sort | tr '\t' '=' | paste -sd' ' -)
           want='check=pending suite=success'
           [ "$got" = "$want" ] || { echo "::error::release gate self-test failed: got [$got] want [$want]"; exit 1; }
           echo "gate self-test PASS: newest-queued beats older success; pages flattened; own run excluded"
 
           RUNS=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" \
-            --paginate --slurp | jq -r -f /tmp/release-gate.jq)
+            --paginate --slurp | jq -r --arg runid "${GITHUB_RUN_ID}" -f /tmp/release-gate.jq)
           echo "checks on ${GITHUB_SHA}:"
           while IFS= read -r line; do printf '  %s\n' "$line"; done <<< "$RUNS"
 
