@@ -52,8 +52,20 @@ on:
         type: number
         default: 30
 
+# A reusable workflow can only NARROW what the caller granted, never
+# widen it — so this block is a floor, not a formality. It previously
+# read `contents: read`, which silently dropped the `packages: write`
+# every caller was told to grant: ko then failed with "DENIED:
+# installation not allowed to Write organization package", two minutes
+# into the first release that ever called this workflow. It shipped
+# that way because it had no callers to expose it.
+#
+# What the job actually needs: contents:write for the GitHub Release
+# goreleaser creates, packages:write for the ko image and the chart
+# push. Callers must grant at least these.
 permissions:
-  contents: read
+  contents: write
+  packages: write
 
 jobs:
   release:
