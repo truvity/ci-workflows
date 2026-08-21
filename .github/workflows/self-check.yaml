@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  # `check`, the estate's one canonical required-context name (gitops
+  # cfg/github.yaml merge-gate doctrine). Renamed from `lint` when this
+  # repository gained a merge gate — renaming a required job wedges every
+  # open PR, so the name changed BEFORE the context became required.
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

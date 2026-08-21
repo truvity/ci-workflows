@@ -168,8 +168,29 @@ on:
           not declared.
         required: false
 
-permissions:
-  contents: read
+# NO permissions block, deliberately. A reusable workflow's permissions
+# block is a ceiling, not a floor: it CAPS what the caller grants and can
+# never widen it. The `contents: read` that used to sit here silently
+# stripped the `id-token: write` an AWS-touching caller granted, so
+# zcbctl found no ACTIONS_ID_TOKEN_REQUEST_URL, decided it was on a
+# laptop, and went looking for a kubeconfig that does not exist on a
+# runner (go-core, 2026-08-20 — the same ceiling bug release-public
+# shipped, one workflow over).
+#
+# With no block here, jobs inherit exactly what the caller grants, and
+# the caller is the right owner of that decision: it knows whether it is
+# public and whether its recipes reach AWS or the cluster. Callers
+# declare, at workflow level:
+#
+#   permissions:
+#     contents: read     # always — checkout
+#     id-token: write    # ONLY if recipes reach AWS/k8s through zcbctl
+#                        # (gitops docs/guides/add-repo-to-ci.md)
+#
+# Public repositories omit id-token: fork PRs never receive it, and
+# nothing in a public repository's recipes should want it. A caller with
+# NO permissions block hands its org-default token to every recipe —
+# declare the block.
 
 jobs:
   recipe:
