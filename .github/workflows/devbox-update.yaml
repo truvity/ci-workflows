@@ -120,7 +120,14 @@ jobs:
         run: |
           command -v gh >/dev/null && { echo "gh present: $(gh --version | head -1)"; exit 0; }
           v=2.97.0
-          curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_linux_amd64.tar.gz"
+          # The ARC pool is arm64; hosted runners are amd64. A hardcoded
+          # arch put an amd64 binary on an arm64 node: "Exec format error".
+          case "$(uname -m)" in
+            x86_64)          arch=amd64 ;;
+            aarch64 | arm64) arch=arm64 ;;
+            *) echo "unsupported arch: $(uname -m)"; exit 1 ;;
+          esac
+          curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_linux_${arch}.tar.gz"
           mkdir -p /tmp/gh && tar xzf /tmp/gh.tgz -C /tmp/gh --strip-components=1
           echo "/tmp/gh/bin" >> "$GITHUB_PATH"
           echo "gh installed: v${v}"

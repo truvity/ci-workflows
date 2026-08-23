@@ -166,6 +166,10 @@ deliberate decision).
     the pre-push hook compiles the module, and that took 15–22 minutes
     on a 2-core hosted runner with no caches (paid minutes, a 30-minute
     ceiling, and it reads as a hang) against ~5 minutes on the pool.
+    And the pool is **arm64** where hosted runners are amd64 — the first
+    pinned install hardcoded `linux_amd64` and died on the pool with
+    `cannot execute binary file: Exec format error`. Detect with
+    `uname -m`; never bake an architecture into a tarball name.
 13. **One fixed branch, force-pushed.** Date-named branches collide on a
     same-day re-run; `chore/devbox-update` is force-pushed and an open
     PR for it is updated in place rather than duplicated — renovate's
