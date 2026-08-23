@@ -137,39 +137,60 @@ jobs:
       # and the repo's pre-push govulncheck refused the push); and that
       # pre-push hook is a feature — the repo's own gates vet the aligned
       # directive before it can become a PR.
-      - name: Align go directive
+      # Align the TOOLCHAIN directive — never the language directive.
+      # v2.10.0–v2.10.3 collapsed both into one `go` line and thereby
+      # RAISED a repository's language version (phoenix: 1.23 -> 1.26.7),
+      # which activated go vet's printf analyzer and broke master. The
+      # language version is a code-semantics decision for the
+      # repository's team; the toolchain is the CVE channel and is
+      # automation's to move. Rule: toolchain = newest patch of the
+      # line golangci-lint was built against, never downward; the `go`
+      # line is read only, and a language minor ABOVE the cap means a
+      # human created a mismatch — report, touch nothing.
+      #
+      # jq is the RUNNER's (devbox re-quotes a program), the directives
+      # are read from the file (a devbox init_hook may print to stdout).
+      - name: Align go toolchain
         run: |
           set -euo pipefail
           [ -f go.mod ] || { echo "no go.mod — nothing to align"; exit 0; }
 
-          # From the file, not `devbox run -- go mod edit -json`: a repo's
-          # devbox init_hook may print to stdout (gitops's lefthook sync
-          # does), and that broke the JSON on the first estate run.
-          current=$(awk '/^go /{print $2; exit}' go.mod)
+          lang=$(awk '/^go /{print $2; exit}' go.mod)
+          tc=$(awk '/^toolchain /{sub(/^go/,"",$2); print $2; exit}' go.mod)
+          tc=${tc:-$lang}
           if devbox run -- golangci-lint version >/tmp/glci 2>/dev/null; then
             built=$(grep -o 'built with go[0-9.]*' /tmp/glci | grep -o '[0-9][0-9.]*$')
           else
             built=$(devbox run -- go env GOVERSION | grep -o '[0-9][0-9.]*')
           fi
           cap=$(echo "$built" | cut -d. -f1-2)
-          echo "current directive: $current; cap: go $cap line (golangci built with $built)"
+          echo "language $lang, toolchain $tc; cap: go $cap line (golangci built with $built)"
+
+          if [ "$(printf '%s\n%s\n' "$(echo "$lang" | cut -d. -f1-2)" "$cap" | sort -V | tail -1)" != "$cap" ]; then
+            echo "::warning::language directive $lang is above the golangci-lint cap $cap — a human set this; not touching go.mod"
+            exit 0
+          fi
 
           latest=$(curl -fsS --max-time 30 'https://go.dev/dl/?mode=json&include=all' \
             | jq -r --arg m "go$cap." '[.[].version | select(startswith($m))] | first // empty' \
             || true)
           if [ -z "$latest" ]; then
-            echo "go.dev unreachable — no upward target this run; directive stays $current"
+            echo "go.dev unreachable — toolchain stays $tc this run"
             exit 0
           fi
           target=${latest#go}
 
-          top=$(printf '%s\n%s\n' "$current" "$target" | sort -V | tail -1)
-          if [ "$top" = "$current" ]; then
-            echo "directive $current already at or above $target — no change"
+          top=$(printf '%s\n%s\n' "$tc" "$target" | sort -V | tail -1)
+          if [ "$top" = "$tc" ]; then
+            echo "toolchain $tc already at or above $target — no change"
             exit 0
           fi
-          echo "aligning go.mod directive $current -> $target"
-          devbox run -- go mod edit -go="$target" -toolchain=none
+          echo "aligning toolchain $tc -> $target (language stays $lang)"
+          if [ "$target" = "$lang" ]; then
+            devbox run -- go mod edit -toolchain=none   # equal to the language version: the single line says it
+          else
+            devbox run -- go mod edit -toolchain="go$target"
+          fi
           git diff -- go.mod
 
       - name: Open a pull request if anything moved
@@ -210,5 +231,14 @@ jobs:
             --base "$BASE" \
             --label "$LABEL"
 
-          # Arm auto-merge; it lands when the required checks pass.
-          gh pr merge --auto --rebase "$branch"
+          # Arm auto-merge ONLY where required checks exist. With none,
+          # `--auto` merges IMMEDIATELY, unvalidated — phoenix#29 landed a
+          # red lint/test that way on 2026-08-23 (migrated-profile repos
+          # carry no required checks by a deliberate decision). Where
+          # nothing gates the merge, a human does.
+          if gh api "repos/${GITHUB_REPOSITORY}/branches/${BASE}/protection/required_status_checks" \
+               --jq '.contexts | length' 2>/dev/null | grep -qE '^[1-9]'; then
+            gh pr merge --auto --rebase "$branch"
+          else
+            echo "no required status checks on ${BASE} — leaving the PR for a human to merge"
+          fi
