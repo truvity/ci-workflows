@@ -156,7 +156,12 @@ jobs:
           git add devbox.json devbox.lock
           [ -f go.mod ] && git add go.mod
           git commit -m "chore(deps): update devbox packages and align the go directive"
-          git push origin "$branch"
+          # Inside devbox, so the repository's pre-push hooks (lefthook)
+          # find the repository's tools. gitops's hooks call `just` bare
+          # and died with "command not found" on the first aligned push
+          # (2026-08-23) — the hooks are the safety net that vets the
+          # aligned directive, so they must be able to run, not skipped.
+          devbox run -- git push origin "$branch"
 
           # Self-creating label: the prototype found the old "must already
           # exist" prerequisite fails AFTER the branch is pushed, which is
