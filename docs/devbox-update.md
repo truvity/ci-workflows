@@ -63,7 +63,7 @@ gh workflow run "Devbox Update" --repo <org>/<repo> -f mode=align
 (only if the caller exposes `mode` as a dispatch input; otherwise a
 plain dispatch runs `auto`, which on a non-Monday is align-only.)
 
-## The align step, exactly (v2.10.4)
+## The align step, exactly (v2.10.7)
 
 ```
 lang    = go.mod's `go` directive        — READ ONLY, never changed here
@@ -193,6 +193,14 @@ deliberate decision).
 
 ## What this does NOT do
 
+- It does not see modules outside the repository root. The align step
+  reads `./go.mod` and nothing else; a multi-module repository with no
+  root module (pulumi-zitadel: `provider/`, `sdk/`, `tests/integration/`)
+  gets a clean run that says `no go.mod — nothing to align` and its
+  toolchain lines move by hand (2026-08-23: pulumi-zitadel#57 carried
+  two live stdlib CVEs that way). A `module-dirs` input is the known
+  follow-up; until it exists, adopting this workflow on such a
+  repository buys the weekly devbox refresh only.
 - It does not choose the minor line. nixpkgs does, by shipping `go` and
   `golangci-lint` built against it; devbox-update follows on the next
   full run. Renovate's `constraintsFiltering: strict` (kept in every
