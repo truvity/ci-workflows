@@ -1,8 +1,25 @@
-# Weekly `devbox update`, opened as a pull request.
+# Weekly `devbox update`, opened as a pull request — and, since v2.10.0,
+# the ONE owner of a Go repository's toolchain triple.
 #
 # Renovate structurally cannot do this: devbox.json and devbox.lock are
 # in its ignorePaths, because nix packages are resolved by devbox, not
 # by a package manager Renovate understands.
+#
+# THE TRIPLE, and why one owner. Three things must agree in a Go repo:
+# the go binary devbox ships, the Go golangci-lint was BUILT with, and
+# the go.mod directive. golangci-lint refuses a module whose language
+# version exceeds its build Go, and a directive can run ahead of the
+# nixpkgs binary because GOTOOLCHAIN=auto downloads what go.mod names.
+# Split ownership (renovate bumping the directive, devbox the binaries)
+# produced the 2026-08-22 estate-wide lint panics. So: the directive is
+# aligned HERE, in the same PR as the lock — compatible by construction,
+# validated by the repository's own checks, auto-merged on green — and
+# renovate's gomod manager leaves `go` alone (its config says so).
+#
+# The rule: language minor ≤ golangci's build minor; patch = the newest
+# release of that line; never downward. When nixpkgs moves go and
+# golangci together, the next weekly run carries the whole minor
+# migration as one ordinary PR per repository.
 #
 # Promoted from truvity/workstation, the only copy in the estate that
 # has ever succeeded — every other repository carried the pre-migration
@@ -67,6 +84,46 @@ jobs:
 
       - run: devbox update
 
+      # Prototyped on forks first (excavador/ci-workflows + gemaal,
+      # 2026-08-23). Three lessons are encoded here: jq is the RUNNER's,
+      # never `devbox run -- jq` (devbox re-quotes argv and mangles the
+      # program — github-actions.md, environment traps); the directive
+      # is MONOTONIC (the first prototype run downgraded 1.26.6 -> 1.26.5
+      # and the repo's pre-push govulncheck refused the push); and that
+      # pre-push hook is a feature — the repo's own gates vet the aligned
+      # directive before it can become a PR.
+      - name: Align go directive
+        run: |
+          set -euo pipefail
+          [ -f go.mod ] || { echo "no go.mod — nothing to align"; exit 0; }
+
+          current=$(devbox run -- go mod edit -json | jq -r '.Go')
+          if devbox run -- golangci-lint version >/tmp/glci 2>/dev/null; then
+            built=$(grep -o 'built with go[0-9.]*' /tmp/glci | grep -o '[0-9][0-9.]*$')
+          else
+            built=$(devbox run -- go env GOVERSION | grep -o '[0-9][0-9.]*')
+          fi
+          cap=$(echo "$built" | cut -d. -f1-2)
+          echo "current directive: $current; cap: go $cap line (golangci built with $built)"
+
+          latest=$(curl -fsS --max-time 30 'https://go.dev/dl/?mode=json&include=all' \
+            | jq -r --arg m "go$cap." '[.[].version | select(startswith($m))] | first // empty' \
+            || true)
+          if [ -z "$latest" ]; then
+            echo "go.dev unreachable — no upward target this run; directive stays $current"
+            exit 0
+          fi
+          target=${latest#go}
+
+          top=$(printf '%s\n%s\n' "$current" "$target" | sort -V | tail -1)
+          if [ "$top" = "$current" ]; then
+            echo "directive $current already at or above $target — no change"
+            exit 0
+          fi
+          echo "aligning go.mod directive $current -> $target"
+          devbox run -- go mod edit -go="$target" -toolchain=none
+          git diff -- go.mod
+
       - name: Open a pull request if anything moved
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -75,8 +132,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- devbox.json devbox.lock; then
-            echo "devbox packages already current"
+          if git diff --quiet -- devbox.json devbox.lock go.mod; then
+            echo "devbox packages and go directive already current"
             exit 0
           fi
 
@@ -85,12 +142,18 @@ jobs:
           git config user.email "truvity-renovate[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add devbox.json devbox.lock
-          git commit -m "chore(deps): update devbox packages"
+          [ -f go.mod ] && git add go.mod
+          git commit -m "chore(deps): update devbox packages and align the go directive"
           git push origin "$branch"
 
+          # Self-creating label: the prototype found the old "must already
+          # exist" prerequisite fails AFTER the branch is pushed, which is
+          # the worst moment. --force is idempotent on an existing label.
+          gh label create "$LABEL" --force --color 0366d6 --description "Dependency updates" >/dev/null
+
           gh pr create \
-            --title "chore(deps): update devbox packages" \
-            --body "Automated weekly \`devbox update\`. Nix packages are outside Renovate's reach — devbox.json and devbox.lock are in its ignorePaths." \
+            --title "chore(deps): update devbox packages and align the go directive" \
+            --body "Automated weekly \`devbox update\`, plus the go.mod directive aligned to the toolchain triple (language minor capped by golangci-lint's build Go, patch = newest of that line, never downward). Nix packages are outside Renovate's reach — devbox.json and devbox.lock are in its ignorePaths — and the go directive is owned here too, so the three can never disagree." \
             --base "$BASE" \
             --label "$LABEL"
 
