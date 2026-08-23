@@ -158,7 +158,19 @@ deliberate decision).
 11. **`gh pr merge --auto` on a repo with no required checks merges
     immediately.** Gate the arming on the protection actually having
     required contexts; otherwise leave the PR for a human.
-12. **Prototype on a fork first.** Forks carry no App secrets, so the
+12. **The ARC runner image has no `gh`.** Hosted runners preinstall the
+    GitHub CLI; the pool image bakes nix, devbox and build tools only.
+    The workflow installs a pinned `gh` when absent (gate on detection,
+    the setup-devbox doctrine). Private repositories SHOULD run
+    devbox-update on the pool (`runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}`):
+    the pre-push hook compiles the module, and that took 15–22 minutes
+    on a 2-core hosted runner with no caches (paid minutes, a 30-minute
+    ceiling, and it reads as a hang) against ~5 minutes on the pool.
+13. **One fixed branch, force-pushed.** Date-named branches collide on a
+    same-day re-run; `chore/devbox-update` is force-pushed and an open
+    PR for it is updated in place rather than duplicated — renovate's
+    shape.
+14. **Prototype on a fork first.** Forks carry no App secrets, so the
     fork variant used GITHUB_TOKEN with `contents: write` +
     `pull-requests: write`, Actions enabled on the fork, the "allow
     Actions to create PRs" toggle on, and the label pre-created. Every

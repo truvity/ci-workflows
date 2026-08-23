@@ -112,6 +112,19 @@ jobs:
           proto: "false"
           github-token: ${{ steps.token.outputs.token }}
 
+      # The ARC runner image bakes nix, devbox and the build tools — not
+      # the GitHub CLI the hosted image happens to preinstall. Gate on
+      # detection, like setup-devbox does for nix: install only what is
+      # missing, pinned, from the release tarball.
+      - name: Ensure gh
+        run: |
+          command -v gh >/dev/null && { echo "gh present: $(gh --version | head -1)"; exit 0; }
+          v=2.97.0
+          curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_linux_amd64.tar.gz"
+          mkdir -p /tmp/gh && tar xzf /tmp/gh.tgz -C /tmp/gh --strip-components=1
+          echo "/tmp/gh/bin" >> "$GITHUB_PATH"
+          echo "gh installed: v${v}"
+
       - name: Decide the mode
         id: mode
         env:
@@ -206,7 +219,10 @@ jobs:
             exit 0
           fi
 
-          branch="chore/devbox-update-$(date +%Y%m%d)"
+          # ONE fixed branch, force-pushed: a same-day re-run (or a daily
+          # align after Monday's full update) UPDATES the open PR instead
+          # of colliding with yesterday's branch name — renovate's shape.
+          branch="chore/devbox-update"
           git config user.name "truvity-renovate[bot]"
           git config user.email "truvity-renovate[bot]@users.noreply.github.com"
           git checkout -b "$branch"
@@ -218,12 +234,17 @@ jobs:
           # and died with "command not found" on the first aligned push
           # (2026-08-23) — the hooks are the safety net that vets the
           # aligned directive, so they must be able to run, not skipped.
-          devbox run -- git push origin "$branch"
+          devbox run -- git push --force origin "$branch"
 
           # Self-creating label: the prototype found the old "must already
           # exist" prerequisite fails AFTER the branch is pushed, which is
           # the worst moment. --force is idempotent on an existing label.
           gh label create "$LABEL" --force --color 0366d6 --description "Dependency updates" >/dev/null
+
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" ]; then
+            echo "open PR for $branch already exists — updated in place by the push"
+            exit 0
+          fi
 
           gh pr create \
             --title "chore(deps): update devbox packages and align the go directive" \
