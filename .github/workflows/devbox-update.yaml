@@ -270,6 +270,7 @@ jobs:
           # private repo and quietly left ALL their PRs for humans.
           # GraphQL refUpdateRule reflects effective protection for any
           # viewer; null means no protection at all.
+          # shellcheck disable=SC2016  # $o/$r/$b are GraphQL variables, not shell
           gated=$(gh api graphql \
             -f query='query($o:String!,$r:String!,$b:String!){repository(owner:$o,name:$r){ref(qualifiedName:$b){refUpdateRule{requiredStatusCheckContexts}}}}' \
             -f o="${GITHUB_REPOSITORY%/*}" -f r="${GITHUB_REPOSITORY#*/}" -f b="refs/heads/${BASE}" \
