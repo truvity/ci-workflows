@@ -63,21 +63,27 @@ gh workflow run "Devbox Update" --repo <org>/<repo> -f mode=align
 (only if the caller exposes `mode` as a dispatch input; otherwise a
 plain dispatch runs `auto`, which on a non-Monday is align-only.)
 
-## The align step, exactly
+## The align step, exactly (v2.10.4)
 
 ```
-current = go.mod's `go` directive          (read with awk — see pitfalls)
+lang    = go.mod's `go` directive        — READ ONLY, never changed here
+tc      = go.mod's `toolchain` directive, or lang if absent
 built   = "built with goX.Y.Z" from `golangci-lint version`
           (fallback: devbox's `go env GOVERSION` if there is no linter)
 cap     = X.Y of built
+if lang's minor > cap:  warn, touch nothing (a human made that mismatch)
 target  = newest goX.Y.* on https://go.dev/dl/?mode=json
           (fallback: none → leave go.mod alone this run)
-if target > current:  go mod edit -go=target -toolchain=none
+if target > tc:  go mod edit -toolchain=go<target>
+                 (or -toolchain=none when target == lang: one line says it)
 ```
 
-One `go` directive, no separate `toolchain` line: since Go 1.21 the
-single directive is both the language version and the minimum
-toolchain, and `GOTOOLCHAIN=auto` does the rest.
+**The language directive is never raised by automation.** v2.10.0–3
+collapsed both into one `go` line and thereby raised phoenix from
+language 1.23 to 1.26 — which activated go vet's printf analyzer and
+broke master. The language version is a code-semantics decision for
+the repository's team; the toolchain is the CVE channel and is
+automation's to move.
 
 ## Calling it
 
@@ -101,6 +107,11 @@ The repository needs `vars.RENOVATE_CLIENT_ID` (org-level on both
 estates) and the App's private key as a secret. The PR is opened by the
 renovate App and **auto-merges when the repository's required checks
 pass** — the repository's own CI is what validates the aligned triple.
+**Where the default branch has no required checks, auto-merge is NOT
+armed** and a human merges: `gh pr merge --auto` merges *immediately*
+when nothing gates it, which is how phoenix#29 landed a red lint/test
+on 2026-08-23 (the migrated profile carries no required checks by a
+deliberate decision).
 
 ## Pitfalls — every one of these was hit live
 
@@ -140,7 +151,14 @@ pass** — the repository's own CI is what validates the aligned triple.
    change was invisible and produced no PR.
 9. **`gh run rerun` re-evaluates the original head SHA** — useless for
    testing a fix. Dispatch a fresh run instead.
-10. **Prototype on a fork first.** Forks carry no App secrets, so the
+10. **Never raise the language directive by automation.** Raising
+    `go 1.23` to `1.26` activated go vet's printf analyzer on phoenix
+    and broke master — a semantic change that belongs to the team.
+    Automation moves the `toolchain` line only.
+11. **`gh pr merge --auto` on a repo with no required checks merges
+    immediately.** Gate the arming on the protection actually having
+    required contexts; otherwise leave the PR for a human.
+12. **Prototype on a fork first.** Forks carry no App secrets, so the
     fork variant used GITHUB_TOKEN with `contents: write` +
     `pull-requests: write`, Actions enabled on the fork, the "allow
     Actions to create PRs" toggle on, and the label pre-created. Every
