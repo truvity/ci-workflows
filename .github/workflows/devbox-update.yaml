@@ -1,5 +1,10 @@
-# Weekly `devbox update`, opened as a pull request — and, since v2.10.0,
-# the ONE owner of a Go repository's toolchain triple.
+# `devbox update` opened as a pull request — and, since v2.10.0, the
+# ONE owner of a Go repository's toolchain triple. Two cadences, one
+# owner (v2.10.3): callers run a DAILY cron; the full devbox update
+# happens on full-update-day (Monday), the go directive is aligned
+# every day. A stdlib CVE therefore reaches CI within a day — the
+# cadence renovate's hourly directive bumps used to give (bar#641's
+# review caught the regression) — without a second writer on go.mod.
 #
 # Renovate structurally cannot do this: devbox.json and devbox.lock are
 # in its ignorePaths, because nix packages are resolved by devbox, not
@@ -55,6 +60,22 @@ on:
         required: false
         type: number
         default: 30
+      mode:
+        description: >-
+          auto | full | align. `auto` (the default, for a DAILY cron)
+          runs the full `devbox update` only on full-update-day and
+          aligns the go directive every day; the other six days touch
+          nothing but go.mod, so a PR appears only when Go shipped a
+          patch. `full` and `align` force a mode — a human dispatching
+          after a Go release wants `align` today, not next Monday.
+        required: false
+        type: string
+        default: auto
+      full-update-day:
+        description: ISO weekday (1 = Monday) on which `auto` runs the full devbox update.
+        required: false
+        type: string
+        default: "1"
     secrets:
       # Declared, not merely inherited, so that callers in ANOTHER
       # organization can pass it explicitly — `secrets: inherit` does not
@@ -91,7 +112,22 @@ jobs:
           proto: "false"
           github-token: ${{ steps.token.outputs.token }}
 
-      - run: devbox update
+      - name: Decide the mode
+        id: mode
+        env:
+          MODE: ${{ inputs.mode }}
+          FULL_DAY: ${{ inputs.full-update-day }}
+        run: |
+          case "$MODE" in
+            full)  full=true ;;
+            align) full=false ;;
+            *)     [ "$(date -u +%u)" = "$FULL_DAY" ] && full=true || full=false ;;
+          esac
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE (weekday $(date -u +%u), full-update-day $FULL_DAY) -> full=$full"
+
+      - if: steps.mode.outputs.full == 'true'
+        run: devbox update
 
       # Prototyped on forks first (excavador/ci-workflows + gemaal,
       # 2026-08-23). Three lessons are encoded here: jq is the RUNNER's,
@@ -170,7 +206,7 @@ jobs:
 
           gh pr create \
             --title "chore(deps): update devbox packages and align the go directive" \
-            --body "Automated weekly \`devbox update\`, plus the go.mod directive aligned to the toolchain triple (language minor capped by golangci-lint's build Go, patch = newest of that line, never downward). Nix packages are outside Renovate's reach — devbox.json and devbox.lock are in its ignorePaths — and the go directive is owned here too, so the three can never disagree." \
+            --body "Automated \`devbox update\` (full on the configured weekday, go-directive alignment daily), with the go.mod directive aligned to the toolchain triple (language minor capped by golangci-lint's build Go, patch = newest of that line, never downward). Nix packages are outside Renovate's reach — devbox.json and devbox.lock are in its ignorePaths — and the go directive is owned here too, so the three can never disagree." \
             --base "$BASE" \
             --label "$LABEL"
 
