@@ -55,6 +55,15 @@ on:
         required: false
         type: number
         default: 30
+    secrets:
+      # Declared, not merely inherited, so that callers in ANOTHER
+      # organization can pass it explicitly — `secrets: inherit` does not
+      # carry secrets across an org boundary (renovate.yaml learned this
+      # 2026-08-19; devbox-update learned it 2026-08-23, the day the
+      # first trust-form repositories called it). Same-org callers on
+      # `secrets: inherit` keep working unchanged.
+      RENOVATE_APP_PRIVATE_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -97,7 +106,10 @@ jobs:
           set -euo pipefail
           [ -f go.mod ] || { echo "no go.mod — nothing to align"; exit 0; }
 
-          current=$(devbox run -- go mod edit -json | jq -r '.Go')
+          # From the file, not `devbox run -- go mod edit -json`: a repo's
+          # devbox init_hook may print to stdout (gitops's lefthook sync
+          # does), and that broke the JSON on the first estate run.
+          current=$(awk '/^go /{print $2; exit}' go.mod)
           if devbox run -- golangci-lint version >/tmp/glci 2>/dev/null; then
             built=$(grep -o 'built with go[0-9.]*' /tmp/glci | grep -o '[0-9][0-9.]*$')
           else
