@@ -29,6 +29,11 @@ Preparing a repository so employees and CI resolve the same tools —
 PATH order, tool ownership, and the `init_hook` substitution trap — is
 **[docs/devbox.md](docs/devbox.md)**.
 
+How a Go repository's toolchain triple (devbox `go`, `golangci-lint`'s
+build Go, the `go.mod` directive) stays aligned — one owner, two
+cadences, and every pitfall the rollout hit — is
+**[docs/devbox-update.md](docs/devbox-update.md)**.
+
 ## check.yaml
 
 Runs a repository's own Justfile recipes as **parallel jobs**, one per
