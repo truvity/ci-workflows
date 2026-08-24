@@ -133,25 +133,47 @@ jobs:
           # the gate would then pick an older COMPLETED run and release
           # on stale green.
           #
-          # Its own run is excluded BY RUN ID, not by name. bar's copy
-          # matched `.name != "release"` and that broke the moment the
-          # job moved into a reusable workflow: the check run is then
-          # named "<caller-job> / <called-job>", so the filter stopped
-          # matching, the gate saw itself as pending, and every release
-          # refused itself. The run id cannot drift with a job name.
+          # Two exclusions, both load-bearing:
+          #
+          # 1. Own run, BY RUN ID not by name. bar's copy matched
+          #    `.name != "release"` and that broke the moment the job
+          #    moved into a reusable workflow: the check run is then named
+          #    "<caller-job> / <called-job>", so the filter stopped
+          #    matching, the gate saw itself as pending, and every release
+          #    refused itself. The run id cannot drift with a job name.
+          #
+          # 2. SIBLING release runs, by name. When two projects tag the
+          #    SAME commit (a shared-monorepo release, e.g. eudi/v* and
+          #    url-shortener/v* on one master SHA), each other's release
+          #    job posts a check on that commit under a DIFFERENT run id —
+          #    so the run-id filter alone leaves it in, still `pending`
+          #    while the sibling builds, and the two gates deadlock each
+          #    other. A release job's own success is never a prerequisite
+          #    for a release, so every release-shaped check ("release" for
+          #    an inline job, "release / release" for a reusable one) is
+          #    dropped regardless of run id. Non-release CI is "check",
+          #    "cluster-access", "moon / ci", "suite …" — none collide.
           cat > /tmp/release-gate.jq <<'JQ'
-          [.[].check_runs[] | select(((.details_url // "") | contains("/runs/" + $runid + "/")) | not)]
+          [.[].check_runs[]
+            | select(((.details_url // "") | contains("/runs/" + $runid + "/")) | not)
+            | select((.name == "release" or (.name | startswith("release /"))) | not)]
           | group_by(.name)
           | map(max_by(.id))
           | .[]
           | "\(.name)\t\(.conclusion // "pending")"
           JQ
 
-          # The self-test names its own run "release / release" on
-          # purpose: that is the shape that broke the name-based filter.
+          # The sample exercises BOTH exclusions on one commit:
+          #   id 102 "release / release" — THIS run (runid 999), the
+          #     reusable-workflow shape that broke the name-based filter,
+          #     excluded by run id.
+          #   id 103 "release" — a SIBLING project's release (runid 888),
+          #     pending, the shared-commit cross-block; excluded by name.
+          # Both must vanish, leaving only the real CI checks.
           sample='[{"check_runs":[{"id":100,"name":"check","details_url":"https://x/actions/runs/111/job/1","conclusion":"success"},
                                   {"id":101,"name":"suite","details_url":"https://x/actions/runs/111/job/2","conclusion":"cancelled"},
-                                  {"id":102,"name":"release / release","details_url":"https://x/actions/runs/999/job/3","conclusion":null}]},
+                                  {"id":102,"name":"release / release","details_url":"https://x/actions/runs/999/job/3","conclusion":null},
+                                  {"id":103,"name":"release","details_url":"https://x/actions/runs/888/job/9","conclusion":null}]},
                    {"check_runs":[{"id":200,"name":"check","details_url":"https://x/actions/runs/222/job/4","conclusion":null},
                                   {"id":201,"name":"suite","details_url":"https://x/actions/runs/222/job/5","conclusion":"success"}]}]'
           got=$(echo "$sample" | jq -r --arg runid "999" -f /tmp/release-gate.jq | sort | tr '\t' '=' | paste -sd' ' -)
