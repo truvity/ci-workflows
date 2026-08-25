@@ -75,3 +75,8 @@ Push access (branch → PR) is granted per team in gitops
 `cfg/github.yaml`; the merge gate is the `check` context plus one
 approval from someone other than the author. The repository is public,
 so a fork PR works with no grant at all.
+
+Running the shared self-hosted Renovate — the daemonless/npx execution
+model, the entitlement silent-skip trap, and integrating repos whose
+pin bumps regenerate derived files (postUpgradeTasks + allowed-commands
++ platformCommit) — is **[docs/renovate.md](docs/renovate.md)**.
