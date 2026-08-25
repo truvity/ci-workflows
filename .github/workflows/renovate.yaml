@@ -95,7 +95,9 @@ jobs:
       # runner's toolchain (devbox).
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 22
+          # renovate 44 uses RegExp.escape — a Node 24+ API; 22 dies with
+          # "RegExp.escape is not a function" before scanning anything.
+          node-version: 24
 
       - name: Run renovate
         env:
