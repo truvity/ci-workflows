@@ -36,6 +36,18 @@ on:
         required: false
         type: number
         default: 30
+      allowed-commands:
+        description: >-
+          JSON array of shell commands renovate's postUpgradeTasks may
+          run (RENOVATE_ALLOWED_COMMANDS). Empty by default: a repo that
+          wants regeneration-in-branch (gitops: render + golden after a
+          pin bump, so the PR is born green) allowlists its exact
+          commands here — the runner image's devbox makes the toolchain
+          available.
+        required: false
+        type: string
+        default: "[]"
+
     secrets:
       # Declared, not merely inherited, so that callers in ANOTHER
       # organization can pass it explicitly.
@@ -77,4 +89,5 @@ jobs:
         env:
           LOG_LEVEL: ${{ inputs.log-level }}
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ALLOWED_COMMANDS: ${{ inputs.allowed-commands }}
           GITHUB_COM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
