@@ -98,25 +98,54 @@ jobs:
 
       # The git tag is the sole version authority: a chart's own version
       # field is a placeholder that never moves, and is stamped here.
+      #
+      # helmctl (from truvity/ocictl) instead of `helm package`+`helm push`:
+      # it repacks the tgz deterministically on push (epoch timestamps,
+      # sorted entries, zeroed owners) and hand-builds the OCI manifest
+      # without a `created` annotation — identical chart content therefore
+      # always lands as the identical registry digest, which is what makes
+      # immutable chart tags trustworthy across re-releases. It shells out
+      # to `helm package` internally, so it runs under devbox where helm is
+      # on PATH, and authenticates to ghcr with GITHUB_TOKEN directly — no
+      # registry login step.
       - name: Package and push charts
         if: inputs.charts != '[]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACTOR: ${{ github.actor }}
           CHARTS: ${{ inputs.charts }}
           REGISTRY: ${{ inputs.chart-registry }}
+          # renovate: datasource=github-releases depName=truvity/ocictl
+          HELMCTL_VERSION: "0.5.1"
         run: |
           set -euo pipefail
 
           version="${GITHUB_REF_NAME#v}"
-          echo "$GITHUB_TOKEN" | devbox run -- helm registry login ghcr.io -u "$ACTOR" --password-stdin
+
+          arch="$(uname -m)"
+          case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+          mkdir -p "$RUNNER_TEMP/helmctl"
+          gh release download "v${HELMCTL_VERSION}" --repo truvity/ocictl \
+            --pattern "helmctl_${HELMCTL_VERSION}_linux_${arch}.tar.gz" \
+            --output - | tar -xz -C "$RUNNER_TEMP/helmctl" helmctl
+
+          # chart-registry arrives as one oci:// URL; helmctl push takes
+          # the registry host and the full chart path separately.
+          ref="${REGISTRY#oci://}"
+          registry="${ref%%/*}"
+          repo_prefix="${ref#*/}"
 
           mapfile -t charts < <(python3 -c 'import json,os; print("\n".join(json.loads(os.environ["CHARTS"])))')
 
           for chart in "${charts[@]}"; do
             echo "::group::${chart} ${version}"
-            devbox run -- helm package "charts/${chart}" \
-              --version "$version" --app-version "$version" --destination dist/
-            devbox run -- helm push "dist/${chart}-${version}.tgz" "$REGISTRY"
+            devbox run -- "$RUNNER_TEMP/helmctl/helmctl" package \
+              --chart "charts/${chart}" \
+              --version "$version" --app-version "$version" \
+              --output dist/
+            "$RUNNER_TEMP/helmctl/helmctl" push \
+              --tgz "dist/${chart}-${version}.tgz" \
+              --registry "$registry" \
+              --repository "${repo_prefix}/${chart}" \
+              --name "$chart" --version "$version"
             echo "::endgroup::"
           done
