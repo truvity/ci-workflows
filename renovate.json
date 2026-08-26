@@ -38,6 +38,17 @@
       "automerge": false
     }
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Annotated version pins inside workflow files (e.g. HELMCTL_VERSION)",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s+[A-Z_]+: \"(?<currentValue>[^\"]+)\""
+      ],
+      "extractVersionTemplate": "^v?(?<version>.+)$"
+    }
+  ],
   "vulnerabilityAlerts": {
     "labels": [
       "security"
