@@ -21,7 +21,7 @@
 #       with:
 #         app-id: ${{ vars.CI_AUTOMATION_APP_ID }}
 #       secrets:
-#         ci-automation-private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+#         CI_AUTOMATION_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
 #
 # Two estate-side prerequisites per adopting repo, or the tag push is
 # rejected / the secrets arrive empty:
@@ -47,7 +47,7 @@ on:
         type: string
         default: v
     secrets:
-      ci-automation-private-key:
+      CI_AUTOMATION_PRIVATE_KEY:
         required: true
 
 permissions:
@@ -62,7 +62,7 @@ jobs:
         id: app-token
         with:
           app-id: ${{ inputs.app-id }}
-          private-key: ${{ secrets.ci-automation-private-key }}
+          private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
