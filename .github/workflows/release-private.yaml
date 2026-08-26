@@ -79,6 +79,17 @@ on:
         required: false
         type: string
         default: ubuntu-latest
+      reclaim-disk:
+        description: >-
+          Reclaim ~30GB of preinstalled toolchains (dotnet, Android,
+          GHC, CodeQL) before building. For GitHub-hosted runners whose
+          ~14GB free no longer fits a multi-arch goreleaser publish —
+          both bar releases died on `no space left on device` on
+          2026-08-26. Leave false on ARC runners: their images carry
+          none of those directories.
+        required: false
+        type: boolean
+        default: false
       timeout-minutes:
         required: false
         type: number
@@ -114,6 +125,16 @@ jobs:
           # goreleaser derives the changelog from history; a shallow
           # clone gives it nothing to derive from.
           fetch-depth: 0
+
+      - name: Reclaim runner disk
+        if: inputs.reclaim-disk
+        run: |
+          set -euo pipefail
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune -af >/dev/null
+          df -h / | tail -1
 
       # The filter and its regression test live in the SAME step on
       # purpose: a standalone copy of either drifts from the other, and
