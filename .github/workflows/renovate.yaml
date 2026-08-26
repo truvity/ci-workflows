@@ -99,6 +99,19 @@ jobs:
           # "RegExp.escape is not a function" before scanning anything.
           node-version: 24
 
+      # Renovate's gomod manager shells out to bare `go` for artifact
+      # updates (go.sum regeneration) — postUpgradeTasks go through the
+      # caller's devbox, but the manager does not, and the ARC runner
+      # image carries no toolchains ("spawn go ENOENT" killed gitops'
+      # renovate/all-minor-patch branch, 2026-08-26). `stable` suffices
+      # for every repo: with GOTOOLCHAIN=auto (the default), go
+      # self-fetches whatever newer toolchain a go.mod directive asks
+      # for. cache off — there is no checkout to key a cache on.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
       - name: Run renovate
         env:
           RENOVATE_TOKEN: ${{ steps.token.outputs.token }}
