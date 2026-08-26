@@ -1,0 +1,92 @@
+# The last mile of the automatic chain, shared (INF-590): when
+# renovate's automerged bumps have moved master past the latest
+# release, cut the next patch tag — which the repo's Release workflow
+# turns into artifacts, and gitops' renovate turns into a pin PR.
+#
+# The CALLER carries the policy:
+#
+#   on:
+#     schedule:
+#       - cron: "23 5 * * 1"   # STAGGER per repo — six repos tagging in
+#     workflow_dispatch:        # the same minute means six gitops pin
+#   permissions:                # PRs racing each other
+#     contents: read
+#   jobs:
+#     tag:
+#       # DOUBLY GUARDED, off by default: the App credentials must be
+#       # configured AND vars.AUTO_RELEASE must be "true" — flipping it
+#       # is the deliberate policy act.
+#       if: vars.AUTO_RELEASE == 'true' && vars.CI_AUTOMATION_APP_ID != ''
+#       uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@<sha> # vX.Y.Z
+#       with:
+#         app-id: ${{ vars.CI_AUTOMATION_APP_ID }}
+#       secrets:
+#         ci-automation-private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+#
+# Two estate-side prerequisites per adopting repo, or the tag push is
+# rejected / the secrets arrive empty:
+#   - the repo's v* tag ruleset carries the App as a bypass actor
+#     (gitops cfg/github.yaml `bypass_apps`, github-structure >= v0.2.0)
+#   - CI_AUTOMATION_APP_ID (org var) and CI_AUTOMATION_PRIVATE_KEY
+#     (org secret) are entitlement-scoped to the repo (INF-580)
+name: auto-release
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        description: GitHub App id that cuts the tag (from the caller's vars)
+        required: true
+        type: string
+      tag-prefix:
+        description: >-
+          Release tag prefix; the newest tag matching <prefix>* is
+          patch-incremented. The default suits the estate's bare-semver
+          `v` scheme.
+        required: false
+        type: string
+        default: v
+    secrets:
+      ci-automation-private-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.ci-automation-private-key }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The tag list and the ancestry comparison both need history.
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Cut the next patch tag if master moved
+        env:
+          PREFIX: ${{ inputs.tag-prefix }}
+        run: |
+          set -euo pipefail
+          LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "no ${PREFIX}* releases yet — a human cuts the first one" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$(git rev-parse "$LATEST^{commit}")" = "$(git rev-parse HEAD)" ]; then
+            echo "master == $LATEST — nothing to release" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
+          git config user.name "truvity-ci-automation[bot]"
+          git config user.email "truvity-ci-automation[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
+          git push origin "$NEXT"
+          echo "released $NEXT" >> "$GITHUB_STEP_SUMMARY"
