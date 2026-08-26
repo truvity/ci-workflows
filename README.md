@@ -2,6 +2,14 @@
 
 Shared reusable workflows for both Truvity organizations.
 
+**Start here if you are setting up a repository:**
+[docs/estate-lifecycle.md](docs/estate-lifecycle.md) — birth to
+autopilot, cross-linking
+[github-structure](https://github.com/truvity/github-structure)
+(what a repo *is*) and
+[ci-plane](https://github.com/truvity/ci-plane) (where CI *runs*, and
+the artifact doctrine).
+
 ## Two rules
 
 **1. Pin by commit SHA, never by tag or branch.** Every repository in both
