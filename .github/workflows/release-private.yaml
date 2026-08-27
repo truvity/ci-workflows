@@ -94,6 +94,16 @@ on:
         required: false
         type: number
         default: 30
+      install-goreleaser-pro:
+        description: >-
+          Install the goreleaser-pro binary at job time (pinned version,
+          verified). The Pro EULA forbids redistribution, so the binary
+          must NOT be baked into the public runner image (INF-572) —
+          fetching it here, on the licensee's own runner, is plain
+          internal use. Callers that pass goreleaser-key set this.
+        required: false
+        type: boolean
+        default: false
     secrets:
       goreleaser-key:
         description: goreleaser-pro licence, for callers that use it.
@@ -247,6 +257,27 @@ jobs:
         with:
           registries: ${{ inputs.ecr-registries }}
           mask-password: "true"
+
+      # Job-time, never image-baked: the Pro EULA's no-distribution
+      # clause covers the binary even though goreleaser hosts it on a
+      # public releases page — public-from-the-vendor grants us no
+      # redistribution right (INF-572).
+      - name: Install goreleaser-pro
+        if: inputs.install-goreleaser-pro
+        env:
+          # renovate: datasource=github-releases depName=goreleaser/goreleaser-pro
+          GORELEASER_VERSION: v2.17.1
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          case "$arch" in x86_64) arch=x86_64 ;; aarch64) arch=arm64 ;; esac
+          mkdir -p "$RUNNER_TEMP/goreleaser-pro"
+          curl -fsSL "https://github.com/goreleaser/goreleaser-pro/releases/download/${GORELEASER_VERSION}/goreleaser-pro_Linux_${arch}.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/goreleaser-pro" goreleaser
+          # PATH, not /usr/local/bin: ARC runners have no sudo, and the
+          # devbox-run Release step inherits the job PATH.
+          echo "$RUNNER_TEMP/goreleaser-pro" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/goreleaser-pro/goreleaser" --version
 
       - name: Release
         run: devbox run -- ${{ inputs.command }}
