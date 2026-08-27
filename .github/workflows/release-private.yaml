@@ -280,8 +280,12 @@ jobs:
           "$RUNNER_TEMP/goreleaser-pro/goreleaser" --version
 
       - name: Release
-        run: devbox run -- ${{ inputs.command }}
+        # The command reaches the shell through env and word-splits
+        # there — an expression spliced into the script text would be
+        # parsed as CODE, quotes and $() included (CodeQL alert 25).
+        run: devbox run -- $RELEASE_COMMAND
         env:
+          RELEASE_COMMAND: ${{ inputs.command }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.goreleaser-key }}
           # No profiles on a runner: the default credential chain must
