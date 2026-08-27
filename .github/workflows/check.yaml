@@ -261,6 +261,13 @@ jobs:
           if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
             echo "npm_config_registry=http://npm-cache.ci-cache.svc" >> "$GITHUB_ENV"
             echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc" >> "$GITHUB_ENV"
+            # Berry refuses plain-http registries outright (YN0081 "Unsafe
+            # http requests must be explicitly whitelisted") — without this
+            # the override above turns every berry install into a hard fail
+            # whenever the cache answers the ping (bar, 2026-08-27). An
+            # in-cluster svc hostname over http is the design here, not an
+            # accident, so the whitelist names exactly that host.
+            echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc" >> "$GITHUB_ENV"
             echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
