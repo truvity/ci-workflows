@@ -89,6 +89,25 @@ on:
         required: false
         type: string
         default: ""
+      medium-recipes:
+        description: >-
+          JSON array of recipes that run on `medium-runner` — the
+          measured middle (2026-08-27 fleet survey): jobs peaking
+          10-13.4Gi that held a 24Gi runner at ~50%. Same opt-DOWN
+          rule as small-recipes: measured peaks only, promotion
+          evidence is the peak line each job prints. A recipe listed
+          in BOTH small and medium goes small (small wins ties).
+        required: false
+        type: string
+        default: '[]'
+      medium-runner:
+        description: >-
+          Scale-set label for `medium-recipes`
+          (vars.CI_RUNNER_LABEL_MEDIUM). Defaults to `runner`, so
+          listing recipes without setting this changes nothing.
+        required: false
+        type: string
+        default: ""
       fetch-depth:
         description: >-
           0 for repositories whose task runner compares against the base
@@ -213,7 +232,10 @@ jobs:
     runs-on: >-
       ${{ (contains(fromJSON(inputs.small-recipes), matrix.recipe)
            && inputs.small-runner != '')
-          && inputs.small-runner || inputs.runner }}
+          && inputs.small-runner
+          || ((contains(fromJSON(inputs.medium-recipes), matrix.recipe)
+               && inputs.medium-runner != '')
+              && inputs.medium-runner || inputs.runner) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     # Plain job env, deliberately NOT written through $GITHUB_ENV. Any
     # `echo "K=$V" >> $GITHUB_ENV` lets a value containing a newline
