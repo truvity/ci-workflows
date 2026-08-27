@@ -9,8 +9,17 @@
 #     schedule:
 #       - cron: "23 5 * * 1"   # STAGGER per repo — six repos tagging in
 #     workflow_dispatch:        # the same minute means six gitops pin
-#   permissions:                # PRs racing each other
+#     push:                     # PRs racing each other
+#       branches: [master]      # security lane: see below
+#   permissions:
 #     contents: read
+#
+# The push trigger is the SECURITY LANE (2026-08-27): renovate labels
+# vulnerability-alert PRs `security` and automerges them; a push whose
+# merged PR carries that label releases immediately instead of waiting
+# for Monday's batch. Every other push exits quietly — ordinary bumps
+# still batch weekly. Callers without the push trigger simply keep the
+# weekly-only behavior.
 #   jobs:
 #     tag:
 #       # DOUBLY GUARDED, off by default: the App credentials must be
@@ -57,12 +66,43 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Queue, never cancel: two near-simultaneous security merges must
+    # tag two DIFFERENT patch versions, so the second run has to see
+    # the first one's tag rather than race it.
+    concurrency:
+      group: auto-release-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
           app-id: ${{ inputs.app-id }}
           private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+
+      # The security lane's gate: a push releases only when the commit's
+      # merged PR is `security`-labeled (renovate stamps its
+      # vulnerability-alert PRs with it). Rebase merges map every pushed
+      # commit to its PR, so the association lookup holds across the
+      # estate's merge method. Ordinary pushes exit quietly here — the
+      # weekly schedule remains their lane.
+      - name: Release only security-labeled pushes
+        id: gate
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          labels=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '[.[].labels[].name] | join(",")')
+          case ",$labels," in
+          *,security,*)
+            echo "security-labeled merge — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          *)
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "push without a security-labeled PR — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          esac
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,6 +111,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Cut the next patch tag if master moved
+        if: steps.gate.outputs.skip != 'true'
         env:
           PREFIX: ${{ inputs.tag-prefix }}
         run: |
