@@ -283,7 +283,12 @@ jobs:
         # The command reaches the shell through env and word-splits
         # there — an expression spliced into the script text would be
         # parsed as CODE, quotes and $() included (CodeQL alert 25).
-        run: devbox run -- $RELEASE_COMMAND
+        # SC2086: the split IS the contract — `command` is a word list
+        # (every caller passes e.g. `go tool gemaalctl pipeline
+        # release-stable --config …`), never one shell-quoted argument.
+        run: |
+          # shellcheck disable=SC2086
+          devbox run -- $RELEASE_COMMAND
         env:
           RELEASE_COMMAND: ${{ inputs.command }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
