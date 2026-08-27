@@ -40,6 +40,18 @@ on:
         required: false
         type: string
         default: just
+      node-cache:
+        description: >-
+          Probe the CI plane's npm read-through cache
+          (npm-cache.ci-cache.svc, INF-581) and point npm and yarn at
+          it for the job when it answers; when it does not, leave the
+          defaults so a down cache degrades CI to slow, never to
+          broken. Meaningful only on ARC runners — hosted runners
+          cannot resolve the in-cluster name and take the fallback
+          path by construction.
+        required: false
+        type: boolean
+        default: false
       runner:
         description: >-
           Runner label. Hosted repos leave the default; ARC callers pass
@@ -233,6 +245,26 @@ jobs:
           module-app-client-id: ${{ inputs.module-app-client-id }}
           module-app-private-key: ${{ secrets.module-app-private-key }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Registry override only when the cache answers a 2s ping —
+      # fallback-not-dependency (INF-583). npm_config_registry covers
+      # npm and yarn classic (classic still FETCHES lockfile-resolved
+      # URLs, so at worst it bypasses the cache); YARN_NPM_REGISTRY_SERVER
+      # covers berry, whose npm protocol derives fetch URLs from the
+      # configured registry at install time. The GITHUB_ENV writes are
+      # fixed literals — nothing user-controlled rides them, which is
+      # what the job-env doctrine above actually guards against.
+      - name: Point npm and yarn at the CI-plane cache
+        if: inputs.node-cache
+        run: |
+          set -euo pipefail
+          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
+            echo "npm_config_registry=http://npm-cache.ci-cache.svc" >> "$GITHUB_ENV"
+            echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc" >> "$GITHUB_ENV"
+            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+          else
+            echo "::warning::npm cache unreachable — direct npmjs for this job"
+          fi
 
       # Only the lint job. Build and test outputs ride GOCACHEPROG or the
       # plain Go cache, modules ride the proxy, nix rides the

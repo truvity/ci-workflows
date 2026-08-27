@@ -48,6 +48,12 @@ keeps the pin current — a drifting pin is a defect, doctrine B6):
 - `renovate.yaml` → the shared npx-based renovate
   (`docs/renovate.md` — incl. the entitlement silent-skip trap)
 
+Node repos on the ARC pool add `node-cache: true` to the `check.yaml`
+call: the job probes the CI plane's npm read-through cache
+(`npm-cache.ci-cache.svc`, INF-581/583) and points npm/yarn at it when
+it answers — a down cache degrades the job to *slow* (direct npmjs
+with a warning), never to *broken*.
+
 ## 3. Release — one tag, every artifact
 
 `release.yaml` → `release-public.yaml`: goreleaser builds binaries and
