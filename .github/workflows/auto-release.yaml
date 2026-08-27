@@ -90,9 +90,15 @@ jobs:
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Context reaches the script through env, never inline
+          # interpolation into the shell text (CodeQL actions/code
+          # injection — alerts 26/27; repository and sha are benign
+          # here, but the hygiene is uniform on purpose).
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          labels=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+          labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
             --jq '[.[].labels[].name] | join(",")')
           case ",$labels," in
           *,security,*)
