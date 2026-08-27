@@ -112,6 +112,17 @@ jobs:
           go-version: stable
           cache: false
 
+      # Same shape for the JS managers: renovate shells out to bare
+      # `yarn` for lockfile regeneration ("spawn yarn ENOENT" killed
+      # bar's renovate/all-minor-patch branch, 2026-08-27, the run after
+      # the daemonless fix finally let renovate reach that far).
+      # corepack ships with Node and puts the yarn/pnpm shims on PATH;
+      # each shim fetches the exact version the target repo's
+      # package.json `packageManager` field pins (bar: yarn@4.18.0), so
+      # no version is hardcoded here.
+      - name: Enable corepack (yarn/pnpm shims for lockfile regeneration)
+        run: corepack enable
+
       - name: Run renovate
         env:
           RENOVATE_TOKEN: ${{ steps.token.outputs.token }}
