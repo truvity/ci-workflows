@@ -256,7 +256,7 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@e56cc3c0680465203a5ffb5b5c3791ecf31f23bd
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@263804db6ac24c23229110b14c9f3a44643f1f52
         with:
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
