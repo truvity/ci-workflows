@@ -123,6 +123,17 @@ jobs:
       - name: Enable corepack (yarn/pnpm shims for lockfile regeneration)
         run: corepack enable
 
+      # bun is NOT a corepack shim — corepack ships yarn and pnpm only,
+      # so a repo with a bun.lock (trust-form/cra-ext-back) died on
+      # "spawn bun ENOENT" exactly the way the go and yarn managers did
+      # before their fixes. Third instance of one class: renovate's
+      # artifact updaters shell out to the target repo's package
+      # manager by bare name, and this workflow is the only place that
+      # can put it on PATH.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+
       - name: Run renovate
         env:
           RENOVATE_TOKEN: ${{ steps.token.outputs.token }}
