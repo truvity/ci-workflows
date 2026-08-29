@@ -106,7 +106,7 @@ jobs:
         with:
           token: ${{ steps.token.outputs.token }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@263804db6ac24c23229110b14c9f3a44643f1f52
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@7fd704edf91e696cdc9bd9b2eaad1d2ac4ab04c9
         with:
           # Nothing here runs a repo recipe, so proto is dead weight.
           proto: "false"
