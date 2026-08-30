@@ -20,11 +20,25 @@ patterns=(
 )
 
 fail=0
+
+# Scan TRACKED FILES ONLY. The point of this canary is to stop particulars
+# being committed, so git's index is exactly the right scope -- and a
+# recursive walk of the working tree is not. It descended into generated,
+# gitignored directories: .devbox/state.json carries a
+# `nix_print_dev_env_hash` whose hex contains a 12-digit run, which matched
+# the AWS-account-id pattern. That made the canary fail on a clean checkout
+# for a value that is neither committed nor secret.
+#
+# This matters more than a nuisance: a canary that cries wolf is one people
+# learn to skip, and this one is what stands between us and publishing
+# particulars from a public repo.
+mapfile -d '' tracked < <(git ls-files -z)
+
 for p in "${patterns[@]}"; do
   # Exclude this script: it necessarily contains the patterns it bans.
-  if hits=$(grep -rInE "$p" . \
-              --exclude-dir=.git \
-              --exclude="leak-canary.sh" 2>/dev/null); then
+  if hits=$(printf '%s\0' "${tracked[@]}" \
+              | grep -zZv '^hack/leak-canary\.sh$' \
+              | xargs -0 -r grep -InE "$p" 2>/dev/null); then
     echo "LEAK: pattern /$p/ matched — particulars belong in caller inputs or org variables:"
     echo "$hits" | head -5 | sed 's/^/    /'
     fail=1
