@@ -78,7 +78,7 @@ jobs:
           # clone gives it nothing to derive from.
           fetch-depth: 0
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@7fd704edf91e696cdc9bd9b2eaad1d2ac4ab04c9
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@968147418b5df03a0a2c0aa66ed13cba49718b76 # v2.16.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
