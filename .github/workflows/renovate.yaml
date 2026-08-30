@@ -123,6 +123,50 @@ jobs:
       - name: Enable corepack (yarn/pnpm shims for lockfile regeneration)
         run: corepack enable
 
+      # Renovate's gomod manager regenerates go.sum by shelling out to
+      # `go get -t ./...`. In a repo that imports PRIVATE truvity modules
+      # that command fails at the first one and aborts the whole tidy, so
+      # go.sum is left missing entries for the PUBLIC modules too. The PR
+      # then lands red as
+      #
+      #   missing go.sum entry for module providing package
+      #   github.com/go-git/go-git/v5
+      #
+      # which names a public package while the cause is a private one --
+      # the reason this went undiagnosed. Every Go security PR in every
+      # private repo has been red since at least 2026-08-27 (core, api,
+      # go-core), while the JS PRs beside them stayed green, because npm
+      # dependencies are public.
+      #
+      # Same mechanism setup-devbox already uses for the build: a token
+      # from the go-modules App plus a git rewrite. Both credentials are
+      # ORGANIZATION-level with visibility:private, so every private repo
+      # already has them and no caller has to pass anything. Public repos
+      # resolve the variable empty, skip the step, and want nothing from
+      # it -- they have no private module dependencies by definition.
+      - name: Mint a token for reading private Go modules
+        id: module-token
+        if: vars.GO_MODULES_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.GO_MODULES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GO_MODULES_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Let go reach private modules
+        if: steps.module-token.outputs.token != ''
+        env:
+          MODULE_TOKEN: ${{ steps.module-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          # GOPRIVATE only, never the token, through GITHUB_ENV: a value
+          # containing a newline there can define further variables.
+          printf 'GOPRIVATE=github.com/%s/*\n' "$OWNER" >> "$GITHUB_ENV"
+          git config --global \
+            "url.https://x-access-token:$MODULE_TOKEN@github.com/.insteadOf" \
+            "https://github.com/"
+
       - name: Run renovate
         env:
           RENOVATE_TOKEN: ${{ steps.token.outputs.token }}
