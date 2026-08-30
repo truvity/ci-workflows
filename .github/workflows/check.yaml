@@ -156,6 +156,27 @@ on:
         required: false
         type: string
         default: ''
+      codeartifact-domain:
+        description: >-
+          CodeArtifact domain to log into before any recipe runs, e.g.
+          "truvity". Empty skips the login entirely, which is right for
+          the many repositories whose npm dependencies are all public.
+        required: false
+        type: string
+        default: ''
+      codeartifact-domain-owner:
+        description: Account owning the CodeArtifact domain.
+        required: false
+        type: string
+        default: ''
+      codeartifact-region:
+        description: >-
+          Region the domain lives in — not necessarily the build's own
+          region. truvity domain is eu-west-1 while the cluster is
+          eu-central-1.
+        required: false
+        type: string
+        default: ''
       module-app-client-id:
         description: >-
           Client id of a GitHub App with contents:read on the private
@@ -264,6 +285,9 @@ jobs:
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy }}
           go-private: ${{ inputs.go-private }}
+          codeartifact-domain: ${{ inputs.codeartifact-domain }}
+          codeartifact-domain-owner: ${{ inputs.codeartifact-domain-owner }}
+          codeartifact-region: ${{ inputs.codeartifact-region }}
           module-app-client-id: ${{ inputs.module-app-client-id }}
           module-app-private-key: ${{ secrets.module-app-private-key }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
