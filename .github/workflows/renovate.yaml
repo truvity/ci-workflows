@@ -62,6 +62,16 @@ on:
         description: The Renovate App's private key.
         required: false
 
+      # Declared, not just referenced: a reusable workflow can only read
+      # secrets it declares, even under `secrets: inherit`, and actionlint
+      # catches the omission before the run does.
+      GO_MODULES_APP_PRIVATE_KEY:
+        description: >-
+          Private key for the go-modules App, used to let go.sum
+          regeneration fetch private modules. Optional: public repos have
+          no private module dependencies and skip the step entirely.
+        required: false
+
 permissions:
   contents: read
 
