@@ -39,6 +39,20 @@ on:
         required: false
         type: string
         default: oci://ghcr.io/truvity/charts
+      chart-app-version:
+        description: >-
+          What to write as each chart's appVersion. Default "release"
+          stamps the release version, which is right for a repo that
+          ships the application it builds — chart and app move together.
+          Use "chart" for charts packaging SOFTWARE WE DO NOT BUILD: it
+          leaves each Chart.yaml's own appVersion intact, so the chart
+          version can move for chart-only fixes while appVersion keeps
+          recording the upstream release. Getting this wrong is silent
+          at publish time and only breaks at `helm install`, because
+          charts commonly default the image tag to .Chart.AppVersion.
+        required: false
+        type: string
+        default: release
       ko-docker-repo:
         required: false
         type: string
@@ -114,6 +128,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHARTS: ${{ inputs.charts }}
           REGISTRY: ${{ inputs.chart-registry }}
+          APP_VERSION_MODE: ${{ inputs.chart-app-version }}
           # renovate: datasource=github-releases depName=truvity/ocictl
           HELMCTL_VERSION: "0.5.1"
         run: |
@@ -138,9 +153,19 @@ jobs:
 
           for chart in "${charts[@]}"; do
             echo "::group::${chart} ${version}"
+            # helmctl's --app-version is optional: omitting it leaves the
+            # chart's declared appVersion untouched. Reject anything we do
+            # not recognise rather than falling back to "release" — a typo
+            # would otherwise reproduce exactly the silent mis-stamp this
+            # option exists to prevent.
+            case "$APP_VERSION_MODE" in
+              release) app_version_args=(--app-version "$version") ;;
+              chart)   app_version_args=() ;;
+              *) echo "::error::chart-app-version must be 'release' or 'chart', got '${APP_VERSION_MODE}'"; exit 1 ;;
+            esac
             devbox run -- "$RUNNER_TEMP/helmctl/helmctl" package \
               --chart "charts/${chart}" \
-              --version "$version" --app-version "$version" \
+              --version "$version" "${app_version_args[@]}" \
               --output dist/
             "$RUNNER_TEMP/helmctl/helmctl" push \
               --tgz "dist/${chart}-${version}.tgz" \
