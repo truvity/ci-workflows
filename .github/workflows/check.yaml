@@ -277,7 +277,7 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@968147418b5df03a0a2c0aa66ed13cba49718b76 # v2.16.2
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@49248a6cebd3720ac7f2eaf2e98ec97c0967b3b6 # v2.17.0
         with:
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
@@ -353,7 +353,7 @@ jobs:
         env:
           ENV_JSON: ${{ inputs.env-json }}
 
-      - uses: truvity/ci-workflows/.github/actions/recipe@968147418b5df03a0a2c0aa66ed13cba49718b76 # v2.16.2
+      - uses: truvity/ci-workflows/.github/actions/recipe@49248a6cebd3720ac7f2eaf2e98ec97c0967b3b6 # v2.17.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
