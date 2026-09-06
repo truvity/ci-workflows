@@ -268,7 +268,7 @@ jobs:
           registries: ${{ inputs.ecr-registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@3e2babe2a4237a92b950092df3c3acec89cca0d3 # platform-check fix (re-pin to master after merge)
+      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@e252e293d1ed6a9379f7beb87445578555b3335d # master 2026-09-07 (ci-workflows#80)
         if: env.LANE_IMAGES == 'true'
         with:
           remote-builders: ${{ inputs.remote-builders }}
