@@ -308,7 +308,8 @@ jobs:
           run docker buildx use ci
           run docker buildx inspect --bootstrap ci | tee "$RUNNER_TEMP/buildx-ci.txt"
           for entry in $NODES; do
-            for p in ${entry%%=*//,/ }; do
+            platforms="${entry%%=*}"
+          for p in ${platforms//,/ }; do
               grep -q "$p" "$RUNNER_TEMP/buildx-ci.txt" || { echo "::error::builder ci does not offer $p"; exit 1; }
             done
           done

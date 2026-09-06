@@ -248,7 +248,17 @@ jobs:
           EXPECTED: ${{ inputs.expected-identity }}
         run: |
           set -euo pipefail
-          WHO=$(devbox run -- kubectl auth whoami -o json | devbox run -- jq -r .status.userInfo.username)
+          # The exec plugin exchanges the job's OIDC proof through the
+          # broker on this first call; a remote exchange gets three tries,
+          # and its stderr is kept so a real refusal is readable (the
+          # first shared run lost one lane to a bare "exit status 1").
+          for attempt in 1 2 3; do
+            if out=$(devbox run -- kubectl auth whoami -o json 2>&1); then break; fi
+            echo "attempt $attempt: $out"
+            [ "$attempt" = 3 ] && { echo "::error::kubectl auth whoami failed three times"; exit 1; }
+            sleep 10
+          done
+          WHO=$(printf '%s' "$out" | devbox run -- jq -r .status.userInfo.username)
           echo "cluster identity: $WHO"
           [ "$WHO" = "$EXPECTED" ] || { echo "::error::expected cluster identity $EXPECTED, got $WHO"; exit 1; }
 
@@ -258,7 +268,7 @@ jobs:
           registries: ${{ inputs.ecr-registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@8ebb0a32ecd76501ce64116e657c5b1d7bc0c087 # master 2026-09-06
+      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@3e2babe2a4237a92b950092df3c3acec89cca0d3 # platform-check fix (re-pin to master after merge)
         if: env.LANE_IMAGES == 'true'
         with:
           remote-builders: ${{ inputs.remote-builders }}
