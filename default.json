@@ -1,0 +1,74 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Truvity's shared renovate baseline. Consumed as `github>truvity/ci-workflows`.",
+    "Lives here, and not in github-structure, for two reasons: this repo is what a",
+    "repository DOES (github-structure is what one IS, and is a generic product that",
+    "must stay free of estate-specific content), and it is PUBLIC — a preset in the",
+    "private gitops repo would be unreadable by the public renovate app.",
+    "Repo-specific rules stay in each repo's renovate.json and layer on top; only",
+    "rules that are true estate-wide belong here."
+  ],
+  "extends": [
+    "config:recommended",
+    "security:gomodIndirectSecurityUpdates",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "rebaseWhen": "behind-base-branch",
+  "packageRules": [
+    {
+      "description": "The automergeable batch: everything non-major, in one PR.",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Majors always get a human.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": [
+        "BELOW 1.0 A MINOR IS A BREAKING CHANGE. Semver only promises",
+        "compatibility from 1.0 onward, but renovate classifies a 0.x minor as",
+        "non-major, which sweeps it into the automerged batch above.",
+        "Incident (2026-09-05, truvity/bar#628): @truvity/gateway-auth v0.5.2 ->",
+        "v0.7.1 rode in that way, carrying jose v5 -> v6 with it. The batch was",
+        "red for days and cost a full night to bisect. bar already had this rule",
+        "for @openid4vc/**; it is a property of 0.x versioning, not of one",
+        "package, so it belongs to every repo."
+      ],
+      "matchCurrentVersion": "/^0\\./",
+      "matchUpdateTypes": ["minor"],
+      "groupName": "0.x minors (breaking below 1.0)",
+      "groupSlug": "zerox-minor",
+      "automerge": false
+    },
+    {
+      "description": [
+        "Monorepos move as a unit. Five separate open PRs for @veramo/core,",
+        "core-types, did-comm, did-manager and did-resolver v7 (truvity/core,",
+        "2026-09) are individually unmergeable by construction — the packages",
+        "pin each other. One PR per monorepo is the only reviewable shape."
+      ],
+      "matchPackageNames": ["@veramo/**"],
+      "groupName": "veramo (monorepo — moves as one)"
+    },
+    {
+      "matchPackageNames": ["@opentelemetry/**", "go.opentelemetry.io/**"],
+      "groupName": "opentelemetry (monorepo — moves as one)"
+    },
+    {
+      "matchPackageNames": ["@aws-sdk/**", "github.com/aws/aws-sdk-go-v2**"],
+      "groupName": "aws-sdk (monorepo — moves as one)"
+    },
+    {
+      "matchPackageNames": ["@nestjs/**"],
+      "groupName": "nestjs (monorepo — moves as one)"
+    }
+  ]
+}
