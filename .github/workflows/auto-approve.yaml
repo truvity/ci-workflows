@@ -1,0 +1,110 @@
+# Approve renovate's non-major PRs so their automerge can actually fire.
+#
+# THE PROBLEM THIS SOLVES: renovate cannot approve its own pull requests,
+# so on any repo whose branch protection requires a review, an automerge
+# -enabled non-major PR sits green and unmergeable forever. On
+# 2026-09-06 five such PRs were stuck across the estate (api#1228,
+# api#1229, go-core#543, go-core#551, cloudflare#14) — every one green,
+# none mergeable.
+#
+# WHY AN APPROVAL AND NOT A RULESET BYPASS: a bypass is a standing hole
+# in branch protection that applies to every PR the app opens, forever,
+# and leaves no trace on the PR. An approval keeps the requirement
+# enforced, is scoped to exactly the PRs matched below, appears in the
+# PR's review history like any other, and is undone by deleting this
+# file. (The estate's D32 bypass for Kargo exists because a bot COMMIT
+# had to pass a status check — a different problem with no review-shaped
+# answer.)
+#
+# WHAT IT WILL NOT APPROVE: anything carrying the `major` label, which
+# the shared preset (default.json) stamps on major updates, and anything
+# not authored by a renovate app. Majors always get a human.
+#
+# Approving early is safe: GitHub's auto-merge still waits for every
+# required check, so a red PR stays unmerged with an approval on it.
+#
+# CALLER (in the adopting repo, .github/workflows/auto-approve.yaml):
+#
+#     name: auto-approve
+#     on:
+#       pull_request:
+#         types: [opened, reopened, synchronize, labeled]
+#     permissions:
+#       contents: read
+#     jobs:
+#       approve:
+#         if: vars.CI_AUTOMATION_APP_ID != ''
+#         uses: truvity/ci-workflows/.github/workflows/auto-approve.yaml@<sha> # vX.Y.Z
+#         with:
+#           app-id: ${{ vars.CI_AUTOMATION_APP_ID }}
+#         secrets:
+#           CI_AUTOMATION_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+#
+# Prerequisite, same as auto-release: CI_AUTOMATION_APP_ID (org var) and
+# CI_AUTOMATION_PRIVATE_KEY (org secret) entitlement-scoped to the repo,
+# and the App needs pull-requests: write.
+name: auto-approve
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        description: GitHub App id that posts the approval (from the caller's vars)
+        required: true
+        type: string
+    secrets:
+      CI_AUTOMATION_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Only renovate's own PRs. The estate runs two apps —
+    # truvity-renovate-public and truvity-renovate-private — so match the
+    # family rather than one login.
+    if: contains(github.event.pull_request.user.login, 'renovate')
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+
+      - name: Approve when non-major and not already approved
+        env:
+          # Context reaches the script through env, never inline
+          # interpolation into shell text (CodeQL actions/code-injection;
+          # the label list is attacker-influencable on a fork PR).
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          labels=$(gh api "repos/$REPO/pulls/$PR" --jq '[.labels[].name] | join(",")')
+          case ",$labels," in
+          *,major,*)
+            echo "major update — leaving it for a human" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+            ;;
+          esac
+
+          # Idempotent: re-running on `synchronize` must not stack
+          # approvals. An APPROVED review from this app already satisfies
+          # the requirement.
+          mine=$(gh api "repos/$REPO/pulls/$PR/reviews" \
+            --jq '[.[] | select(.state == "APPROVED") | .user.login] | join(",")')
+          case ",$mine," in
+          *,*"[bot]"*,*)
+            echo "already approved by a bot reviewer — nothing to do" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+            ;;
+          esac
+
+          gh pr review "$PR" --repo "$REPO" --approve \
+            --body "Non-major dependency update from renovate. Approved automatically so automerge can proceed; GitHub still holds the merge until every required check passes."
+          echo "approved — automerge will land it once checks are green" >> "$GITHUB_STEP_SUMMARY"
