@@ -1,0 +1,376 @@
+# Integration suites for a gemaal-shaped project — the shared shape of
+# dms's and bar's integration workflows, which had grown into two copies
+# of one pipeline (Oleg, 2026-09-07: "consolidate somehow").
+#
+# One job per LANE: build the artifacts the lane tests (a snapshot
+# through gemaal, or a chart alone), optionally install them into the
+# CI tenant and migrate, run the suite, capture pod logs on failure,
+# uninstall. Then one aggregate `integration` job, so a ruleset needs
+# a single required check whatever the matrix.
+#
+# What is shared, and where it came from:
+#   - devbox bootstrap, Go cache/proxy, private modules: setup-devbox;
+#   - cluster access: the committed CI faces of aws.ini/kubeconfig
+#     (zcbctl exchanges the job's OIDC proof; INF-563), with the
+#     identity proof bar's cluster-access job ran;
+#   - image builds: the CI plane's remote builders (setup-remote-builders)
+#     with the warm registry cache, and CodeArtifact for the Node
+#     bundles — dms's steps;
+#   - phases with their own verdicts, log dump, uninstall-always — dms;
+#   - the warm-cache report and the aggregate status — bar.
+#
+# NOTHING PARTICULAR LIVES HERE. This repository is public: registries,
+# builders, cache, namespaces, server URLs and identities arrive from the
+# caller, mostly from org variables.
+#
+# A lane's build/test commands are shell: a caller that needs an
+# environment tweak puts it in the command (bar drops CI/GITHUB_ACTIONS
+# for moon: `env CI= GITHUB_ACTIONS= devbox run -- moon run …`).
+name: integration
+
+on:
+  workflow_call:
+    inputs:
+      lanes:
+        description: >-
+          JSON array of lanes, each a job. Keys: `name` (job suffix and
+          release-name prefix), `build` (shell command; the lane's
+          artifacts), `test` (shell command; the suite), optional
+          `install` and `migrate` (shell commands, phases before the
+          suite; when `install` is set the suite runs with
+          GEMAAL_TEST_SKIP_DEPLOY/DESTROY), optional `uninstall` (shell
+          command, always runs), optional `images` (boolean, default
+          true: register the remote builders, log into ECR, mint the
+          CodeArtifact token — off for a lane that builds no image).
+        required: true
+        type: string
+      runner:
+        description: Scale-set label for the lane jobs (vars.CI_RUNNER_LABEL_LARGE).
+        required: true
+        type: string
+      small-runner:
+        description: Label for the aggregate job (vars.CI_RUNNER_LABEL_SMALL). Defaults to `runner`.
+        required: false
+        type: string
+        default: ""
+      timeout-minutes:
+        required: false
+        type: number
+        default: 60
+      gemaal-namespace:
+        description: The CI tenant namespace the suites deploy into.
+        required: true
+        type: string
+      gemaal-server:
+        description: In-cluster gemaal server URL.
+        required: true
+        type: string
+      aws-config-file:
+        description: Repo-relative CI face of aws.ini (no credential source on [default]).
+        required: false
+        type: string
+        default: .github/aws.ini
+      kubeconfig:
+        description: Repo-relative CI face of kubeconfig (zcbctl exec plugin).
+        required: false
+        type: string
+        default: .github/kubeconfig
+      expected-identity:
+        description: >-
+          Cluster identity `kubectl auth whoami` must report. Empty skips
+          the proof. A wrong identity fails before any build.
+        required: false
+        type: string
+        default: ""
+      ecr-registries:
+        description: ECR account ids to log into for the image lanes (the pool identity pushes snapshots).
+        required: false
+        type: string
+        default: ""
+      remote-builders:
+        description: >-
+          The CI plane's BuildKit nodes, `platforms=endpoint` entries
+          separated by whitespace (vars.CI_REMOTE_BUILDERS). Required by
+          every lane that builds images.
+        required: false
+        type: string
+        default: ""
+      buildx-cache:
+        description: Registry reference of the BuildKit warm cache (vars.CI_BUILDX_CACHE); empty means no cache flags.
+        required: false
+        type: string
+        default: ""
+      cache-report:
+        description: Append the warm cache's tags for this project to the job summary (needs buildx-cache and ECR read).
+        required: false
+        type: boolean
+        default: false
+      go-private:
+        required: false
+        type: string
+        default: ""
+      module-app-client-id:
+        required: false
+        type: string
+        default: ""
+      go-cache-bucket:
+        required: false
+        type: string
+        default: ""
+      go-cache-region:
+        required: false
+        type: string
+        default: ""
+      goproxy:
+        required: false
+        type: string
+        default: ""
+      codeartifact-domain:
+        description: Mint a CodeArtifact token (ambient identity) for the image lanes when set.
+        required: false
+        type: string
+        default: ""
+      codeartifact-domain-owner:
+        required: false
+        type: string
+        default: ""
+      codeartifact-region:
+        required: false
+        type: string
+        default: ""
+      node-cache:
+        description: >-
+          Node projects: cache the yarn fetch cache across runs and point
+          npm/yarn at the CI plane's read-through registry when it
+          answers (fallback, not dependency — same probe as check.yaml).
+        required: false
+        type: boolean
+        default: false
+      strip-local-tools:
+        required: false
+        type: string
+        default: "true"
+      proto:
+        required: false
+        type: string
+        default: auto
+    secrets:
+      goreleaser-key:
+        required: false
+      module-app-private-key:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  suite:
+    name: integration-${{ matrix.name }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.lanes) }}
+    env:
+      GEMAAL_NAMESPACE: ${{ inputs.gemaal-namespace }}
+      GEMAAL_SERVER: ${{ inputs.gemaal-server }}
+      # Per lane and per attempt: parallel lanes must not share a
+      # release, and a re-run must not inherit the previous attempt's.
+      GEMAAL_RELEASE: ${{ matrix.name }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+      GEMAAL_AWS_AMBIENT: "1"
+      AWS_CONFIG_FILE: ${{ github.workspace }}/${{ inputs.aws-config-file }}
+      KUBECONFIG: ${{ github.workspace }}/${{ inputs.kubeconfig }}
+      LANE_IMAGES: ${{ matrix.images == false && 'false' || 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser derives the snapshot version from history.
+          fetch-depth: 0
+
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@49248a6cebd3720ac7f2eaf2e98ec97c0967b3b6 # v2.17.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          proto: ${{ inputs.proto }}
+          strip-local-tools: ${{ inputs.strip-local-tools }}
+          go-private: ${{ inputs.go-private }}
+          module-app-client-id: ${{ inputs.module-app-client-id }}
+          module-app-private-key: ${{ secrets.module-app-private-key }}
+          go-cache-bucket: ${{ inputs.go-cache-bucket }}
+          go-cache-region: ${{ inputs.go-cache-region }}
+          goproxy: ${{ inputs.goproxy }}
+          aws-config-file: ${{ inputs.aws-config-file }}
+
+      - name: Cache the yarn fetch cache
+        if: inputs.node-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .yarn/cache
+          key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            yarn-${{ runner.os }}-
+
+      # The registry override is fixed literals into GITHUB_ENV; the
+      # in-cluster http host is the design (YARN_UNSAFE_HTTP_WHITELIST
+      # names exactly it, or berry refuses plain http — YN0081).
+      - name: Point npm and yarn at the CI-plane cache
+        if: inputs.node-cache
+        run: |
+          set -euo pipefail
+          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
+            {
+              echo "npm_config_registry=http://npm-cache.ci-cache.svc"
+              echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc"
+              echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc"
+            } >> "$GITHUB_ENV"
+            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+          else
+            echo "::warning::npm cache unreachable — direct npmjs for this job"
+          fi
+
+      # zcbctl exchanges the job's GitHub OIDC proof through
+      # zitadel-ci-broker on first use; warming it here puts the
+      # exchange (and its failure, if any) in its own step. The proof
+      # then pins the cluster identity before anything is built: a
+      # wrong tenant fails here, not as a mysterious RBAC error later.
+      - name: Warm the cluster identity
+        run: devbox run -- zcbctl || true
+
+      - name: Identity proof
+        if: inputs.expected-identity != ''
+        env:
+          EXPECTED: ${{ inputs.expected-identity }}
+        run: |
+          set -euo pipefail
+          WHO=$(devbox run -- kubectl auth whoami -o json | devbox run -- jq -r .status.userInfo.username)
+          echo "cluster identity: $WHO"
+          [ "$WHO" = "$EXPECTED" ] || { echo "::error::expected cluster identity $EXPECTED, got $WHO"; exit 1; }
+
+      - uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+        if: env.LANE_IMAGES == 'true' && inputs.ecr-registries != ''
+        with:
+          registries: ${{ inputs.ecr-registries }}
+          mask-password: "true"
+
+      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@8ebb0a32ecd76501ce64116e657c5b1d7bc0c087 # master 2026-09-06
+        if: env.LANE_IMAGES == 'true'
+        with:
+          remote-builders: ${{ inputs.remote-builders }}
+
+      # The image build's yarn install reads it as a BuildKit secret
+      # (the projects' goreleaser configs); minted with the pool's
+      # ambient identity. tail -n1 + CR strip: devbox prefixes Info
+      # lines to stdout. A step OUTPUT, not GITHUB_ENV: the build step
+      # is the only consumer, and CodeQL's environment-injection query
+      # treats anything derived from inputs as untrusted for GITHUB_ENV.
+      - name: Mint a CodeArtifact token
+        id: codeartifact
+        if: env.LANE_IMAGES == 'true' && inputs.codeartifact-domain != ''
+        env:
+          CA_DOMAIN: ${{ inputs.codeartifact-domain }}
+          CA_OWNER: ${{ inputs.codeartifact-domain-owner }}
+          CA_REGION: ${{ inputs.codeartifact-region }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(devbox run -- aws codeartifact get-authorization-token --domain "$CA_DOMAIN" --domain-owner "$CA_OWNER" --region "$CA_REGION" --query authorizationToken --output text | tail -n1 | tr -d '\r')
+          [ -n "$TOKEN" ] || { echo "::error::minted CodeArtifact token is empty"; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      # The command reaches the shell through env and is evaluated
+      # there, never spliced into the script text: matrix values are
+      # workflow-controlled constants from the caller, but the habit
+      # costs nothing (CodeQL alert 25 in release-private).
+      - name: Build (${{ matrix.name }})
+        env:
+          LANE_BUILD: ${{ matrix.build }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.goreleaser-key }}
+          CI_BUILDX_CACHE: ${{ inputs.buildx-cache }}
+          CODEARTIFACT_AUTH_TOKEN: ${{ steps.codeartifact.outputs.token }}
+        run: eval "$LANE_BUILD"
+
+      - name: Warm-cache report
+        if: always() && inputs.cache-report && env.LANE_IMAGES == 'true' && inputs.buildx-cache != ''
+        env:
+          CACHE_REF: ${{ inputs.buildx-cache }}
+          LANE: ${{ matrix.name }}
+        run: |
+          set -uo pipefail
+          repo="${CACHE_REF#*/}"; region="$(echo "$CACHE_REF" | sed -E 's/^[^.]+\.dkr\.ecr\.([^.]+)\..*/\1/')"
+          {
+            echo "### Warm cache ($LANE)"
+            echo '| tag | digest | pushed |'
+            echo '|---|---|---|'
+            devbox run -- aws ecr describe-images --region "$region" --repository-name "$repo" --output json > "$RUNNER_TEMP/cache-images.json"
+            # shellcheck disable=SC2016 # a jq program, not shell
+            printf '%s\n' \
+              '.imageDetails[] | . as $img | (.imageTags // [])[]' \
+              '| select(contains($p))' \
+              '| "| \(.) | \($img.imageDigest[7:19]) | \($img.imagePushedAt) |"' \
+              > "$RUNNER_TEMP/cache-report.jq"
+            devbox run -- jq -r --arg p "$LANE" -f "$RUNNER_TEMP/cache-report.jq" "$RUNNER_TEMP/cache-images.json"
+          } >> "$GITHUB_STEP_SUMMARY" || echo "cache report failed (non-fatal)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install (${{ matrix.name }})
+        if: matrix.install != ''
+        env:
+          LANE_INSTALL: ${{ matrix.install }}
+        run: eval "$LANE_INSTALL"
+
+      - name: Migrate (${{ matrix.name }})
+        if: matrix.migrate != ''
+        env:
+          LANE_MIGRATE: ${{ matrix.migrate }}
+        run: eval "$LANE_MIGRATE"
+
+      # SKIP_BUILD always: dist/ came from the build step. SKIP_DEPLOY and
+      # SKIP_DESTROY only when the lane installed explicitly — a suite
+      # without an install phase deploys and destroys from its own
+      # TestMain (bar's shape).
+      - name: Suite (${{ matrix.name }})
+        env:
+          LANE_TEST: ${{ matrix.test }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMAAL_TEST_SKIP_BUILD: "true"
+          GEMAAL_TEST_SKIP_DEPLOY: ${{ matrix.install != '' && '1' || '' }}
+          GEMAAL_TEST_SKIP_DESTROY: ${{ matrix.install != '' && '1' || '' }}
+        run: eval "$LANE_TEST"
+
+      - name: Dump service pod logs
+        if: failure()
+        continue-on-error: true
+        run: |
+          cat > "$RUNNER_TEMP/dump-pod-logs.sh" <<'DUMP'
+          set -uo pipefail
+          found=0
+          for pod in $(kubectl -n "$GEMAAL_NAMESPACE" get pods -o name | sed 's|^pod/||' | grep "^$GEMAAL_RELEASE" || true); do
+            for c in $(kubectl -n "$GEMAAL_NAMESPACE" get "pod/$pod" -o jsonpath='{.spec.containers[*].name}'); do
+              found=1
+              echo "::group::$pod ($c)"
+              kubectl -n "$GEMAAL_NAMESPACE" logs "pod/$pod" -c "$c" --tail=400 2>&1 || true
+              echo "::endgroup::"
+            done
+          done
+          [ "$found" = 1 ] || echo "::warning::no pods matched $GEMAAL_RELEASE -- nothing captured"
+          DUMP
+          devbox run -- bash "$RUNNER_TEMP/dump-pod-logs.sh"
+
+      - name: Uninstall (${{ matrix.name }})
+        if: always() && matrix.uninstall != ''
+        env:
+          LANE_UNINSTALL: ${{ matrix.uninstall }}
+        run: eval "$LANE_UNINSTALL"
+
+  # The one required check: a ruleset names `integration`, whatever the
+  # lanes are called this month.
+  integration:
+    needs: [suite]
+    if: always()
+    runs-on: ${{ inputs.small-runner != '' && inputs.small-runner || inputs.runner }}
+    steps:
+      - env:
+          RESULT: ${{ needs.suite.result }}
+        run: |
+          [ "$RESULT" = "success" ] || { echo "::error::a lane failed: $RESULT"; exit 1; }
