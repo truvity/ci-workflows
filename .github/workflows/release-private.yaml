@@ -92,8 +92,19 @@ on:
           buildx builder, `platforms=endpoint` entries separated by
           whitespace — from the caller's org variable
           (vars.CI_REMOTE_BUILDERS_STABLE), never a literal here. See
-          .github/actions/setup-remote-builders for the format and for
-          why a stable release registers ONE node.
+          .github/actions/setup-remote-builders for the format.
+        required: false
+        type: string
+        default: ""
+      buildx-cache:
+        description: >-
+          Registry reference of the BuildKit warm cache, e.g. the
+          stable account's ci/buildkit-cache — from the caller's org
+          variable (vars.CI_BUILDX_CACHE_STABLE). Exported to the
+          release command as CI_BUILDX_CACHE, which the projects'
+          goreleaser configs turn into `--cache-from/--cache-to
+          type=registry` per image; empty means no cache flags. The
+          release role must be allowed to push to it.
         required: false
         type: string
         default: ""
@@ -353,6 +364,7 @@ jobs:
           RELEASE_COMMAND: ${{ inputs.command }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.goreleaser-key }}
+          CI_BUILDX_CACHE: ${{ inputs.buildx-cache }}
           # No profiles on a runner: the default credential chain must
           # resolve the job's OIDC role from env. A stray AWS_PROFILE
           # overrides it and surfaces as a confusing 403 several layers
