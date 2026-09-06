@@ -252,13 +252,16 @@ jobs:
           # broker on this first call; a remote exchange gets three tries,
           # and its stderr is kept so a real refusal is readable (the
           # first shared run lost one lane to a bare "exit status 1").
+          # stderr to a file, never merged into the capture: devbox's own
+          # "Info: Running script" chatter lands on stderr and would sit in
+          # front of the JSON.
           for attempt in 1 2 3; do
-            if out=$(devbox run -- kubectl auth whoami -o json 2>&1); then break; fi
-            echo "attempt $attempt: $out"
+            if out=$(devbox run -- kubectl auth whoami -o json 2>"$RUNNER_TEMP/whoami.err"); then break; fi
+            echo "attempt $attempt:"; cat "$RUNNER_TEMP/whoami.err"
             [ "$attempt" = 3 ] && { echo "::error::kubectl auth whoami failed three times"; exit 1; }
             sleep 10
           done
-          WHO=$(printf '%s' "$out" | devbox run -- jq -r .status.userInfo.username)
+          WHO=$(printf '%s' "$out" | sed -n '/^{/,$p' | devbox run -- jq -r .status.userInfo.username)
           echo "cluster identity: $WHO"
           [ "$WHO" = "$EXPECTED" ] || { echo "::error::expected cluster identity $EXPECTED, got $WHO"; exit 1; }
 
