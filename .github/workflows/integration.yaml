@@ -182,7 +182,12 @@ jobs:
       GEMAAL_AWS_AMBIENT: "1"
       AWS_CONFIG_FILE: ${{ github.workspace }}/${{ inputs.aws-config-file }}
       KUBECONFIG: ${{ github.workspace }}/${{ inputs.kubeconfig }}
-      LANE_IMAGES: ${{ matrix.images == false && 'false' || 'true' }}
+      # `images` absent means true. Compared as a STRING on purpose: the
+      # expression language coerces a missing key to 0, and
+      # `matrix.images == false` was true for every lane that did not
+      # spell the key — no builders, no ECR login, dead snapshot builds
+      # on the first run of every caller (dms#21, bar#706).
+      LANE_IMAGES: ${{ format('{0}', matrix.images) == 'false' && 'false' || 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
