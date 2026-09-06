@@ -163,22 +163,23 @@ jobs:
           private-key: ${{ secrets.GO_MODULES_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      # Nothing through GITHUB_ENV: GOPRIVATE is a step env on the one
+      # consumer below (CodeQL alert 30 flagged the former printf of the
+      # owner into GITHUB_ENV — a context value, but the file is the
+      # wrong place for anything derived from one).
       - name: Let go reach private modules
         if: steps.module-token.outputs.token != ''
         env:
           MODULE_TOKEN: ${{ steps.module-token.outputs.token }}
-          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          # GOPRIVATE only, never the token, through GITHUB_ENV: a value
-          # containing a newline there can define further variables.
-          printf 'GOPRIVATE=github.com/%s/*\n' "$OWNER" >> "$GITHUB_ENV"
           git config --global \
             "url.https://x-access-token:$MODULE_TOKEN@github.com/.insteadOf" \
             "https://github.com/"
 
       - name: Run renovate
         env:
+          GOPRIVATE: github.com/${{ github.repository_owner }}/*
           RENOVATE_TOKEN: ${{ steps.token.outputs.token }}
           LOG_LEVEL: ${{ inputs.log-level }}
           RENOVATE_REPOSITORIES: ${{ github.repository }}
