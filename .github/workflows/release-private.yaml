@@ -66,11 +66,17 @@ on:
         default: true
       strip-local-tools:
         description: >-
-          Default false: goreleaser's clean-tree gate refuses a dirty
-          workspace, and the strip edits a tracked .prototools.
+          Strip npm-backed local tooling (the cubic CLI) from a repo's
+          .prototools before devbox materializes. Default true: on an ARC
+          runner there is no npm until proto installs node, and the
+          tool's proto plugin execs npm from devbox's init hook — bar's
+          first two stable-tier tags died there. The edit is hidden from
+          the index (assume-unchanged), so goreleaser's clean-tree gate
+          still passes; the old "false, keeps the tree clean" default
+          only ever held on hosted runners, which have npm.
         required: false
         type: string
-        default: "false"
+        default: "true"
       proto:
         required: false
         type: string
