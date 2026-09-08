@@ -53,12 +53,16 @@ permissions:
   id-token: write    # ONLY if recipes reach AWS/k8s through zcbctl
 
 jobs:
-  check:
+  recipes:
     uses: truvity/ci-workflows/.github/workflows/check.yaml@<sha>
     with:
       recipes: '["build","test","lint"]'
       runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
 ```
+
+Those report as `recipes / build`, `recipes / test`, … — never as a bare
+`recipes`. [Required checks](#required-checks) has the job your ruleset
+should name instead.
 
 **Declare the permissions block, always.** check.yaml carries no
 permissions block of its own — a reusable workflow's block can only cap
@@ -76,6 +80,65 @@ the estate; CI was simply collapsing them into one `just check`.
 **Cost:** N recipes means N runners. Hosted minutes are free on public
 repositories, so fan out freely there. On ARC one runner is currently one
 node, so keep the list short until density work lands.
+
+## integration.yaml
+
+Runs a gemaal-shaped project's integration suites, **one job per lane**:
+build the lane's artifacts on the CI plane's remote builders, prove the
+cluster identity, install into the CI tenant, run the suite, dump pod
+logs on failure, uninstall.
+
+```yaml
+jobs:
+  suites:
+    uses: truvity/ci-workflows/.github/workflows/integration.yaml@<sha>
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+      gemaal-namespace: ci-truvity-<repo>
+      lanes: |
+        [{"name": "…", "build": "…", "test": "…"}]
+```
+
+A lane's `build` and `test` are shell, so a caller that needs an
+environment tweak puts it in the command itself.
+
+## Required checks
+
+**A reusable workflow cannot supply a required status context.** Every
+job called through `uses:` reports as `<caller job> / <its own name>` —
+`suites / integration-eudi-vp`, `check / lint`. A ruleset asking for a
+bare `integration` or `check` will never see one.
+
+It fails in the worst possible way: an unsatisfiable required context is
+**pending**, not failing. Nothing goes red. `truvity/bar` wedged every
+PR for a day this way (bar#706 → bar#713) with all six real checks green
+— the fan-in job had been moved *into* this repository, where it could
+only ever report as `integration / integration`.
+
+So the fan-in belongs in the caller, next to the call:
+
+```yaml
+jobs:
+  suites:
+    uses: truvity/ci-workflows/.github/workflows/integration.yaml@<sha>
+    # …
+
+  # The name the ruleset requires. Gates on the whole call, so it
+  # survives lanes and recipes being renamed.
+  integration:
+    needs: suites
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.suites.result }}" = "success" ]'
+```
+
+Strict `= "success"` means a **skipped** call fails the gate too. That is
+the point: a fork PR gets no id-token, so its suites skip, and a skip
+must not hand it a green required check for something that never ran.
 
 ## Contributing
 
