@@ -5,8 +5,8 @@
 # One job per LANE: build the artifacts the lane tests (a snapshot
 # through gemaal, or a chart alone), optionally install them into the
 # CI tenant and migrate, run the suite, capture pod logs on failure,
-# uninstall. Then one aggregate `integration` job, so a ruleset needs
-# a single required check whatever the matrix.
+# uninstall. There is no aggregate job: the required check the ruleset
+# names has to live in the CALLER (see the bottom of this file).
 #
 # What is shared, and where it came from:
 #   - devbox bootstrap, Go cache/proxy, private modules: setup-devbox;
@@ -17,7 +17,7 @@
 #     with the warm registry cache, and CodeArtifact for the Node
 #     bundles — dms's steps;
 #   - phases with their own verdicts, log dump, uninstall-always — dms;
-#   - the warm-cache report and the aggregate status — bar.
+#   - the warm-cache report — bar.
 #
 # NOTHING PARTICULAR LIVES HERE. This repository is public: registries,
 # builders, cache, namespaces, server URLs and identities arrive from the
@@ -48,11 +48,6 @@ on:
         description: Scale-set label for the lane jobs (vars.CI_RUNNER_LABEL_LARGE).
         required: true
         type: string
-      small-runner:
-        description: Label for the aggregate job (vars.CI_RUNNER_LABEL_SMALL). Defaults to `runner`.
-        required: false
-        type: string
-        default: ""
       timeout-minutes:
         required: false
         type: number
@@ -381,14 +376,18 @@ jobs:
           LANE_UNINSTALL: ${{ matrix.uninstall }}
         run: eval "$LANE_UNINSTALL"
 
-  # The one required check: a ruleset names `integration`, whatever the
-  # lanes are called this month.
-  integration:
-    needs: [suite]
-    if: always()
-    runs-on: ${{ inputs.small-runner != '' && inputs.small-runner || inputs.runner }}
-    steps:
-      - env:
-          RESULT: ${{ needs.suite.result }}
-        run: |
-          [ "$RESULT" = "success" ] || { echo "::error::a lane failed: $RESULT"; exit 1; }
+  # NO fan-in job here, deliberately. This file used to carry one, called
+  # `integration`, described as "the one required check" — and it could
+  # never be that. GitHub reports every job of a reusable workflow as
+  # `<caller job> / <its own name>`, so it arrived at the consumer as
+  # `integration / integration` and the bare `integration` its ruleset
+  # required stayed "Expected — Waiting for status to be reported"
+  # forever. It wedged every PR in truvity/bar for a day (bar#706 →
+  # bar#713) while all six real checks were green, because an
+  # unsatisfiable required context is PENDING, not failing: nothing goes
+  # red to tell you.
+  #
+  # A reusable workflow cannot supply a required status context to
+  # anybody. The fan-in has to live in the caller, where the ruleset can
+  # name it and where renaming a lane cannot silently move it. README's
+  # "Required checks" section carries the snippet.
