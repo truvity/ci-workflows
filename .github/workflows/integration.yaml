@@ -10,10 +10,11 @@
 #
 # What is shared, and where it came from:
 #   - devbox bootstrap, Go cache/proxy, private modules: setup-devbox;
-#   - cluster access: the access-roster action exchanges the job's
-#     GitHub token at access-issuer for `k8s:<cluster>` (INF-654), and
-#     the committed kubeconfig face supplies the cluster's address and CA;
-#     then the identity proof bar's cluster-access job ran;
+#   - cluster and AWS access: the caller's own kubeconfig and aws.ini —
+#     the SAME files a laptop uses. Their exec plugin and credential_process
+#     are `accessctl`, which in a job exchanges the job's GitHub token at
+#     access-issuer instead of a sign-in (INF-654), so no second copy for
+#     CI exists; then the identity proof bar's cluster-access job ran;
 #   - image builds: the CI plane's remote builders (setup-remote-builders)
 #     with the warm registry cache, and CodeArtifact for the Node
 #     bundles — dms's steps;
@@ -62,27 +63,20 @@ on:
         required: true
         type: string
       aws-config-file:
-        description: Repo-relative CI face of aws.ini (no credential source on [default]).
+        description: >-
+          Repo-relative aws.ini, the one a laptop uses. Its [default] must
+          carry no credential: in a job that would shadow the runner pool's
+          identity for every call. Roles are named profiles.
         required: false
         type: string
-        default: .github/aws.ini
+        default: aws.ini
       kubeconfig:
         description: >-
-          Repo-relative CI face of kubeconfig: the cluster's server and CA,
-          under a cluster entry named after `cluster`. Its credential is
-          not used; the job's comes from access-issuer.
+          Repo-relative kubeconfig, the one a laptop uses, whose exec plugin
+          is `accessctl kube-token`.
         required: false
         type: string
-        default: .github/kubeconfig
-      cluster:
-        description: The cluster the suites deploy into, as access-issuer's `k8s:<cluster>` audience names it.
-        required: false
-        type: string
-        default: devel
-      issuer:
-        description: The access-issuer the job's GitHub token is exchanged at. Required, with no default — an issuer is a particular, and this repository is public.
-        required: true
-        type: string
+        default: kubeconfig
       expected-identity:
         description: >-
           Cluster identity `kubectl auth whoami` must report — for a job,
@@ -190,10 +184,7 @@ jobs:
       GEMAAL_RELEASE: ${{ matrix.name }}-r${{ github.run_id }}-a${{ github.run_attempt }}
       GEMAAL_AWS_AMBIENT: "1"
       AWS_CONFIG_FILE: ${{ github.workspace }}/${{ inputs.aws-config-file }}
-      # KUBECONFIG is NOT set here. A job-level env value is re-applied to
-      # every step over what GITHUB_ENV holds, so it would hide the one the
-      # access step below writes and every step would run without a
-      # credential.
+      KUBECONFIG: ${{ github.workspace }}/${{ inputs.kubeconfig }}
       # `images` absent means true. Compared as a STRING on purpose: the
       # expression language coerces a missing key to 0, and
       # `matrix.images == false` was true for every lane that did not
@@ -246,44 +237,11 @@ jobs:
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
 
-      # The access-roster action runs kubectl, jq and curl as plain
-      # commands. devbox has them; the runner image need not.
-      - name: Put the devbox tools on the plain PATH
-        run: echo "$GITHUB_WORKSPACE/.devbox/nix/profile/default/bin" >> "$GITHUB_PATH"
-
-      # The job's GitHub token, exchanged at access-issuer for the one
-      # audience the cluster's API server accepts (INF-654). The issuer
-      # admits the job by its repository, from the ci_repos rows in gitops,
-      # and puts that repository's `<cluster>:ci-<owner>-<repo>:deployer`
-      # group in the token -- the group the tenant namespace binds. No
-      # broker, and nothing stored: the token lives as long as the job.
-      - name: Exchange the job's token for the cluster
-        id: access
-        uses: truvity/access-roster@87032be314a43dbb2f40a9c69ef6bf3d06384ee6 # master: the exchange sends its client form-encoded (access-roster#36)
-        with:
-          issuer: ${{ inputs.issuer }}
-          audiences: k8s:${{ inputs.cluster }}
-          kubeconfig: "true"
-
-      # The action writes a credential and a context and, deliberately, no
-      # address: an address to trust is the platform's to say. The face
-      # names it, under a cluster entry of the same name.
-      - name: Point kubectl at the cluster with that credential
-        env:
-          ISSUED: ${{ steps.access.outputs.kubeconfig }}
-          FACE: ${{ github.workspace }}/${{ inputs.kubeconfig }}
-          CLUSTER: ${{ inputs.cluster }}
-        run: |
-          set -euo pipefail
-          kubectl config --kubeconfig="$ISSUED" use-context "$CLUSTER" >/dev/null
-          # The same credential under `<cluster>@oidc` too: the name every
-          # person's kubeconfig uses, and so the name tooling pins with
-          # --kube-context (dms's e2ectl). Without it that tooling finds no
-          # such context and fails before it reaches the cluster.
-          kubectl config --kubeconfig="$ISSUED" set-context "$CLUSTER@oidc" \
-            --cluster="$CLUSTER" --user="$CLUSTER" >/dev/null
-          echo "KUBECONFIG=$ISSUED:$FACE" >> "$GITHUB_ENV"
-
+      # `accessctl` (the caller's devbox has it) exchanges the job's GitHub
+      # token when kubectl first calls it, so there is nothing to warm and
+      # no token handled by a step. The proof then pins the identity before
+      # anything is built: a wrong tenant fails here, not as a mysterious
+      # RBAC error later.
       - name: Identity proof
         if: inputs.expected-identity != ''
         env:
