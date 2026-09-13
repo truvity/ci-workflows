@@ -144,10 +144,13 @@ on:
         description: goreleaser-pro licence, for callers that use it.
         required: false
 
-# A floor, not a ceiling. release-public.yaml carried `contents: read`
-# here and it silently dropped the packages:write its own callers were
-# told to grant — the bug surfaced on the first release that ever called
-# it, because it had no callers to expose it sooner.
+# NO permissions block, deliberately — the check.yaml rule. A reusable
+# workflow's block is a CEILING on what the caller granted, not a floor:
+# release-public.yaml's `contents: read` silently dropped the
+# packages:write its callers granted, and integration.yaml's dropped the
+# packages:read bar granted for GitHub Packages (bar#726). Jobs inherit
+# exactly what the caller grants. Callers declare, at workflow level and
+# on the calling job:
 #
 #   contents:  read   — checkout; this half publishes to ECR, not to
 #                       GitHub Releases, so write is not needed
@@ -155,10 +158,8 @@ on:
 #   checks:    read   — the gate reads the tagged commit's check runs;
 #                       without it the token gets 403 rather than a
 #                       verdict
-permissions:
-  contents: read
-  id-token: write
-  checks: read
+#   packages:  read   — ONLY if the repo installs @truvity packages from
+#                       GitHub Packages
 
 jobs:
   release:
