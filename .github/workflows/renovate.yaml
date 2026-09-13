@@ -185,5 +185,11 @@ jobs:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ALLOWED_COMMANDS: ${{ inputs.allowed-commands }}
           GITHUB_COM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Lockfile regeneration runs the repo's own package manager, and
+          # a repo that installs @truvity packages from GitHub Packages
+          # reads its token from here (bar's .yarnrc.yml npmScopes). The
+          # App's token, so it reads packages only once the App is granted
+          # Packages: read; renovate's own lookups use the same token.
+          GITHUB_PACKAGES_TOKEN: ${{ steps.token.outputs.token }}
         # renovate: datasource=npm depName=renovate
         run: npx --yes renovate@44.44.0
