@@ -50,7 +50,7 @@ recipe, each reported under its own name.
 ```yaml
 permissions:
   contents: read     # always — checkout
-  id-token: write    # ONLY if recipes reach AWS/k8s through zcbctl
+  id-token: write    # ONLY if recipes reach AWS/k8s through accessctl
 
 jobs:
   recipes:
@@ -68,8 +68,9 @@ should name instead.
 permissions block of its own — a reusable workflow's block can only cap
 the caller's grant, never widen it, so the decision belongs to the
 caller. Grant `contents: read`; add `id-token: write` only when the
-repository's recipes reach AWS or Kubernetes through zcbctl (the Zitadel
-CI identity — see gitops `docs/guides/add-repo-to-ci.md`). Public
+repository's recipes reach AWS or Kubernetes through accessctl, which
+exchanges the job's GitHub token at access-issuer (see gitops
+`docs/guides/add-repo-to-ci.md`). Public
 repositories omit it: fork PRs never receive an id-token, and nothing in
 a public repository's recipes should want one. A caller with no block at
 all hands its org-default token to every recipe.

@@ -236,7 +236,7 @@ on:
 #
 #   permissions:
 #     contents: read     # always — checkout
-#     id-token: write    # ONLY if recipes reach AWS/k8s through zcbctl
+#     id-token: write    # ONLY if recipes reach AWS/k8s through accessctl
 #                        # (gitops docs/guides/add-repo-to-ci.md)
 #
 # Public repositories omit id-token: fork PRs never receive it, and
