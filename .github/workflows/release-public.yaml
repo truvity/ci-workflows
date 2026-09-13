@@ -22,6 +22,7 @@
 #       uses: truvity/ci-workflows/.github/workflows/release-public.yaml@<sha>
 #       with:
 #         charts: '["github-roster"]'
+#         nix-flakes: '["github-roster"]'
 name: release-public
 
 on:
@@ -53,6 +54,18 @@ on:
         required: false
         type: string
         default: release
+      nix-flakes:
+        description: >-
+          JSON array of goreleaser ARCHIVE ids to publish as Nix flakes,
+          one release asset each: <id>_<version>_nix-flake.tar.gz. It is
+          how a CLI reaches other repositories' devbox without nixpkgs:
+          devbox.json names the asset URL with #<id>, and devbox.lock
+          pins its hash. The flake fetches this release's own archives
+          by sha256, so nothing is rebuilt and nothing needs updating
+          between releases. Empty publishes none.
+        required: false
+        type: string
+        default: '[]'
       ko-docker-repo:
         required: false
         type: string
@@ -172,5 +185,172 @@ jobs:
               --registry "$registry" \
               --repository "${repo_prefix}/${chart}" \
               --name "$chart" --version "$version"
+            echo "::endgroup::"
+          done
+
+      # Last, so a flake that fails never keeps a chart from shipping.
+      #
+      # Each flake wraps the archives goreleaser just uploaded: fetchurl
+      # by URL and sha256, then install the archive's binaries. Built from
+      # the archives rather than from source, because a from-source
+      # derivation carries a vendorHash that every renovate go.sum bump
+      # breaks, and the release would find out at the tag. The nixpkgs it
+      # evaluates with is the caller's own devbox pin. Before upload it is
+      # locked, evaluated for every system, and built and installed for
+      # the runner's own.
+      - name: Publish Nix flakes
+        if: inputs.nix-flakes != '[]'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLAKES: ${{ inputs.nix-flakes }}
+          FLAKE_DIR: ${{ runner.temp }}/nix-flakes
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+
+          # goreleaser os/arch -> Nix system. Anything else has no Nix system and
+          # is left out: windows, 386, arm/v6 -- and darwin/amd64, which
+          # nixpkgs-unstable dropped in 26.11, so a flake offering it fails to
+          # evaluate there.
+          SYSTEMS = {
+              ("linux", "amd64"): "x86_64-linux",
+              ("linux", "arm64"): "aarch64-linux",
+              ("darwin", "arm64"): "aarch64-darwin",
+          }
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tag.removeprefix("v")
+          ids = json.loads(os.environ["FLAKES"])
+          out = os.environ["FLAKE_DIR"]
+
+          # The nixpkgs the flake builds with: the caller's own devbox pin when it
+          # has one, so the release runner and most consumers already hold it.
+          nixpkgs = "github:NixOS/nixpkgs/nixpkgs-unstable"
+          try:
+              with open("devbox.lock") as f:
+                  for name, entry in json.load(f).get("packages", {}).items():
+                      if name.startswith("github:NixOS/nixpkgs/"):
+                          resolved = entry.get("resolved", "").split("?")[0]
+                          if re.fullmatch(r"github:NixOS/nixpkgs/[0-9a-f]{40}", resolved):
+                              nixpkgs = resolved
+                              break
+          except FileNotFoundError:
+              pass
+
+          with open("dist/artifacts.json") as f:
+              artifacts = json.load(f)
+
+
+          def nix_string(value):
+              return json.dumps(value)  # a JSON string literal is a valid Nix string
+
+
+          for archive_id in ids:
+              sources = {}
+              binaries = None
+              wrapped = None
+              for art in artifacts:
+                  extra = art.get("extra") or {}
+                  if art.get("type") != "Archive" or extra.get("ID") != archive_id:
+                      continue
+                  system = SYSTEMS.get((art.get("goos"), art.get("goarch")))
+                  if system is None or art.get("goamd64", "v1") != "v1":
+                      continue
+                  if extra.get("Format") not in ("tar.gz", "tgz", "tar.xz", "tar.zst", "zip"):
+                      sys.exit(f"::error::archive {art['name']} is {extra.get('Format')}; a flake needs an archive, not a bare binary")
+                  if binaries is None:
+                      binaries, wrapped = extra.get("Binaries") or [], extra.get("WrappedIn") or ""
+                  elif (extra.get("Binaries") or []) != binaries or (extra.get("WrappedIn") or "") != wrapped:
+                      sys.exit(f"::error::archive {archive_id} holds different binaries per platform")
+                  with open(art["path"], "rb") as f:
+                      sha256 = hashlib.sha256(f.read()).hexdigest()
+                  sources[system] = {
+                      "url": f"https://github.com/{repo}/releases/download/{tag}/{art['name']}",
+                      "sha256": sha256,
+                  }
+
+              if not sources:
+                  sys.exit(f"::error::no linux or darwin archive with id {archive_id} in dist/artifacts.json")
+              if not binaries:
+                  sys.exit(f"::error::archive {archive_id} lists no binaries")
+
+              main = archive_id if archive_id in binaries else binaries[0]
+              lines = [
+                  f"# {archive_id} {version} from {repo}, as released at {tag}.",
+                  "# Generated by truvity/ci-workflows release-public; do not edit.",
+                  "#",
+                  "# devbox.json:",
+                  f'#   "https://github.com/{repo}/releases/download/{tag}/{archive_id}_{version}_nix-flake.tar.gz#{archive_id}": ""',
+                  "{",
+                  f"  description = {nix_string(f'{archive_id} {version} ({repo} {tag})')};",
+                  "",
+                  f"  inputs.nixpkgs.url = {nix_string(nixpkgs)};",
+                  "",
+                  "  outputs = { self, nixpkgs }:",
+                  "    let",
+                  f"      version = {nix_string(version)};",
+                  "      sources = {",
+              ]
+              for system in sorted(sources):
+                  src = sources[system]
+                  lines.append(f"        {nix_string(system)} = {{ url = {nix_string(src['url'])}; sha256 = {nix_string(src['sha256'])}; }};")
+              lines += [
+                  "      };",
+                  "      package = system:",
+                  "        let pkgs = nixpkgs.legacyPackages.${system};",
+                  "        in pkgs.stdenvNoCC.mkDerivation {",
+                  f"          pname = {nix_string(archive_id)};",
+                  "          inherit version;",
+                  "          src = pkgs.fetchurl sources.${system};",
+                  f"          sourceRoot = {nix_string(wrapped or '.')};",
+                  "          dontConfigure = true;",
+                  "          dontBuild = true;",
+                  "          installPhase = ''",
+                  "            runHook preInstall",
+              ]
+              for binary in binaries:
+                  lines.append(f"            install -Dm755 \"{binary}\" \"$out/bin/{binary}\"")
+              lines += [
+                  "            runHook postInstall",
+                  "          '';",
+                  f"          meta.mainProgram = {nix_string(main)};",
+                  "        };",
+                  "    in {",
+                  "      packages = nixpkgs.lib.genAttrs (builtins.attrNames sources) (system: {",
+                  f"        {nix_string(archive_id)} = package system;",
+                  "        default = package system;",
+                  "      });",
+                  "    };",
+                  "}",
+              ]
+
+              flake_dir = os.path.join(out, f"{archive_id}_{version}_nix-flake")
+              os.makedirs(flake_dir, exist_ok=True)
+              with open(os.path.join(flake_dir, "flake.nix"), "w") as f:
+                  f.write("\n".join(lines) + "\n")
+              print(f"{flake_dir}: {', '.join(sorted(sources))} with {nixpkgs}")
+          PY
+
+          nix=(nix --extra-experimental-features "nix-command flakes")
+          cd "$FLAKE_DIR"
+          for dir in */; do
+            dir="${dir%/}"
+            id="${dir%_*_nix-flake}"
+            echo "::group::${dir}"
+            "${nix[@]}" flake lock "path:$PWD/$dir"
+            "${nix[@]}" flake check --no-build --all-systems "path:$PWD/$dir"
+            out="$("${nix[@]}" build --no-link --print-out-paths "path:$PWD/$dir#$id")"
+            ls -l "$out/bin"
+            # Deterministic, so re-running a release uploads the same bytes
+            # and a consumer's locked narHash still matches.
+            tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -cf - "$dir" | gzip -n > "$dir.tar.gz"
+            gh release upload "$GITHUB_REF_NAME" "$dir.tar.gz" --clobber --repo "$GITHUB_REPOSITORY"
             echo "::endgroup::"
           done

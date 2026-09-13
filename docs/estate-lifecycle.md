@@ -63,6 +63,16 @@ pushed **deterministically via helmctl** to `ghcr.io/truvity/charts/*`
 (identical content ⇒ identical digest). The git tag is the sole version
 authority; committed chart versions stay `0.0.0-dev`.
 
+A CLI other repositories install through devbox names its goreleaser
+archive id in `nix-flakes`. The release then carries
+`<id>_<version>_nix-flake.tar.gz`, a flake that fetches that release's
+archives by sha256 (linux amd64/arm64, darwin arm64). A consumer adds the
+asset URL with `#<id>` to its devbox.json, and devbox.lock pins it:
+
+```json
+"https://github.com/truvity/access-roster/releases/download/v1.7.0/accessctl_1.7.0_nix-flake.tar.gz#accessctl": ""
+```
+
 ## 4. Promotion — pull, never push
 
 The repo never opens deployment PRs. Consumers (gitops) carry a
