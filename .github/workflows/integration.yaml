@@ -163,9 +163,16 @@ on:
       module-app-private-key:
         required: false
 
-permissions:
-  contents: read
-  id-token: write
+# NO permissions block, deliberately — the check.yaml rule. A reusable
+# workflow's block is a CEILING on what the caller granted: this one said
+# `contents: read` + `id-token: write`, and the `packages: read` bar granted
+# for GitHub Packages never reached the job, whose install then answered
+# 403 (bar#726). Jobs inherit exactly what the caller grants. Callers
+# declare, at workflow level and on the calling job:
+#
+#   contents: read     # always — checkout
+#   id-token: write    # the cluster and AWS through accessctl
+#   packages: read     # ONLY if the repo installs @truvity packages from GitHub Packages
 
 jobs:
   suite:
