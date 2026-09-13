@@ -276,6 +276,12 @@ jobs:
         run: |
           set -euo pipefail
           kubectl config --kubeconfig="$ISSUED" use-context "$CLUSTER" >/dev/null
+          # The same credential under `<cluster>@oidc` too: the name every
+          # person's kubeconfig uses, and so the name tooling pins with
+          # --kube-context (dms's e2ectl). Without it that tooling finds no
+          # such context and fails before it reaches the cluster.
+          kubectl config --kubeconfig="$ISSUED" set-context "$CLUSTER@oidc" \
+            --cluster="$CLUSTER" --user="$CLUSTER" >/dev/null
           echo "KUBECONFIG=$ISSUED:$FACE" >> "$GITHUB_ENV"
 
       - name: Identity proof
