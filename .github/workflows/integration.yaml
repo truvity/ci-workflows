@@ -80,10 +80,9 @@ on:
         type: string
         default: devel
       issuer:
-        description: The access-issuer the job's GitHub token is exchanged at.
-        required: false
+        description: The access-issuer the job's GitHub token is exchanged at. Required, with no default — an issuer is a particular, and this repository is public.
+        required: true
         type: string
-        default: https://access.truvity.xyz
       expected-identity:
         description: >-
           Cluster identity `kubectl auth whoami` must report — for a job,
