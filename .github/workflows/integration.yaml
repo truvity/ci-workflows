@@ -260,7 +260,7 @@ jobs:
       # broker, and nothing stored: the token lives as long as the job.
       - name: Exchange the job's token for the cluster
         id: access
-        uses: truvity/access-roster@006b050daa2f0387715dcddb1d8193bb167907b3 # v1.3.1
+        uses: truvity/access-roster@87032be314a43dbb2f40a9c69ef6bf3d06384ee6 # master: the exchange sends its client form-encoded (access-roster#36)
         with:
           issuer: ${{ inputs.issuer }}
           audiences: k8s:${{ inputs.cluster }}
