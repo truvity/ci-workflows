@@ -185,6 +185,10 @@ jobs:
       GEMAAL_AWS_AMBIENT: "1"
       AWS_CONFIG_FILE: ${{ github.workspace }}/${{ inputs.aws-config-file }}
       KUBECONFIG: ${{ github.workspace }}/${{ inputs.kubeconfig }}
+      # GitHub Packages wants a token to install even a public package.
+      # The job's own, which reads only what the caller's `packages: read`
+      # grants; a caller whose packages come from nowhere else ignores it.
+      GITHUB_PACKAGES_TOKEN: ${{ github.token }}
       # `images` absent means true. Compared as a STRING on purpose: the
       # expression language coerces a missing key to 0, and
       # `matrix.images == false` was true for every lane that did not

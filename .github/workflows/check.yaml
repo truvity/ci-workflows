@@ -237,6 +237,7 @@ on:
 #   permissions:
 #     contents: read     # always — checkout
 #     id-token: write    # ONLY if recipes reach AWS/k8s through accessctl
+#     packages: read     # ONLY if it installs @truvity packages from GitHub Packages
 #                        # (gitops docs/guides/add-repo-to-ci.md)
 #
 # Public repositories omit id-token: fork PRs never receive it, and
@@ -266,6 +267,10 @@ jobs:
     # exactly as they did before the secret existed.
     env:
       GITLAB_TOKEN: ${{ secrets.gitlab-token }}
+      # GitHub Packages wants a token to install even a public package.
+      # The job's own, which reads only what the caller's `packages: read`
+      # grants; a caller whose packages come from nowhere else ignores it.
+      GITHUB_PACKAGES_TOKEN: ${{ github.token }}
     strategy:
       # Every recipe reports its own verdict, and one failure does not
       # hide the others — the point of separate jobs in the first place.
