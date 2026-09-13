@@ -51,6 +51,7 @@ recipe, each reported under its own name.
 permissions:
   contents: read     # always — checkout
   id-token: write    # ONLY if recipes reach AWS/k8s through accessctl
+  packages: read     # ONLY if the repo installs @truvity packages from GitHub Packages
 
 jobs:
   recipes:
@@ -70,7 +71,10 @@ the caller's grant, never widen it, so the decision belongs to the
 caller. Grant `contents: read`; add `id-token: write` only when the
 repository's recipes reach AWS or Kubernetes through accessctl, which
 exchanges the job's GitHub token at access-issuer (see gitops
-`docs/guides/add-repo-to-ci.md`). Public
+`docs/guides/add-repo-to-ci.md`). Add `packages: read` when the
+repository installs `@truvity` packages from GitHub Packages: check,
+integration and release-private export the job's token as
+`GITHUB_PACKAGES_TOKEN` for the package manager to present. Public
 repositories omit it: fork PRs never receive an id-token, and nothing in
 a public repository's recipes should want one. A caller with no block at
 all hands its org-default token to every recipe.

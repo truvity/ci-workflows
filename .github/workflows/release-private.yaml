@@ -164,6 +164,11 @@ jobs:
   release:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      # GitHub Packages wants a token to install even a public package.
+      # The job's own, which reads only what the caller's `packages: read`
+      # grants; a caller whose packages come from nowhere else ignores it.
+      GITHUB_PACKAGES_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
