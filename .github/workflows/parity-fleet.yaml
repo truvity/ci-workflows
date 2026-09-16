@@ -59,6 +59,18 @@ on:
         required: false
         type: boolean
         default: true
+      repositories-file:
+        description: YAML file in the caller repository holding the enrolment lists.
+        required: false
+        type: string
+        default: fleet.yaml
+      list:
+        description: >-
+          Dotted path to this job's list inside repositories-file, e.g.
+          `parity.private`. Empty processes every repository the App can see.
+        required: false
+        type: string
+        default: ""
       filter:
         description: RE2 over `owner/name`; only matches are processed.
         required: false
@@ -98,6 +110,30 @@ jobs:
       repositories: ${{ steps.discover.outputs.repositories }}
       count: ${{ steps.discover.outputs.count }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.list != ''
+        with:
+          sparse-checkout: ${{ inputs.repositories-file }}
+          sparse-checkout-cone-mode: false
+
+      - name: Read the enrolment list
+        id: enrolled
+        if: inputs.list != ''
+        env:
+          FILE: ${{ inputs.repositories-file }}
+          LIST: ${{ inputs.list }}
+        run: |
+          set -euo pipefail
+          [ -f "$FILE" ] || { echo "::error::$FILE not found in the caller repository"; exit 1; }
+          # yq ships on GitHub-hosted runners; this job always runs on one.
+          names=$(yq -o=json -I=0 ".${LIST} // []" "$FILE")
+          if [ "$(jq 'length' <<<"$names")" -eq 0 ]; then
+            echo "::error::$FILE has no entries under $LIST"
+            exit 1
+          fi
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+          echo "$LIST: $(jq -r 'join(", ")' <<<"$names")"
+
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: token
         with:
@@ -105,12 +141,13 @@ jobs:
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@261473051481b033bc524fdce1fee526d0150560 # master 2026-09-16 (argv fix, ci-workflows#100)
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@01948809944a32141a618c9679bd3d9077019da0 # master 2026-09-16 (enrolment list, ci-workflows#105)
         id: discover
         with:
           token: ${{ steps.token.outputs.token }}
           estate: ${{ inputs.estate }}
           filter: ${{ inputs.filter }}
+          repositories: ${{ steps.enrolled.outputs.names }}
           require-check: ${{ inputs.require-check && 'true' || 'false' }}
           require-file: devbox.json
 
