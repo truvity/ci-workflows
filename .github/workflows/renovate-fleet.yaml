@@ -1,29 +1,35 @@
-# Renovate for a whole estate from ONE job — nothing runs in, and nothing
-# is held by, the repositories it updates.
+# Renovate for a whole estate from ONE caller — a matrix of small jobs, one
+# per enrolled repository. Nothing runs in, and nothing is held by, the
+# repositories it updates.
 #
-# The per-repository shape (renovate.yaml) needs every repository to read
-# the App's key: an org secret with a hand-kept selected list, or a copy
-# in the repository's own secrets. Lists drift, keys multiply, and a
-# repository nobody entitled fails without a red mark. Here the caller
-# holds the key once, mints a token, and works through every repository
-# the App is installed on. A repository opts in with a renovate config
-# and a required status check, and with nothing else.
+# Why a matrix and not one long job: a single process over an estate made
+# one repository's transient error red for all of them, reran everything to
+# retry one, and grew toward its timeout with the estate (47 repositories,
+# 47 minutes, one GitHub 504 in one repository turned the run red). Here a
+# failure reds one repository's job; rerun failed jobs only.
 #
-# Two estates, two callers, differing only in `estate`, `runs-on` and
-# which App: the public estate on GitHub-hosted runners, the private one
-# on the self-hosted pool. The caller repository is private in both
-# cases. docs/fleet.md has the scaffolds and the reasons.
+# Why central and not a job inside each repository: every repository would
+# again carry a workflow, a pin, and a way to reach an App key.
+#
+# SCOPE is an explicit list in the caller repository (`repositories-file`,
+# `list`), not every repository the App can see. An enrolled repository the
+# App cannot reach is an error annotation.
+#
+# ESTATE POLICY lives in the caller repository too (`global-config`): a
+# renovate config every job loads as defaults under each repository's own
+# `renovate.json`. The intended use is deciding major versions once for the
+# estate — see docs/fleet.md.
 #
 #   jobs:
 #     renovate:
 #       uses: truvity/ci-workflows/.github/workflows/renovate-fleet.yaml@<sha> # vX.Y.Z
 #       with:
-#         estate: public
-#         client-id: ${{ vars.RENOVATE_PUBLIC_CLIENT_ID }}
-#         approver-client-id: ${{ vars.CI_AUTOMATION_CLIENT_ID }}
+#         estate: private
+#         runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+#         client-id: ${{ vars.RENOVATE_CLIENT_ID }}
+#         list: renovate.private
 #       secrets:
-#         RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PUBLIC_PRIVATE_KEY }}
-#         APPROVER_APP_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+#         RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
 #
 # Secrets are passed explicitly, always: a caller in another organisation
 # cannot inherit, and a same-org caller holds exactly what it passes.
@@ -37,7 +43,7 @@ on:
         required: true
         type: string
       runner:
-        description: GitHub-hosted for the public estate; the pool label for the private one.
+        description: Where each repository's job runs. GitHub-hosted for the public estate; the pool label for the private one.
         required: false
         type: string
         default: ubuntu-latest
@@ -45,16 +51,41 @@ on:
         description: The renovate App's client id.
         required: true
         type: string
+      repositories-file:
+        description: YAML file in the caller repository holding the enrolment lists.
+        required: false
+        type: string
+        default: fleet.yaml
+      list:
+        description: >-
+          Dotted path to this job's list inside repositories-file, e.g.
+          `renovate.private`. Empty processes every repository the App can
+          see (not recommended beyond a first survey).
+        required: false
+        type: string
+        default: ""
+      global-config:
+        description: >-
+          Renovate config file in the caller repository, loaded by every job
+          as defaults under each repository's own config. Empty for none.
+        required: false
+        type: string
+        default: ""
       approver-client-id:
         description: >-
           Client id of an App that approves renovate's non-major PRs where a
           review is required, so native auto-merge can fire on green. Empty
-          disables the sweep.
+          disables the approval step.
         required: false
         type: string
         default: ""
       go-modules-client-id:
         description: Client id of an App that may read private Go modules, for go.sum regeneration. Empty skips it.
+        required: false
+        type: string
+        default: ""
+      filter:
+        description: RE2 over `owner/name`; only matches are processed.
         required: false
         type: string
         default: ""
@@ -68,24 +99,27 @@ on:
         required: false
         type: boolean
         default: true
-      filter:
-        description: RE2 over `owner/name`; only matches are processed. Shard a large estate across schedules with it.
-        required: false
-        type: string
-        default: ""
       allowed-commands:
         description: JSON array of exact commands the repositories' postUpgradeTasks may run (RENOVATE_ALLOWED_COMMANDS).
         required: false
         type: string
         default: "[]"
+      max-parallel:
+        description: >-
+          Repositories processed at once. Every job spends the same App
+          installation's API budget, so raise this with care.
+        required: false
+        type: number
+        default: 4
       log-level:
         required: false
         type: string
         default: info
       timeout-minutes:
+        description: Per repository.
         required: false
         type: number
-        default: 60
+        default: 30
     secrets:
       RENOVATE_APP_PRIVATE_KEY:
         description: The renovate App's private key.
@@ -101,12 +135,39 @@ permissions:
   contents: read
 
 jobs:
-  renovate:
-    runs-on: ${{ inputs.runner }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
+  # Which repositories, and nothing else. Runs on a GitHub-hosted runner in
+  # every estate: it only reads the API and one file from the caller.
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      repositories: ${{ steps.discover.outputs.repositories }}
+      count: ${{ steps.discover.outputs.count }}
     steps:
-      # The installation token for the caller's organisation. Its reach
-      # is the App's installation scope; discovery narrows that further.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.list != ''
+        with:
+          sparse-checkout: ${{ inputs.repositories-file }}
+          sparse-checkout-cone-mode: false
+
+      - name: Read the enrolment list
+        id: enrolled
+        if: inputs.list != ''
+        env:
+          FILE: ${{ inputs.repositories-file }}
+          LIST: ${{ inputs.list }}
+        run: |
+          set -euo pipefail
+          [ -f "$FILE" ] || { echo "::error::$FILE not found in the caller repository"; exit 1; }
+          # yq ships on GitHub-hosted runners; this job always runs on one.
+          names=$(yq -o=json -I=0 ".${LIST} // []" "$FILE")
+          if [ "$(jq 'length' <<<"$names")" -eq 0 ]; then
+            echo "::error::$FILE has no entries under $LIST"
+            exit 1
+          fi
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+          echo "$LIST: $(jq -r 'join(", ")' <<<"$names")"
+
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: token
         with:
@@ -114,30 +175,61 @@ jobs:
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@261473051481b033bc524fdce1fee526d0150560 # master 2026-09-16 (argv fix, ci-workflows#100)
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@01948809944a32141a618c9679bd3d9077019da0 # master 2026-09-16 (enrolment list, ci-workflows#105)
         id: discover
         with:
           token: ${{ steps.token.outputs.token }}
           estate: ${{ inputs.estate }}
           filter: ${{ inputs.filter }}
+          repositories: ${{ steps.enrolled.outputs.names }}
           require-check: ${{ inputs.require-check && 'true' || 'false' }}
 
-      - name: Nothing to do
-        if: steps.discover.outputs.count == '0'
-        run: echo "::notice::no repository to process for estate ${ESTATE}"
+  renovate:
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
+      matrix:
+        repository: ${{ fromJSON(needs.discover.outputs.repositories) }}
+    name: ${{ matrix.repository }}
+    steps:
+      - name: Name the repository
+        id: repo
         env:
-          ESTATE: ${{ inputs.estate }}
+          REPO: ${{ matrix.repository }}
+        run: |
+          echo "name=${REPO#*/}" >> "$GITHUB_OUTPUT"
+          echo "artifact=renovate-report-${REPO//\//__}" >> "$GITHUB_OUTPUT"
+
+      # A token for THIS repository only: the job holds no more reach than
+      # the one repository it updates.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ steps.repo.outputs.name }}
+
+      # The caller's estate policy, when there is one.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.global-config != ''
+        with:
+          path: caller
+          sparse-checkout: ${{ inputs.global-config }}
+          sparse-checkout-cone-mode: false
 
       # renovate 44 uses RegExp.escape — a Node 24+ API.
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        if: steps.discover.outputs.count != '0'
         with:
           node-version: 24
 
       # The gomod manager shells out to bare `go` for go.sum regeneration;
       # `stable` suffices since go self-fetches whatever a go.mod names.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: steps.discover.outputs.count != '0'
         with:
           go-version: stable
           cache: false
@@ -145,12 +237,11 @@ jobs:
       # yarn/pnpm shims for lockfile regeneration; each shim fetches the
       # version the target repository's `packageManager` pins.
       - name: Enable corepack
-        if: steps.discover.outputs.count != '0'
         run: corepack enable
 
       - name: Mint a token for reading private Go modules
         id: module-token
-        if: steps.discover.outputs.count != '0' && inputs.go-modules-client-id != ''
+        if: inputs.go-modules-client-id != ''
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ inputs.go-modules-client-id }}
@@ -167,18 +258,33 @@ jobs:
             "url.https://x-access-token:$MODULE_TOKEN@github.com/.insteadOf" \
             "https://github.com/"
 
-      # One process over the discovered list. No autodiscovery (the list is
-      # the boundary), no onboarding (a repository without a config is
-      # skipped silently, never sent an onboarding PR), config required.
-      - name: Run renovate over the estate
-        if: steps.discover.outputs.count != '0'
+      - name: Locate the estate policy
+        id: policy
+        env:
+          GLOBAL_CONFIG: ${{ inputs.global-config }}
+        run: |
+          set -euo pipefail
+          if [ -n "$GLOBAL_CONFIG" ]; then
+            f="$GITHUB_WORKSPACE/caller/$GLOBAL_CONFIG"
+            [ -f "$f" ] || { echo "::error::$GLOBAL_CONFIG not found in the caller repository"; exit 1; }
+            echo "file=$f" >> "$GITHUB_OUTPUT"
+          fi
+          echo "report=$RUNNER_TEMP/renovate-report.json" >> "$GITHUB_OUTPUT"
+
+      # One repository. No autodiscovery, no onboarding PR, config required.
+      # The report records every dependency with its available updates,
+      # majors included, whatever the policy decided to open.
+      - name: Run renovate
         env:
           GOPRIVATE: github.com/${{ github.repository_owner }}/*
           RENOVATE_TOKEN: ${{ steps.token.outputs.token }}
           RENOVATE_AUTODISCOVER: "false"
-          RENOVATE_REPOSITORIES: ${{ steps.discover.outputs.repositories }}
+          RENOVATE_REPOSITORIES: '["${{ matrix.repository }}"]'
           RENOVATE_ONBOARDING: "false"
           RENOVATE_REQUIRE_CONFIG: required
+          RENOVATE_CONFIG_FILE: ${{ steps.policy.outputs.file }}
+          RENOVATE_REPORT_TYPE: file
+          RENOVATE_REPORT_PATH: ${{ steps.policy.outputs.report }}
           RENOVATE_ALLOWED_COMMANDS: ${{ inputs.allowed-commands }}
           LOG_LEVEL: ${{ inputs.log-level }}
           GITHUB_COM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -186,24 +292,33 @@ jobs:
         # renovate: datasource=npm depName=renovate
         run: npx --yes renovate@44.44.0
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ${{ steps.repo.outputs.artifact }}
+          path: ${{ steps.policy.outputs.report }}
+          if-no-files-found: ignore
+          retention-days: 14
+
       # Renovate cannot approve its own PRs. Where the default branch
       # requires a review, a non-major PR would sit green and unmergeable;
       # an approval from a SECOND App is what lets native auto-merge fire.
       # Only PRs that still need a review, only non-major, only once.
       - name: Mint the approver token
         id: approver
-        if: steps.discover.outputs.count != '0' && inputs.approver-client-id != ''
+        if: inputs.approver-client-id != ''
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ inputs.approver-client-id }}
           private-key: ${{ secrets.APPROVER_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ steps.repo.outputs.name }}
 
       - name: Approve non-major renovate PRs that need a review
         if: steps.approver.outputs.token != ''
         env:
           TOKEN: ${{ steps.approver.outputs.token }}
-          REPOS: ${{ steps.discover.outputs.repositories }}
+          REPO: ${{ matrix.repository }}
           API: ${{ github.api_url }}
         run: |
           set -euo pipefail
@@ -213,36 +328,83 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" "$@"
           }
+          owner=${REPO%/*}; name=${REPO#*/}
           approved=0
-          for repo in $(jq -r '.[]' <<<"$REPOS"); do
-            owner=${repo%/*}; name=${repo#*/}
-            # Renovate's PRs: a Bot whose login carries "renovate" — the
-            # family, since an estate may run more than one renovate App.
-            prs=$(api "$API/repos/$repo/pulls?state=open&per_page=100" \
-              | jq -c '[.[] | select(.user.type == "Bot" and (.user.login | test("renovate"))) | {number, labels: [.labels[].name]}]')
-            for row in $(jq -c '.[]' <<<"$prs"); do
-              number=$(jq -r '.number' <<<"$row")
-              if jq -e '.labels | index("major")' <<<"$row" >/dev/null; then
-                echo "$repo#$number: major — left for a human"
-                continue
-              fi
-              decision=$(jq -n --arg o "$owner" --arg r "$name" --argjson n "$number" \
-                '{query: "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewDecision}}}", variables: {o:$o, r:$r, n:$n}}' \
-                | api -X POST "$API/graphql" -d @- | jq -r '.data.repository.pullRequest.reviewDecision // "NONE"')
-              if [ "$decision" != "REVIEW_REQUIRED" ]; then
-                echo "$repo#$number: review $decision — nothing to add"
-                continue
-              fi
-              if api "$API/repos/$repo/pulls/$number/reviews" \
-                | jq -e '[.[] | select(.state == "APPROVED" and (.user.login | endswith("[bot]")))] | length > 0' >/dev/null; then
-                echo "$repo#$number: already approved by a bot"
-                continue
-              fi
-              api -X POST "$API/repos/$repo/pulls/$number/reviews" \
-                -d '{"event":"APPROVE","body":"Non-major dependency update from renovate. Approved by the fleet job so auto-merge can proceed; GitHub still holds the merge until every required check passes."}' \
-                >/dev/null
-              echo "$repo#$number: approved"
-              approved=$((approved + 1))
-            done
+          prs=$(api "$API/repos/$REPO/pulls?state=open&per_page=100" \
+            | jq -c '[.[] | select(.user.type == "Bot" and (.user.login | test("renovate"))) | {number, labels: [.labels[].name]}]')
+          for row in $(jq -c '.[]' <<<"$prs"); do
+            number=$(jq -r '.number' <<<"$row")
+            if jq -e '.labels | index("major")' <<<"$row" >/dev/null; then
+              echo "#$number: major — left for a human"
+              continue
+            fi
+            decision=$(jq -n --arg o "$owner" --arg r "$name" --argjson n "$number" \
+              '{query: "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewDecision}}}", variables: {o:$o, r:$r, n:$n}}' \
+              | api -X POST "$API/graphql" -d @- | jq -r '.data.repository.pullRequest.reviewDecision // "NONE"')
+            if [ "$decision" != "REVIEW_REQUIRED" ]; then
+              echo "#$number: review $decision — nothing to add"
+              continue
+            fi
+            if api "$API/repos/$REPO/pulls/$number/reviews" \
+              | jq -e '[.[] | select(.state == "APPROVED" and (.user.login | endswith("[bot]")))] | length > 0' >/dev/null; then
+              echo "#$number: already approved by a bot"
+              continue
+            fi
+            api -X POST "$API/repos/$REPO/pulls/$number/reviews" \
+              -d '{"event":"APPROVE","body":"Non-major dependency update from renovate. Approved by the fleet job so auto-merge can proceed; GitHub still holds the merge until every required check passes."}' \
+              >/dev/null
+            echo "#$number: approved"
+            approved=$((approved + 1))
           done
-          echo "approved $approved renovate PR(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "approved $approved renovate PR(s)" >> "$GITHUB_STEP_SUMMARY"
+
+  # The decision table: which major versions exist, for which package, in
+  # which repositories — built from every job's report, whether or not the
+  # policy let renovate open a PR for them.
+  majors:
+    needs: [discover, renovate]
+    if: always() && needs.discover.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: renovate-report-*
+          path: reports
+
+      - name: Available majors across the estate
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          files=(reports/**/*.json)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no reports — every repository job failed before renovate wrote one" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          rows=$(jq -s '
+            [ .[] | .repositories | to_entries[] | .key as $repo
+              | .value.packageFiles | to_entries[] | .key as $manager
+              | .value[] | .deps[]?
+              | . as $dep
+              | (.updates // [])[] | select(.updateType == "major")
+              | { package: ($dep.depName // $dep.packageName), manager: $manager, repo: $repo,
+                  current: ($dep.currentVersion // $dep.currentValue // "?"),
+                  major: (.newVersion // .newValue // "?") } ]
+            | group_by(.package)
+            | map({ package: .[0].package, manager: .[0].manager,
+                    newest: (map(.major) | max_by(ltrimstr("v") | [scan("[0-9]+") | tonumber])),
+                    repos: (map("\(.repo | split("/")[1]) \(.current)") | unique) })
+            | sort_by(-(.repos | length), .package)' "${files[@]}")
+          {
+            echo "## Available majors"
+            echo
+            if [ "$(jq 'length' <<<"$rows")" -eq 0 ]; then
+              echo "None: every enrolled repository is on the newest major of everything it uses."
+            else
+              echo "Decide these once, in the estate policy. Each row is one package; the right column is where it is used and at which version."
+              echo
+              echo "| package | manager | newest major | repositories (current) |"
+              echo "|---|---|---|---|"
+              jq -r '.[] | "| `\(.package)` | \(.manager) | \(.newest) | \(.repos | join(", ")) |"' <<<"$rows"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

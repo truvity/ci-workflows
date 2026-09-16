@@ -20,21 +20,37 @@ it updates run nothing, hold nothing, and appear in no list.
 | a repository is skipped | silently, when unentitled | loudly, in the run summary, with the reason |
 | adding a repository | scaffold + entitle + install | install the App |
 
-## What a repository has to do
+## What enrols a repository
 
-Nothing in Actions. Opt-in is a **file**:
+Nothing in its Actions. A repository is processed when it is **listed in the
+caller repository's enrolment file**, and it still has to carry the file the
+tool itself reads:
 
-| job | opt-in file | also required |
+```yaml
+# fleet.yaml in the caller repository
+renovate:
+  public:  [cloudflare, gateway, tailscale]
+  private: [bar, dms]
+parity:
+  public:  [cloudflare, gateway]
+  private: [bar, dms]
+```
+
+| job | enrolment | the repository also needs |
 |---|---|---|
-| renovate | `renovate.json` (any name Renovate accepts) | at least one required status check on the default branch |
-| parity | `devbox.json` | the same |
+| renovate | listed under `renovate.<estate>` | a renovate config at its root, and a required status check (unless `require-check: false`) |
+| parity | listed under `parity.<estate>` | a `devbox.json`, and a required status check (unless `require-check: false`) |
+
+The list is the fleet's scope, reviewed like any other change. A listed
+repository the App cannot reach — not installed on it, renamed, deleted —
+is an **error annotation** on the run, named individually; the rest of the
+estate still runs.
 
 The required-check rule is not bureaucracy. Both jobs open pull requests
 that merge on green. With nothing gating the merge, an auto-merge lands
-**immediately and unvalidated** — that is how a red lint landed on a
-default branch the first time devbox-update ran on a repository without
-required checks. So a repository with no `check` is skipped, and the
-summary says so.
+**immediately and unvalidated**. `require-check: false` exists for an
+estate whose repositories do not automerge and review dependency PRs by
+hand.
 
 ## Two estates, two runner classes
 
@@ -55,11 +71,11 @@ private repository bill; measure after the first week.
 ## `renovate-fleet.yaml`
 
 ```yaml
-# .github/workflows/renovate-public.yaml in the caller repository
-name: renovate (public estate)
+# .github/workflows/renovate-private.yaml in the caller repository
+name: renovate (private estate)
 on:
   schedule:
-    - cron: "17 */6 * * *"    # several times a day — see "why several"
+    - cron: "47 */6 * * *"    # several times a day — see "why several"
   workflow_dispatch:
 permissions:
   contents: read
@@ -67,35 +83,75 @@ jobs:
   renovate:
     uses: truvity/ci-workflows/.github/workflows/renovate-fleet.yaml@<sha> # vX.Y.Z
     with:
-      estate: public
-      runner: ubuntu-latest
-      client-id: ${{ vars.RENOVATE_PUBLIC_CLIENT_ID }}
-      approver-client-id: ${{ vars.CI_AUTOMATION_CLIENT_ID }}
+      estate: private
+      runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+      client-id: ${{ vars.RENOVATE_PRIVATE_CLIENT_ID }}
+      list: renovate.private
+      global-config: renovate/global.json5
     secrets:
-      RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PUBLIC_PRIVATE_KEY }}
-      APPROVER_APP_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+      RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_APP_PRIVATE_KEY }}
 ```
 
 Secrets are always passed **explicitly**. A caller in another organisation
 cannot use `secrets: inherit` at all, and a same-org caller gains nothing
-from it here: the fleet caller holds exactly the secrets it passes.
+from it here.
 
-What one run does:
+A run is **a matrix, not one long job**:
 
-1. Mints the renovate App's installation token.
-2. **Discovers** (`fleet-discover`): every repository the installation can
-   see, minus the other estate, archived ones, and those with no required
-   check. Renovate itself then skips repositories without a config
-   (`requireConfig: required`, `onboarding: false`), so no repository
-   ever receives an onboarding PR it did not ask for.
-3. Runs Renovate once over the list.
-4. **Approves**, when an approver App is configured: every open Renovate
-   PR in those repositories that is non-major, still needs a review, and
-   has no bot approval yet is approved as the approver App. Renovate
-   cannot approve its own PRs; on a repository whose default branch
-   requires one approval, this is what lets native auto-merge fire on
-   green with nobody in the loop. Majors carry the `major` label and are
-   never approved.
+1. `discover` (GitHub-hosted, API only) reads the list, mints the App token
+   and keeps the enrolled repositories of this estate that are not archived.
+2. `renovate` runs **one job per repository**, at most `max-parallel` at a
+   time. Each job mints a token that reaches **only its own repository**,
+   runs Renovate on it (`onboarding: false`, config required), uploads
+   Renovate's dependency report, and — when an approver App is configured —
+   approves that repository's non-major Renovate PRs that still need a
+   review, so native auto-merge can fire on green. Majors carry the `major`
+   label and are never approved.
+3. `majors` combines every report into one table in the run summary: each
+   package with a newer major, the newest major, and which repositories use
+   it at which version. That table is what major decisions are made from.
+
+Why a matrix: as one process, a 47-repository estate took 47 minutes and a
+single transient GitHub 504 in one repository turned the whole run red.
+Now a failure reds one repository's job, and only failed jobs are rerun.
+Every job still spends the same App installation's API budget, which is
+what `max-parallel` protects.
+
+### Deciding majors once, in the caller repository
+
+`global-config` names a Renovate config in the caller repository. Every job
+loads it as **defaults under each repository's own config**. It is the place
+for estate policy, and the intended first use is major versions:
+
+```json5
+// renovate/global.json5 in the caller repository
+{
+  packageRules: [
+    {
+      description: "Majors wait for an estate decision: found and listed on each repository's Dependency Dashboard, no PR.",
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+    // One entry per decision, reviewed as a PR to this file.
+    {
+      description: "nestjs 11 — decided 2026-09-20, all services move together.",
+      matchPackageNames: ["@nestjs/**"],
+      matchUpdateTypes: ["major"],
+      allowedVersions: "<12",
+      dependencyDashboardApproval: false,
+    },
+  ],
+  // Security fixes never wait for a decision.
+  vulnerabilityAlerts: { dependencyDashboardApproval: false },
+}
+```
+
+Two limits worth knowing. Renovate's `force` cannot carry per-package
+rules — it becomes one rule matching every package — so this is a set of
+**defaults**: a repository can still override them in its own
+`renovate.json`, which makes the exception visible in that repository.
+And a decision sets what each repository is **offered**; each still merges
+on its own green, so a repository with red CI lags until it is fixed.
 
 ### Why several runs a day
 
@@ -112,6 +168,10 @@ gives a green PR a run that finds it green.
 | input | default | meaning |
 |---|---|---|
 | `estate` | *required* | `public` or `private` — which visibility this job may touch |
+| `list` | `""` | dotted path to the enrolment list in `repositories-file`, e.g. `renovate.private` |
+| `repositories-file` | `fleet.yaml` | the enrolment file in the caller repository |
+| `global-config` | `""` | the estate policy file in the caller repository |
+| `max-parallel` | `4` | repositories processed at once |
 | `runner` | `ubuntu-latest` | hosted for the public estate, the pool label for the private one |
 | `client-id` | *required* | the renovate App's client id |
 | `approver-client-id` | `""` | the approver App's client id; empty disables the approval sweep |
@@ -120,7 +180,7 @@ gives a green PR a run that finds it green.
 | `filter` | `""` | RE2 over `owner/name`; only matches are processed — use it to shard a large estate across schedules |
 | `allowed-commands` | `[]` | `RENOVATE_ALLOWED_COMMANDS`, exact strings the repositories' `postUpgradeTasks` may run |
 | `log-level` | `info` | `debug` to see why a repository produced nothing |
-| `timeout-minutes` | `60` | one run covers an estate |
+| `timeout-minutes` | `30` | per repository |
 
 Secrets: `RENOVATE_APP_PRIVATE_KEY` (required), `APPROVER_APP_PRIVATE_KEY`,
 `GO_MODULES_APP_PRIVATE_KEY` (both optional).
@@ -169,7 +229,7 @@ so a re-run updates the open PR), auto-merge armed only where a required
 check exists. The push runs inside devbox so the repository's own
 pre-push hooks vet the result — they are the safety net, not an obstacle.
 
-Inputs: `estate`, `runner`, `client-id`, `mode` (`auto|full|align`),
+Inputs: `estate`, `runner`, `client-id`, `list`, `repositories-file`, `mode` (`auto|full|align`),
 `full-update-day` (`1`), `filter`, `require-check` (`true`), `git-user`, `git-email`,
 `timeout-minutes`. The commit author is an input because it should be the
 App's bot identity, which this library cannot know.
@@ -181,15 +241,18 @@ to align. Without it, only the root module is considered — the same limit
 
 ## Migrating from the per-repository callers
 
-1. Create the caller repository, install both renovate Apps on their
-   estates, give the caller repository the keys.
-2. Run the fleet jobs by hand once; read the summary. Every repository
-   you expected should be listed as processed, or skipped with a reason
-   you agree with.
-3. Delete each repository's `renovate.yaml`, `devbox-update.yaml` and
-   `auto-approve.yaml` callers. Nothing else in the repository changes.
-4. Delete the org-level `RENOVATE_*` variable and secret and their
-   selected lists, and any repository-level copies.
+Per repository, in this order:
+
+1. Add it to the caller repository's `fleet.yaml` under the lists it uses
+   today (`renovate.<estate>`, `parity.<estate>`).
+2. Dispatch the fleet jobs and read the summary: the repository is listed as
+   processed, not as an error.
+3. In the repository, delete `renovate.yaml`, `devbox-update.yaml` and
+   `auto-approve.yaml`. Nothing else in it changes.
+
+Once every caller is gone, switch on the caller repository's schedules and
+delete the organisation-level `RENOVATE_*` variable and secret, their
+selected lists, and any repository-level copies.
 
 `renovate.yaml`, `devbox-update.yaml` and `auto-approve.yaml` remain in
 this library until the last caller is gone, then are removed in a major
