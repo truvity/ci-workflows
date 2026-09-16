@@ -206,7 +206,7 @@ jobs:
           proto: "false"
           github-token: ${{ steps.token.outputs.token }}
 
-      - uses: truvity/ci-workflows/.github/actions/devbox-parity@4e1c3caee1a7ee6ac350e47348abfeb11dea5709 # master 2026-09-16 (fleet actions, ci-workflows#97)
+      - uses: truvity/ci-workflows/.github/actions/devbox-parity@d86bb7e4b66b04dc3b69c6517fe6bcc64187074f # master 2026-09-16 (git add fix, ci-workflows#108)
         id: parity
         with:
           token: ${{ steps.token.outputs.token }}
