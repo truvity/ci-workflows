@@ -378,7 +378,7 @@ jobs:
           shopt -s nullglob globstar
           files=(reports/**/*.json)
           if [ "${#files[@]}" -eq 0 ]; then
-            echo "no reports — every repository job failed before renovate wrote one" >> "$GITHUB_STEP_SUMMARY"
+            echo "no reports — every repository job failed before renovate wrote one" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           rows=$(jq -s '
@@ -407,4 +407,6 @@ jobs:
               echo "|---|---|---|---|"
               jq -r '.[] | "| `\(.package)` | \(.manager) | \(.newest) | \(.repos | join(", ")) |"' <<<"$rows"
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          # Also in the log (above): a run's step summary is not readable
+          # through the API, and the table is what decisions are made from.
