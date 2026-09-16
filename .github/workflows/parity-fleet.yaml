@@ -105,7 +105,7 @@ jobs:
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@4e1c3caee1a7ee6ac350e47348abfeb11dea5709 # master 2026-09-16 (fleet actions, ci-workflows#97)
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@261473051481b033bc524fdce1fee526d0150560 # master 2026-09-16 (argv fix, ci-workflows#100)
         id: discover
         with:
           token: ${{ steps.token.outputs.token }}
