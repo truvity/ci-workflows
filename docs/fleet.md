@@ -116,6 +116,7 @@ gives a green PR a run that finds it green.
 | `client-id` | *required* | the renovate App's client id |
 | `approver-client-id` | `""` | the approver App's client id; empty disables the approval sweep |
 | `go-modules-client-id` | `""` | an App that may read private Go modules, for `go.sum` regeneration |
+| `require-check` | `true` | skip repositories with no required status check; `false` only for an estate whose repositories do not automerge |
 | `filter` | `""` | RE2 over `owner/name`; only matches are processed — use it to shard a large estate across schedules |
 | `allowed-commands` | `[]` | `RENOVATE_ALLOWED_COMMANDS`, exact strings the repositories' `postUpgradeTasks` may run |
 | `log-level` | `info` | `debug` to see why a repository produced nothing |
@@ -169,7 +170,7 @@ check exists. The push runs inside devbox so the repository's own
 pre-push hooks vet the result — they are the safety net, not an obstacle.
 
 Inputs: `estate`, `runner`, `client-id`, `mode` (`auto|full|align`),
-`full-update-day` (`1`), `filter`, `git-user`, `git-email`,
+`full-update-day` (`1`), `filter`, `require-check` (`true`), `git-user`, `git-email`,
 `timeout-minutes`. The commit author is an input because it should be the
 App's bot identity, which this library cannot know.
 
