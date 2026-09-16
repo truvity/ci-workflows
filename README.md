@@ -42,6 +42,12 @@ build Go, the `go.mod` directive) stays aligned — one owner, two
 cadences, and every pitfall the rollout hit — is
 **[docs/devbox-update.md](docs/devbox-update.md)**.
 
+How renovate and parity run as **one job per estate** instead of a caller
+in every repository — what a repository opts in with, why the caller
+repository is private and the public job still runs hosted, and the
+migration off the per-repository callers — is
+**[docs/fleet.md](docs/fleet.md)**.
+
 ## check.yaml
 
 Runs a repository's own Justfile recipes as **parallel jobs**, one per
