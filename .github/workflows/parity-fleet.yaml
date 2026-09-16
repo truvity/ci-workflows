@@ -1,0 +1,183 @@
+# Version parity for a whole estate from ONE job: devbox leads, the other
+# manifests follow, one pull request per repository that moved.
+#
+# devbox-update.yaml did this from a caller inside each repository. Here
+# the caller repository holds the App key once; discovery lists every
+# repository the App is installed on that carries a devbox.json and a
+# required status check; and the devbox-parity action runs once per
+# repository as a matrix job. The pairs (go toolchain, playwright) and the
+# rules are in docs/fleet.md and docs/devbox-update.md.
+#
+#   jobs:
+#     parity:
+#       uses: truvity/ci-workflows/.github/workflows/parity-fleet.yaml@<sha> # vX.Y.Z
+#       with:
+#         estate: private
+#         runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+#         client-id: ${{ vars.RENOVATE_PRIVATE_CLIENT_ID }}
+#         git-user: renovate-private[bot]
+#         git-email: 12345678+renovate-private[bot]@users.noreply.github.com
+#       secrets:
+#         RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_PRIVATE_KEY }}
+name: parity-fleet
+
+on:
+  workflow_call:
+    inputs:
+      estate:
+        description: "`public` or `private` — the only visibility this run may touch."
+        required: true
+        type: string
+      runner:
+        description: >-
+          Where each repository's alignment runs. The private estate wants
+          the pool: the repository's pre-push hook compiles the module.
+        required: false
+        type: string
+        default: ubuntu-latest
+      client-id:
+        description: The App's client id — the identity that pushes the branch and opens the PR.
+        required: true
+        type: string
+      mode:
+        description: "`auto` (full devbox update on full-update-day, align only otherwise), `full`, or `align`."
+        required: false
+        type: string
+        default: auto
+      full-update-day:
+        description: ISO weekday (1 = Monday) on which `auto` runs the full devbox update.
+        required: false
+        type: string
+        default: "1"
+      filter:
+        description: RE2 over `owner/name`; only matches are processed.
+        required: false
+        type: string
+        default: ""
+      git-user:
+        description: Commit author name — the App's bot login.
+        required: true
+        type: string
+      git-email:
+        description: Commit author email — the App's noreply address.
+        required: true
+        type: string
+      max-parallel:
+        description: How many repositories are aligned at once.
+        required: false
+        type: number
+        default: 4
+      timeout-minutes:
+        description: Per repository.
+        required: false
+        type: number
+        default: 30
+    secrets:
+      RENOVATE_APP_PRIVATE_KEY:
+        description: The App's private key.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      repositories: ${{ steps.discover.outputs.repositories }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@4e1c3caee1a7ee6ac350e47348abfeb11dea5709 # master 2026-09-16 (fleet actions, ci-workflows#97)
+        id: discover
+        with:
+          token: ${{ steps.token.outputs.token }}
+          estate: ${{ inputs.estate }}
+          filter: ${{ inputs.filter }}
+          require-check: "true"
+          require-file: devbox.json
+
+  align:
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
+      matrix:
+        repository: ${{ fromJSON(needs.discover.outputs.repositories) }}
+    name: ${{ matrix.repository }}
+    steps:
+      # A token for THIS repository only: the matrix job holds no more
+      # reach than the one repository it aligns.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ matrix.repository }}
+
+      - name: Read the default branch and parity settings
+        id: repo
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ matrix.repository }}
+          API: ${{ github.api_url }}
+        run: |
+          set -euo pipefail
+          api() {
+            curl -fsS --max-time 60 \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+          }
+          base=$(api "$API/repos/$REPO" | jq -r '.default_branch')
+          # Optional per-repository settings: further go.mod directories.
+          dirs=$(api "$API/repos/$REPO/contents/.devbox-parity.json?ref=$base" 2>/dev/null \
+            | jq -r '.content // empty' | base64 -d 2>/dev/null | jq -c '."module-dirs" // []' || echo '[]')
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "module-dirs=${dirs:-[]}" >> "$GITHUB_OUTPUT"
+          echo "$REPO: default branch $base, module-dirs ${dirs:-[]}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ steps.repo.outputs.base }}
+          token: ${{ steps.token.outputs.token }}
+
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@cbe1f184c857c118cd75874d80c026596ada7595 # master 2026-09-13 (cbe1f18)
+        with:
+          proto: "false"
+          github-token: ${{ steps.token.outputs.token }}
+
+      - uses: truvity/ci-workflows/.github/actions/devbox-parity@4e1c3caee1a7ee6ac350e47348abfeb11dea5709 # master 2026-09-16 (fleet actions, ci-workflows#97)
+        id: parity
+        with:
+          token: ${{ steps.token.outputs.token }}
+          base: ${{ steps.repo.outputs.base }}
+          mode: ${{ inputs.mode }}
+          full-update-day: ${{ inputs.full-update-day }}
+          module-dirs: ${{ steps.repo.outputs.module-dirs }}
+          git-user: ${{ inputs.git-user }}
+          git-email: ${{ inputs.git-email }}
+
+      - name: Summary
+        env:
+          REPO: ${{ matrix.repository }}
+          CHANGED: ${{ steps.parity.outputs.changed }}
+          URL: ${{ steps.parity.outputs.pull-request }}
+        run: |
+          if [ "$CHANGED" = "true" ]; then
+            echo "- $REPO: $URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- $REPO: at parity" >> "$GITHUB_STEP_SUMMARY"
+          fi
