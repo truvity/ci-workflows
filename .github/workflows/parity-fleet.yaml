@@ -49,6 +49,16 @@ on:
         required: false
         type: string
         default: "1"
+      require-check:
+        description: >-
+          Skip repositories whose default branch has no required status
+          check. Keep `true` wherever the repositories automerge: with
+          nothing gating a merge, auto-merge lands immediately and
+          unvalidated. `false` suits an estate whose repositories do not
+          automerge yet and review every dependency PR by hand.
+        required: false
+        type: boolean
+        default: true
       filter:
         description: RE2 over `owner/name`; only matches are processed.
         required: false
@@ -101,7 +111,7 @@ jobs:
           token: ${{ steps.token.outputs.token }}
           estate: ${{ inputs.estate }}
           filter: ${{ inputs.filter }}
-          require-check: "true"
+          require-check: ${{ inputs.require-check && 'true' || 'false' }}
           require-file: devbox.json
 
   align:
