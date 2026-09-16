@@ -17,14 +17,23 @@
   "rebaseWhen": "behind-base-branch",
   "packageRules": [
     {
-      "description": "The automergeable batch: everything non-major, in one PR.",
+      "description": [
+        "The automergeable batch: everything non-major, in one PR.",
+        "minimumReleaseAge: a release must be three days old before it joins the batch.",
+        "Without it the batch is rebuilt on every run as upstream ships, and an",
+        "automation that only merges a PR whose checks were already green when its",
+        "run started can never catch it: access-roster#47 sat green for three days",
+        "while being rebuilt nightly (2026-09-16). Three days also lets a bad",
+        "release be yanked before it is ever proposed."
+      ],
       "matchUpdateTypes": [
         "minor",
         "patch",
         "digest"
       ],
       "groupName": "all non-major dependencies",
-      "groupSlug": "all-minor-patch"
+      "groupSlug": "all-minor-patch",
+      "minimumReleaseAge": "3 days"
     },
     {
       "matchUpdateTypes": [

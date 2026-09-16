@@ -48,6 +48,11 @@ keeps the pin current — a drifting pin is a defect, doctrine B6):
 - `renovate.yaml` → the shared npx-based renovate
   (`docs/renovate.md` — incl. the entitlement silent-skip trap)
 
+The last two are the **per-repository** shape. An estate that runs the
+fleet jobs (`docs/fleet.md`) carries neither: renovate and parity come
+from one caller repository per estate, and a repository opts in by
+having a `renovate.json` and a `devbox.json`, plus the required `check`.
+
 Node repos on the ARC pool add `node-cache: true` to the `check.yaml`
 call: the job probes the CI plane's npm read-through cache
 (`npm-cache.ci-cache.svc`, INF-581/583) and points npm/yarn at it when
