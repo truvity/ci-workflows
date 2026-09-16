@@ -103,7 +103,7 @@ jobs:
       # makes postUpgradeTasks usable at all: in container mode they
       # would execute inside renovate's image, which carries none of the
       # runner's toolchain (devbox).
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           # renovate 44 uses RegExp.escape — a Node 24+ API; 22 dies with
           # "RegExp.escape is not a function" before scanning anything.
