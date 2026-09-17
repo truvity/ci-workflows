@@ -20,6 +20,18 @@
 # for Monday's batch. Every other push exits quietly — ordinary bumps
 # still batch weekly. Callers without the push trigger simply keep the
 # weekly-only behavior.
+#
+# TOKENS come from one of two sources (`token-source`), the same two the
+# fleet workflows take:
+#
+#   app-key        the caller holds the App's private key as a secret and
+#                  the job mints with actions/create-github-app-token.
+#   access-roster  the caller holds no key. The job exchanges its own
+#                  GitHub OIDC identity token at an access-roster issuer
+#                  for an installation token of a catalogue App, narrowed
+#                  to this repository, and the issuer's grants decide.
+#                  Nothing to rotate, nothing to leak from the caller.
+#
 #   jobs:
 #     tag:
 #       # DOUBLY GUARDED, off by default: the App credentials must be
@@ -32,21 +44,76 @@
 #       secrets:
 #         CI_AUTOMATION_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
 #
+# or, with no key anywhere:
+#
+#   permissions:
+#     contents: read
+#     id-token: write           # the exchange needs it
+#   jobs:
+#     tag:
+#       if: vars.AUTO_RELEASE == 'true'
+#       uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@<sha> # vX.Y.Z
+#       with:
+#         token-source: access-roster
+#         access-roster-issuer: https://access.example
+#         github-app: ci-automation
+#
+# Secrets are passed explicitly, always: a caller in another organisation
+# cannot inherit, and a same-org caller holds exactly what it passes.
+#
+# WHY TWO TAG JOBS, one per source, with the same steps twice: a job's
+# `permissions` are static, and a called workflow's job that asks for
+# more than its caller granted FAILS THE RUN rather than getting less.
+# One job declaring `id-token: write` would therefore break every caller
+# still on `app-key` the moment renovate bumps its pin — a dozen
+# repositories whose auto-release would go red on a schedule nobody
+# watches. A SKIPPED job asks for nothing, so the source that needs the
+# permission carries it and the source that does not is untouched. The
+# duplication is the price of that; keep the two step lists identical.
+#
 # Two estate-side prerequisites per adopting repo, or the tag push is
 # rejected / the secrets arrive empty:
-#   - the repo's v* tag ruleset carries the App as a bypass actor
-#     (gitops cfg/github.yaml `bypass_apps`, github-structure >= v0.2.0)
-#   - CI_AUTOMATION_APP_ID (org var) and CI_AUTOMATION_PRIVATE_KEY
-#     (org secret) are entitlement-scoped to the repo (INF-580)
+#   - the repo's v* tag ruleset carries the App that cuts the tag as a
+#     bypass actor (gitops cfg/github.yaml `bypass_apps`,
+#     github-structure >= v0.2.0). The two sources are two DIFFERENT
+#     Apps with different ids, so a repository switching source needs
+#     the new App's id there first.
+#   - `app-key`: CI_AUTOMATION_APP_ID (org var) and
+#     CI_AUTOMATION_PRIVATE_KEY (org secret) are entitlement-scoped to
+#     the repo (INF-580). `access-roster`: the issuer grants this
+#     repository's auto-release job a token of `github-app`.
 name: auto-release
 
 on:
   workflow_call:
     inputs:
-      app-id:
-        description: GitHub App id that cuts the tag (from the caller's vars)
-        required: true
+      token-source:
+        description: >-
+          Where the token comes from: `app-key` (the App key passed as
+          the CI_AUTOMATION_PRIVATE_KEY secret, with `app-id`) or
+          `access-roster` (an installation token exchanged at
+          `access-roster-issuer` for the job's GitHub OIDC token, with
+          `github-app`).
+        required: false
         type: string
+        default: app-key
+      app-id:
+        description: GitHub App id that cuts the tag (from the caller's vars). Required when token-source is `app-key`.
+        required: false
+        type: string
+        default: ""
+      access-roster-issuer:
+        description: The access-roster issuer URL. Required when token-source is `access-roster`.
+        required: false
+        type: string
+        default: ""
+      github-app:
+        description: >-
+          The tagging App's catalogue id at the issuer. Required when
+          token-source is `access-roster`.
+        required: false
+        type: string
+        default: ""
       tag-prefix:
         description: >-
           Release tag prefix; the newest tag matching <prefix>* is
@@ -57,24 +124,67 @@ on:
         default: v
     secrets:
       CI_AUTOMATION_PRIVATE_KEY:
-        required: true
+        description: The App's private key. Required when token-source is `app-key`.
+        required: false
 
 permissions:
   contents: read
 
 jobs:
+  # Before either tag job, and outside both: a token-source neither job
+  # matches would otherwise skip both and report success.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the token inputs
+        env:
+          SOURCE: ${{ inputs.token-source }}
+          APP_ID: ${{ inputs.app-id }}
+          HAS_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY != '' }}
+          ISSUER: ${{ inputs.access-roster-issuer }}
+          APP: ${{ inputs.github-app }}
+        run: |
+          set -euo pipefail
+          fail=0
+          case "$SOURCE" in
+            app-key)
+              [ -n "$APP_ID" ] || { echo "::error::token-source app-key needs app-id"; fail=1; }
+              [ "$HAS_KEY" = true ] || { echo "::error::token-source app-key needs the CI_AUTOMATION_PRIVATE_KEY secret"; fail=1; }
+              if [ -n "$ISSUER$APP" ]; then
+                echo "::warning::access-roster-issuer and github-app are read only with token-source access-roster"
+              fi
+              ;;
+            access-roster)
+              [ -n "$ISSUER" ] || { echo "::error::token-source access-roster needs access-roster-issuer"; fail=1; }
+              [ -n "$APP" ] || { echo "::error::token-source access-roster needs github-app"; fail=1; }
+              if [ -n "$APP_ID" ]; then
+                echo "::warning::app-id is read only with token-source app-key"
+              fi
+              ;;
+            *)
+              echo "::error::token-source must be app-key or access-roster (got '$SOURCE')"; fail=1 ;;
+          esac
+          exit "$fail"
+
+  # ── token-source: app-key ────────────────────────────────────────────
   tag:
+    needs: preflight
+    if: inputs.token-source == 'app-key'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     # Queue, never cancel: two near-simultaneous security merges must
     # tag two DIFFERENT patch versions, so the second run has to see
-    # the first one's tag rather than race it.
+    # the first one's tag rather than race it. The group is shared with
+    # the access-roster job below — one repository, one tagger.
     concurrency:
       group: auto-release-${{ github.repository }}
       cancel-in-progress: false
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        id: app-token
+        id: token
         with:
           app-id: ${{ inputs.app-id }}
           private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
@@ -89,7 +199,7 @@ jobs:
         id: gate
         if: github.event_name == 'push'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           # Context reaches the script through env, never inline
           # interpolation into the shell text (CodeQL actions/code
           # injection — alerts 26/27; repository and sha are benign
@@ -114,12 +224,13 @@ jobs:
         with:
           # The tag list and the ancestry comparison both need history.
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
 
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
         env:
           PREFIX: ${{ inputs.tag-prefix }}
+          BOT: ${{ steps.token.outputs.app-slug }}
         run: |
           set -euo pipefail
           LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
@@ -132,8 +243,95 @@ jobs:
             exit 0
           fi
           NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
-          git config user.name "truvity-ci-automation[bot]"
-          git config user.email "truvity-ci-automation[bot]@users.noreply.github.com"
+          git config user.name "${BOT}[bot]"
+          git config user.email "${BOT}[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
+          git push origin "$NEXT"
+          echo "released $NEXT" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── token-source: access-roster ──────────────────────────────────────
+  # The same steps, minting differently. See the note at the top of the
+  # file for why this is a second job and not a second `if:`.
+  tag-roster:
+    needs: preflight
+    if: inputs.token-source == 'access-roster'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # the exchange
+    concurrency:
+      group: auto-release-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Name this repository
+        id: repo
+        env:
+          REPO: ${{ github.repository }}
+        run: echo "name=${REPO#*/}" >> "$GITHUB_OUTPUT"
+
+      # THIS repository only, and the two permissions the steps below
+      # use: `contents: write` pushes the tag, `pull_requests: read` is
+      # what the security lane's gate reads the merged PR's labels with.
+      # The installation reaches the organisation; this token reaches one
+      # repository.
+      - uses: truvity/access-roster@00471daf1ad10c5227cc695b307ffe612c2ced99 # v1.14.0
+        id: token
+        with:
+          issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          repositories: ${{ steps.repo.outputs.name }}
+          permissions: contents:write,pull_requests:read
+
+      - name: Release only security-labeled pushes
+        id: gate
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.github-token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            --jq '[.[].labels[].name] | join(",")')
+          case ",$labels," in
+          *,security,*)
+            echo "security-labeled merge — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          *)
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "push without a security-labeled PR — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.token.outputs.github-token }}
+
+      - name: Cut the next patch tag if master moved
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          PREFIX: ${{ inputs.tag-prefix }}
+          # The catalogue id, which is the App's name at the issuer; the
+          # App's login on GitHub may carry a suffix. It names the tagger
+          # on an annotated tag and nothing else — GitHub attributes the
+          # push to the App whose token pushed it.
+          BOT: ${{ inputs.github-app }}
+        run: |
+          set -euo pipefail
+          LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            echo "no ${PREFIX}* releases yet — a human cuts the first one" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$(git rev-parse "$LATEST^{commit}")" = "$(git rev-parse HEAD)" ]; then
+            echo "master == $LATEST — nothing to release" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
+          git config user.name "${BOT}[bot]"
+          git config user.email "${BOT}[bot]@users.noreply.github.com"
           git tag -a "$NEXT" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
           git push origin "$NEXT"
           echo "released $NEXT" >> "$GITHUB_STEP_SUMMARY"

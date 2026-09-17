@@ -105,12 +105,57 @@ bumps have moved master past the latest release. Prerequisites, all
 declared, none hand-set:
 
 1. the tag ruleset carries the App in `bypass_apps` (step 1)
-2. `CI_AUTOMATION_APP_ID` (variable) and `CI_AUTOMATION_PRIVATE_KEY`
-   (secret) are entitled to the repo
+2. the repo can get a token of that App — see below
 3. `vars.AUTO_RELEASE == "true"` — the deliberate arming act
 
 Stagger the caller's cron: repos tagging in the same minute produce
 gitops pin PRs that race each other's rebases.
+
+### Where the tagging token comes from
+
+`token-source`, the same input the [fleet workflows](fleet.md#where-the-tokens-come-from)
+take:
+
+| `token-source` | the caller passes | the job |
+|---|---|---|
+| `app-key` (default) | `app-id`, and the App's private key as the `CI_AUTOMATION_PRIVATE_KEY` secret | mints with `actions/create-github-app-token` |
+| `access-roster` | `access-roster-issuer` and `github-app` (the App's catalogue id); no secret | exchanges its own GitHub OIDC token at the issuer for an installation token, via the [access-roster action](https://github.com/truvity/access-roster) |
+
+```yaml
+# .github/workflows/auto-release.yaml — no key anywhere
+permissions:
+  contents: read
+  id-token: write          # the exchange needs it
+jobs:
+  tag:
+    if: vars.AUTO_RELEASE == 'true'
+    uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@<sha> # vX.Y.Z
+    with:
+      token-source: access-roster
+      access-roster-issuer: https://access.example
+      github-app: ci-automation
+```
+
+With `access-roster` there is no key in the repository, in an
+organisation secret, or in an entitlement list: the issuer holds the App
+and its grants decide which **job** may have a token of it. The token
+this job asks for is **one repository — its own — with `contents: write`
+and `pull_requests: read`**: enough to push the tag and to read the
+merged PR's labels for the security lane, and nothing else. The grant
+pins the job's identity: the repository, `refs/heads/master`, the event,
+this repository's `auto-release.yaml` as `job_workflow_ref` at any
+commit, and the caller's own file as `workflow_ref`.
+
+Two things change with the source and are easy to miss:
+
+- **`id-token: write` in the caller.** A called workflow can only narrow
+  what its caller grants. The `app-key` job does not ask for it, so
+  callers that stay on keys need no edit — but a caller switching source
+  and forgetting the permission fails at job start.
+- **A different App, so a different `bypass_apps` id.** The issuer's App
+  is not the one whose key lives in 1Password; the v* tag ruleset must
+  carry the new App's id (step 1) before the first tag push, or the push
+  is rejected.
 
 After step 5 the loop is closed: a dependency bump lands, merges
 itself, releases itself, and deploys itself — and every link in that
