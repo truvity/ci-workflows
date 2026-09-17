@@ -46,12 +46,13 @@ on:
           (npm-cache.ci-cache.svc, INF-581) and point npm and yarn at
           it for the job when it answers; when it does not, leave the
           defaults so a down cache degrades CI to slow, never to
-          broken. Meaningful only on ARC runners — hosted runners
-          cannot resolve the in-cluster name and take the fallback
-          path by construction.
+          broken. Acts only on self-hosted (ARC) runners: on a
+          GitHub-hosted runner the in-cluster name cannot resolve, so
+          the probe is skipped there. Default true, which makes it a
+          no-op for repositories without Node and for hosted runners.
         required: false
         type: boolean
-        default: false
+        default: true
       runner:
         description: >-
           Runner label. Hosted repos leave the default; ARC callers pass
@@ -186,6 +187,11 @@ on:
         type: string
         default: ''
       goproxy:
+        description: >-
+          Go module proxy for recipes. Empty falls back to the CALLER's
+          `vars.CI_GOPROXY` (a reusable workflow reads the caller
+          repository's variables); both empty leaves Go's default. Applied
+          only alongside go-cache-bucket, like the rest of the cache wiring.
         required: false
         type: string
         default: ''
@@ -288,7 +294,7 @@ jobs:
           aws-config-file: ${{ inputs.aws-config-file }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
-          goproxy: ${{ inputs.goproxy }}
+          goproxy: ${{ inputs.goproxy || vars.CI_GOPROXY }}
           go-private: ${{ inputs.go-private }}
           codeartifact-domain: ${{ inputs.codeartifact-domain }}
           codeartifact-domain-owner: ${{ inputs.codeartifact-domain-owner }}
@@ -306,7 +312,10 @@ jobs:
       # fixed literals — nothing user-controlled rides them, which is
       # what the job-env doctrine above actually guards against.
       - name: Point npm and yarn at the CI-plane cache
-        if: inputs.node-cache
+        # Self-hosted only: a GitHub-hosted runner can never resolve the
+        # in-cluster name, and probing there would print the
+        # "unreachable" warning on every job of every hosted caller.
+        if: inputs.node-cache && runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
           if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
