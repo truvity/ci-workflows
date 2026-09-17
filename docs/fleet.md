@@ -308,17 +308,56 @@ App's bot identity, which this library cannot know: `git-user` is the bot
 login, `<app name>[bot]`; an empty `git-email` is looked up from it
 (`<bot user id>+<login>@users.noreply.github.com`).
 
-Multi-module repositories: a `.devbox-parity.json` at the repository root
-with `{"module-dirs": ["provider", "sdk"]}` names further `go.mod` files
-to align. Without it, only the root module is considered — the same limit
-`devbox-update.yaml` has always had.
+### `.devbox-parity.json`
+
+Optional, at the repository root, read off the default branch before the
+checkout. It is how a repository says something about itself that the run
+cannot know. Every key is optional; no file at all means every default.
+
+| key | values | default | meaning |
+|---|---|---|---|
+| `module-dirs` | array of paths | `[]` | further `go.mod` files to align, relative to the root. The root module is always considered — without this key it is the only one, the limit `devbox-update.yaml` has always had. |
+| `mode` | `auto`, `align` | the run's `mode` input | the parity mode for this repository. |
+
+```json
+{
+  "mode": "align",
+  "module-dirs": ["provider", "sdk"]
+}
+```
+
+`mode` exists for the repository whose hooks refuse a full `devbox
+update`: one whose pinned tools generate committed files — golden
+renders, generated clients — that a human regenerates on purpose, so an
+unattended `devbox update` either moves them behind everyone's back or is
+refused outright by a pre-push hook. Such a repository used to be left
+out of the fleet and keep a caller of its own; with `align` it is aligned
+by the same run as everyone else, and only its *followers* move.
+
+A repository's own `mode` wins over the run's, a dispatched `full`
+included — the point is that the repository, not the dispatcher, knows
+this about itself. `full` is a run-wide decision and is not accepted in
+the file; an unknown value is a warning and the run's mode is used.
+Writing `"mode": "auto"` therefore means "full updates are fine here,
+whatever this run was dispatched with", which is also what no file at all
+means for a run left on the default.
+
+What `align` runs is exactly what every repository gets on a day that is
+not `full-update-day`: `devbox update` is skipped, `devbox.json` and
+`devbox.lock` are untouched, each pair is aligned to the pin already in
+`devbox.lock` (the go `toolchain` directive, the playwright npm
+packages), and a pull request is opened on `chore/devbox-update` only if
+one of them actually moved. The commit and the push run inside devbox, so
+the repository's own hooks still vet the result.
 
 ## Migrating from the per-repository callers
 
 Per repository, in this order:
 
 1. Add it to the caller repository's `fleet.yaml` under the lists it uses
-   today (`renovate.<estate>`, `parity.<estate>`).
+   today (`renovate.<estate>`, `parity.<estate>`). A repository whose own
+   caller ran parity in a fixed mode carries that mode over in its
+   `.devbox-parity.json` — the fleet run's mode is only a default.
 2. Dispatch the fleet jobs and read the summary: the repository is listed as
    processed, not as an error.
 3. In the repository, delete `renovate.yaml`, `devbox-update.yaml` and

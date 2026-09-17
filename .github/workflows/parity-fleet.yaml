@@ -8,6 +8,10 @@
 # repository as a matrix job. The pairs (go toolchain, playwright) and the
 # rules are in docs/fleet.md and docs/devbox-update.md.
 #
+# The run's `mode` is a default: a repository that needs another one
+# declares it in its own `.devbox-parity.json`, so an estate whose
+# repositories disagree about full updates is still ONE run.
+#
 # Tokens come from App keys the caller passes (`token-source: app-key`) or
 # from an access-roster issuer the job exchanges its GitHub OIDC token at
 # (`token-source: access-roster`) — see renovate-fleet.yaml. Either way the
@@ -88,7 +92,10 @@ on:
         type: string
         default: ""
       mode:
-        description: "`auto` (full devbox update on full-update-day, align only otherwise), `full`, or `align`."
+        description: >-
+          `auto` (full devbox update on full-update-day, align only
+          otherwise), `full`, or `align` — for every repository that does
+          not declare a `mode` of its own in `.devbox-parity.json`.
         required: false
         type: string
         default: auto
@@ -331,6 +338,7 @@ jobs:
           TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
           REPO: ${{ matrix.repository }}
           API: ${{ github.api_url }}
+          RUN_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           api() {
@@ -340,12 +348,42 @@ jobs:
               -H "X-GitHub-Api-Version: 2022-11-28" "$@"
           }
           base=$(api "$API/repos/$REPO" | jq -r '.default_branch')
-          # Optional per-repository settings: further go.mod directories.
-          dirs=$(api "$API/repos/$REPO/contents/.devbox-parity.json?ref=$base" 2>/dev/null \
-            | jq -r '.content // empty' | base64 -d 2>/dev/null | jq -c '."module-dirs" // []' || echo '[]')
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "module-dirs=${dirs:-[]}" >> "$GITHUB_OUTPUT"
-          echo "$REPO: default branch $base, module-dirs ${dirs:-[]}"
+
+          # Optional per-repository settings, read off the default branch:
+          # `.devbox-parity.json`. Absent, unreadable or not an object, it
+          # is `{}` and every setting keeps its run-wide default — the
+          # file is opt-in and a repository without one behaves exactly as
+          # before. Schema: docs/fleet.md.
+          settings=$(api "$API/repos/$REPO/contents/.devbox-parity.json?ref=$base" 2>/dev/null \
+            | jq -r '.content // empty' | base64 -d 2>/dev/null || true)
+          jq -e 'type == "object"' >/dev/null 2>&1 <<<"${settings:-}" || settings='{}'
+
+          # Further go.mod directories.
+          dirs=$(jq -c '."module-dirs" // []' <<<"$settings")
+
+          # The mode THIS repository needs, whatever the run was
+          # dispatched with. A repository whose hooks refuse a full
+          # `devbox update` — one whose generated files a human has to
+          # regenerate — declares `align` and is aligned by the same run
+          # as everyone else instead of keeping a caller of its own.
+          # Absent, the run's `mode` input decides, as it always did;
+          # `full` is a run-wide decision and is not accepted here.
+          mode=$(jq -r '.mode // empty' <<<"$settings")
+          case "$mode" in
+            auto | align) echo "$REPO: mode $mode from .devbox-parity.json" ;;
+            "") mode="$RUN_MODE" ;;
+            *)
+              echo "::warning::$REPO: .devbox-parity.json mode '$mode' is not auto or align — using this run's mode $RUN_MODE"
+              mode="$RUN_MODE"
+              ;;
+          esac
+
+          {
+            echo "base=$base"
+            echo "module-dirs=$dirs"
+            echo "mode=$mode"
+          } >> "$GITHUB_OUTPUT"
+          echo "$REPO: default branch $base, module-dirs $dirs, mode $mode"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -363,7 +401,7 @@ jobs:
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
           base: ${{ steps.repo.outputs.base }}
-          mode: ${{ inputs.mode }}
+          mode: ${{ steps.repo.outputs.mode }}
           full-update-day: ${{ inputs.full-update-day }}
           module-dirs: ${{ steps.repo.outputs.module-dirs }}
           git-user: ${{ inputs.git-user }}
