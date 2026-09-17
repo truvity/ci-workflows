@@ -16,7 +16,7 @@ it updates run nothing, hold nothing, and appear in no list.
 | | per-repository callers | fleet |
 |---|---|---|
 | a repository carries | a caller workflow and access to the key | `renovate.json` and/or `devbox.json` |
-| the key lives | in every entitled repository's secrets | in the one caller repository (or, later, in a token service) |
+| the key lives | in every entitled repository's secrets | in the one caller repository, or nowhere: `token-source: access-roster` |
 | a repository is skipped | silently, when unentitled | loudly, in the run summary, with the reason |
 | adding a repository | scaffold + entitle + install | install the App |
 
@@ -68,6 +68,51 @@ on GitHub's machines *from* that private repository, so no public
 repository's CI can ever read the public App's key. Hosted minutes for a
 private repository bill; measure after the first week.
 
+## Where the tokens come from
+
+Both workflows take `token-source`:
+
+| `token-source` | the caller passes | each job |
+|---|---|---|
+| `app-key` (default) | `client-id` inputs and the App private keys as secrets | mints with `actions/create-github-app-token` |
+| `access-roster` | `access-roster-issuer` and catalogue ids (`github-app`, …); no secret | exchanges its own GitHub OIDC token at the issuer for an installation token, via the [access-roster action](https://github.com/truvity/access-roster) |
+
+With `access-roster` there is no key to hold, copy or rotate: the issuer
+keeps the Apps, and its grants decide which **job** may have a token of
+which App, for which repositories and with which permissions. Every token
+is asked for as narrow as the job's work:
+
+| workflow | job | App | repositories | permissions |
+|---|---|---|---|---|
+| renovate-fleet | `discover` | `github-app` | all (discovery lists them) | the grant's |
+| renovate-fleet | per repository | `github-app` | that one | the grant's |
+| renovate-fleet | per repository | `go-modules-github-app` | all (any module) | `contents:read` |
+| renovate-fleet | per repository | `approver-github-app` | that one | `pull_requests:write` |
+| parity-fleet | `discover` | `github-app` | all | the grant's |
+| parity-fleet | per repository | `github-app` | that one | `contents:write`, `pull_requests:write` |
+
+Discovery is not narrowed in permissions although it only reads: GraphQL's
+`refUpdateRule`, which the required-check rule reads, answers for the
+viewer, and a weaker token could find no required check where the
+repository's own job would.
+
+**The caller grants `id-token: write`**, in either mode: the jobs that mint
+declare it, and a called workflow can only narrow its caller's permissions.
+
+An issuer pins a grant to the job's identity token: the caller repository,
+its default branch, the event, the caller file (`workflow_ref`) and this
+library's file (`job_workflow_ref`, `truvity/ci-workflows/.github/workflows/renovate-fleet.yaml@<ref>`).
+Pin this library **by commit SHA**: a `*` in a matcher does not cross a
+`/`, so `@refs/tags/v2` would not match `@*`. One caller **file** per
+identity: GitHub's token names the file, not the job, so two jobs in one
+file cannot hold different grants. Hence a public and a private file for
+each workflow.
+
+`debug-oidc-claims: true` prints the `discover` job's claims —
+`repository`, `ref`, `ref_type`, `event_name`, `workflow_ref`,
+`job_workflow_ref`, `sha`, never the token — to compare against the
+issuer's matchers on a first run.
+
 ## `renovate-fleet.yaml`
 
 ```yaml
@@ -79,18 +124,25 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
 jobs:
   renovate:
     uses: truvity/ci-workflows/.github/workflows/renovate-fleet.yaml@<sha> # vX.Y.Z
     with:
       estate: private
       runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
-      client-id: ${{ vars.RENOVATE_PRIVATE_CLIENT_ID }}
       list: renovate.private
       global-config: renovate/global.json5
-    secrets:
-      RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_APP_PRIVATE_KEY }}
+      token-source: access-roster
+      access-roster-issuer: https://access.example
+      github-app: renovate-private
+      approver-github-app: ci-automation
+      go-modules-github-app: renovate-private
 ```
+
+With keys instead, `client-id: ${{ vars.RENOVATE_PRIVATE_CLIENT_ID }}` and
+`secrets: { RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_APP_PRIVATE_KEY }} }`
+replace the last four inputs.
 
 Secrets are always passed **explicitly**. A caller in another organisation
 cannot use `secrets: inherit` at all, and a same-org caller gains nothing
@@ -173,17 +225,24 @@ gives a green PR a run that finds it green.
 | `global-config` | `""` | the estate policy file in the caller repository |
 | `max-parallel` | `4` | repositories processed at once |
 | `runner` | `ubuntu-latest` | hosted for the public estate, the pool label for the private one |
-| `client-id` | *required* | the renovate App's client id |
-| `approver-client-id` | `""` | the approver App's client id; empty disables the approval sweep |
-| `go-modules-client-id` | `""` | an App that may read private Go modules, for `go.sum` regeneration |
+| `token-source` | `app-key` | `app-key` or `access-roster` — see [Where the tokens come from](#where-the-tokens-come-from) |
+| `access-roster-issuer` | `""` | the issuer URL (`access-roster`) |
+| `github-app` | `""` | the renovate App's catalogue id (`access-roster`) |
+| `approver-github-app` | `""` | the approver App's catalogue id (`access-roster`); empty disables the approval sweep |
+| `go-modules-github-app` | `""` | an App whose `contents:read` token reads private Go modules (`access-roster`), often the renovate App |
+| `client-id` | `""` | the renovate App's client id (`app-key`) |
+| `approver-client-id` | `""` | the approver App's client id (`app-key`); empty disables the approval sweep |
+| `go-modules-client-id` | `""` | an App that may read private Go modules, for `go.sum` regeneration (`app-key`) |
+| `debug-oidc-claims` | `false` | print the `discover` job's OIDC claims, not the token |
 | `require-check` | `true` | skip repositories with no required status check; `false` only for an estate whose repositories do not automerge |
 | `filter` | `""` | RE2 over `owner/name`; only matches are processed — use it to shard a large estate across schedules |
 | `allowed-commands` | `[]` | `RENOVATE_ALLOWED_COMMANDS`, exact strings the repositories' `postUpgradeTasks` may run |
 | `log-level` | `info` | `debug` to see why a repository produced nothing |
 | `timeout-minutes` | `30` | per repository |
 
-Secrets: `RENOVATE_APP_PRIVATE_KEY` (required), `APPROVER_APP_PRIVATE_KEY`,
-`GO_MODULES_APP_PRIVATE_KEY` (both optional).
+Secrets, all optional and read only with `app-key`: `RENOVATE_APP_PRIVATE_KEY`
+(needed there), `APPROVER_APP_PRIVATE_KEY`, `GO_MODULES_APP_PRIVATE_KEY`.
+`discover` checks the combination before anything runs.
 
 ## `parity-fleet.yaml`
 
@@ -200,26 +259,30 @@ Adding a pair is adding a step to the `devbox-parity` action and a row
 here. Each pair is a few lines of shell over the two files.
 
 ```yaml
-# .github/workflows/parity.yaml in the caller repository
-name: parity
+# .github/workflows/parity-private.yaml in the caller repository
+name: parity (private estate)
 on:
   schedule:
     - cron: "0 1 * * *"       # daily; the full devbox update runs on full-update-day
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
 jobs:
-  private:
+  parity:
     uses: truvity/ci-workflows/.github/workflows/parity-fleet.yaml@<sha> # vX.Y.Z
     with:
       estate: private
       runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
-      client-id: ${{ vars.RENOVATE_PRIVATE_CLIENT_ID }}
-      git-user: renovate-private[bot]
-      git-email: 12345678+renovate-private[bot]@users.noreply.github.com
-    secrets:
-      RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_PRIVATE_KEY }}
+      token-source: access-roster
+      access-roster-issuer: https://access.example
+      github-app: renovate-private
+      git-user: example-renovate-private[bot]
+      git-email: 12345678+example-renovate-private[bot]@users.noreply.github.com
 ```
+
+With a key instead: `client-id` and the `RENOVATE_APP_PRIVATE_KEY` secret
+replace `token-source`, `access-roster-issuer` and `github-app`.
 
 One run discovers the repositories that carry `devbox.json`, then runs the
 `devbox-parity` action **once per repository as a matrix job**: checkout
@@ -229,10 +292,14 @@ so a re-run updates the open PR), auto-merge armed only where a required
 check exists. The push runs inside devbox so the repository's own
 pre-push hooks vet the result — they are the safety net, not an obstacle.
 
-Inputs: `estate`, `runner`, `client-id`, `list`, `repositories-file`, `mode` (`auto|full|align`),
-`full-update-day` (`1`), `filter`, `require-check` (`true`), `git-user`, `git-email`,
+Inputs: `estate`, `runner`, `token-source` (`app-key|access-roster`),
+`access-roster-issuer`, `github-app`, `client-id`, `debug-oidc-claims`,
+`list`, `repositories-file`, `mode` (`auto|full|align`), `full-update-day`
+(`1`), `filter`, `require-check` (`true`), `git-user`, `git-email`,
 `timeout-minutes`. The commit author is an input because it should be the
-App's bot identity, which this library cannot know.
+App's bot identity, which this library cannot know: `git-user` is the bot
+login, `<app name>[bot]`; an empty `git-email` is looked up from it
+(`<bot user id>+<login>@users.noreply.github.com`).
 
 Multi-module repositories: a `.devbox-parity.json` at the repository root
 with `{"module-dirs": ["provider", "sdk"]}` names further `go.mod` files

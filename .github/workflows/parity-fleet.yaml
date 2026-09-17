@@ -8,15 +8,30 @@
 # repository as a matrix job. The pairs (go toolchain, playwright) and the
 # rules are in docs/fleet.md and docs/devbox-update.md.
 #
+# Tokens come from App keys the caller passes (`token-source: app-key`) or
+# from an access-roster issuer the job exchanges its GitHub OIDC token at
+# (`token-source: access-roster`) — see renovate-fleet.yaml. Either way the
+# caller grants `id-token: write`.
+#
+#   permissions:
+#     contents: read
+#     id-token: write
 #   jobs:
 #     parity:
 #       uses: truvity/ci-workflows/.github/workflows/parity-fleet.yaml@<sha> # vX.Y.Z
 #       with:
 #         estate: private
 #         runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+#         token-source: access-roster
+#         access-roster-issuer: https://access.example
+#         github-app: renovate-private
+#         git-user: example-renovate-private[bot]
+#
+# or, with a key:
+#
+#       with:
 #         client-id: ${{ vars.RENOVATE_PRIVATE_CLIENT_ID }}
 #         git-user: renovate-private[bot]
-#         git-email: 12345678+renovate-private[bot]@users.noreply.github.com
 #       secrets:
 #         RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_PRIVATE_PRIVATE_KEY }}
 name: parity-fleet
@@ -35,10 +50,43 @@ on:
         required: false
         type: string
         default: ubuntu-latest
-      client-id:
-        description: The App's client id — the identity that pushes the branch and opens the PR.
-        required: true
+      token-source:
+        description: >-
+          Where tokens come from: `app-key` (`client-id` and the
+          RENOVATE_APP_PRIVATE_KEY secret) or `access-roster` (installation
+          tokens of `github-app`, exchanged at `access-roster-issuer` for
+          the job's GitHub OIDC token).
+        required: false
         type: string
+        default: app-key
+      access-roster-issuer:
+        description: The access-roster issuer URL. Required when token-source is `access-roster`.
+        required: false
+        type: string
+        default: ""
+      github-app:
+        description: >-
+          The App's catalogue id at the issuer — the identity that pushes
+          the branch and opens the PR. Required when token-source is
+          `access-roster`.
+        required: false
+        type: string
+        default: ""
+      debug-oidc-claims:
+        description: >-
+          Print the discover job's GitHub OIDC claims (repository, ref,
+          ref_type, event_name, workflow_ref, job_workflow_ref, sha) —
+          never the token — to check them against an issuer's matchers.
+        required: false
+        type: boolean
+        default: false
+      client-id:
+        description: >-
+          The App's client id — the identity that pushes the branch and
+          opens the PR. Required when token-source is `app-key`.
+        required: false
+        type: string
+        default: ""
       mode:
         description: "`auto` (full devbox update on full-update-day, align only otherwise), `full`, or `align`."
         required: false
@@ -81,9 +129,13 @@ on:
         required: true
         type: string
       git-email:
-        description: Commit author email — the App's noreply address.
-        required: true
+        description: >-
+          Commit author email — the App's noreply address,
+          `<bot user id>+<git-user>@users.noreply.github.com`. Empty looks
+          the bot user id up from git-user.
+        required: false
         type: string
+        default: ""
       max-parallel:
         description: How many repositories are aligned at once.
         required: false
@@ -96,8 +148,8 @@ on:
         default: 30
     secrets:
       RENOVATE_APP_PRIVATE_KEY:
-        description: The App's private key.
-        required: true
+        description: The App's private key. Required when token-source is `app-key`.
+        required: false
 
 permissions:
   contents: read
@@ -106,6 +158,9 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # token-source access-roster, and debug-oidc-claims
     outputs:
       repositories: ${{ steps.discover.outputs.repositories }}
       count: ${{ steps.discover.outputs.count }}
@@ -134,17 +189,73 @@ jobs:
           echo "names=$names" >> "$GITHUB_OUTPUT"
           echo "$LIST: $(jq -r 'join(", ")' <<<"$names")"
 
+      # Once, here: every other job needs this one.
+      - name: Check the token inputs
+        env:
+          SOURCE: ${{ inputs.token-source }}
+          ISSUER: ${{ inputs.access-roster-issuer }}
+          APP: ${{ inputs.github-app }}
+          CLIENT_ID: ${{ inputs.client-id }}
+          HAS_KEY: ${{ secrets.RENOVATE_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          fail=0
+          case "$SOURCE" in
+            app-key)
+              [ -n "$CLIENT_ID" ] || { echo "::error::token-source app-key needs client-id"; fail=1; }
+              [ "$HAS_KEY" = true ] || { echo "::error::token-source app-key needs the RENOVATE_APP_PRIVATE_KEY secret"; fail=1; }
+              ;;
+            access-roster)
+              [ -n "$ISSUER" ] || { echo "::error::token-source access-roster needs access-roster-issuer"; fail=1; }
+              [ -n "$APP" ] || { echo "::error::token-source access-roster needs github-app"; fail=1; }
+              ;;
+            *)
+              echo "::error::token-source must be app-key or access-roster (got '$SOURCE')"; fail=1 ;;
+          esac
+          exit "$fail"
+
+      # What an issuer's `github` matchers compare, as GitHub put it in
+      # this job's identity token. The token is minted for a throwaway
+      # audience, so it is good for nothing if it ever leaked, and only
+      # its claims are printed.
+      - name: Print this job's OIDC claims
+        if: inputs.debug-oidc-claims
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::warning::no id-token permission in this job; nothing to print"
+            exit 0
+          fi
+          jwt=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=debug-oidc-claims" | jq -r '.value')
+          echo "::add-mask::$jwt"
+          payload=$(cut -d. -f2 <<<"$jwt" | tr '_-' '/+')
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+          base64 -d <<<"$payload" \
+            | jq '{repository, ref, ref_type, event_name, workflow_ref, job_workflow_ref, sha}'
+
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: token
+        id: key-token
+        if: inputs.token-source == 'app-key'
         with:
           client-id: ${{ inputs.client-id }}
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      # Not narrowed: discovery has to see every repository to list them,
+      # and GraphQL's refUpdateRule answers for the viewer, so a weaker
+      # token than the matrix jobs' could miss a required check they have.
+      - uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+        id: roster-token
+        if: inputs.token-source == 'access-roster'
+        with:
+          issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+
       - uses: truvity/ci-workflows/.github/actions/fleet-discover@01948809944a32141a618c9679bd3d9077019da0 # master 2026-09-16 (enrolment list, ci-workflows#105)
         id: discover
         with:
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
           estate: ${{ inputs.estate }}
           filter: ${{ inputs.filter }}
           repositories: ${{ steps.enrolled.outputs.names }}
@@ -156,6 +267,9 @@ jobs:
     if: needs.discover.outputs.count != '0'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      id-token: write # token-source access-roster
     strategy:
       fail-fast: false
       max-parallel: ${{ inputs.max-parallel }}
@@ -165,18 +279,56 @@ jobs:
     steps:
       # A token for THIS repository only: the matrix job holds no more
       # reach than the one repository it aligns.
+      - name: Name the repository
+        id: name
+        env:
+          REPO: ${{ matrix.repository }}
+        run: echo "name=${REPO#*/}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: token
+        id: key-token
+        if: inputs.token-source == 'app-key'
         with:
           client-id: ${{ inputs.client-id }}
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: ${{ matrix.repository }}
+          repositories: ${{ steps.name.outputs.name }}
+
+      # Push one branch, open and auto-merge one PR: contents and
+      # pull_requests, on this repository.
+      - uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+        id: roster-token
+        if: inputs.token-source == 'access-roster'
+        with:
+          issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          repositories: ${{ steps.name.outputs.name }}
+          permissions: contents:write, pull_requests:write
+
+      - name: Resolve the commit author
+        id: author
+        env:
+          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          USER_LOGIN: ${{ inputs.git-user }}
+          EMAIL: ${{ inputs.git-email }}
+          API: ${{ github.api_url }}
+        run: |
+          set -euo pipefail
+          # The commit author: the App's bot noreply address, looked up
+          # when the caller does not give it.
+          if [ -z "$EMAIL" ]; then
+            id=$(curl -fsS --max-time 60 -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$API/users/$(jq -rn --arg u "$USER_LOGIN" '$u | @uri')" | jq -r '.id')
+            EMAIL="$id+$USER_LOGIN@users.noreply.github.com"
+          fi
+          echo "git-email=$EMAIL" >> "$GITHUB_OUTPUT"
+          echo "commits as $USER_LOGIN <$EMAIL>"
 
       - name: Read the default branch and parity settings
         id: repo
         env:
-          TOKEN: ${{ steps.token.outputs.token }}
+          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
           REPO: ${{ matrix.repository }}
           API: ${{ github.api_url }}
         run: |
@@ -199,23 +351,23 @@ jobs:
         with:
           repository: ${{ matrix.repository }}
           ref: ${{ steps.repo.outputs.base }}
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
       - uses: truvity/ci-workflows/.github/actions/setup-devbox@326ee195d3140dd3bc60ea76f5d6b0664855accd # master 2026-09-17 (326ee19)
         with:
           proto: "false"
-          github-token: ${{ steps.token.outputs.token }}
+          github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
       - uses: truvity/ci-workflows/.github/actions/devbox-parity@d86bb7e4b66b04dc3b69c6517fe6bcc64187074f # master 2026-09-16 (git add fix, ci-workflows#108)
         id: parity
         with:
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
           base: ${{ steps.repo.outputs.base }}
           mode: ${{ inputs.mode }}
           full-update-day: ${{ inputs.full-update-day }}
           module-dirs: ${{ steps.repo.outputs.module-dirs }}
           git-user: ${{ inputs.git-user }}
-          git-email: ${{ inputs.git-email }}
+          git-email: ${{ steps.author.outputs.git-email }}
 
       - name: Summary
         env:
