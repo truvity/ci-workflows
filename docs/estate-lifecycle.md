@@ -53,11 +53,23 @@ fleet jobs (`docs/fleet.md`) carries neither: renovate and parity come
 from one caller repository per estate, and a repository opts in by
 having a `renovate.json` and a `devbox.json`, plus the required `check`.
 
-Node repos on the ARC pool add `node-cache: true` to the `check.yaml`
-call: the job probes the CI plane's npm read-through cache
+`node-cache` defaults to `true` in `check.yaml` and `integration.yaml`
+(no need to pass it): on a self-hosted (ARC) runner the job probes the
+CI plane's npm read-through cache
 (`npm-cache.ci-cache.svc`, INF-581/583) and points npm/yarn at it when
 it answers — a down cache degrades the job to *slow* (direct npmjs
-with a warning), never to *broken*.
+with a warning), never to *broken*. GitHub-hosted runners skip the probe,
+and `integration.yaml` caches `.yarn/cache` only when a root `yarn.lock`
+exists, so the default is a no-op for non-Node repositories. Pass
+`node-cache: false` to opt out.
+
+`goproxy` falls back to the caller's `vars.CI_GOPROXY` when the input is
+empty — a reusable workflow reads the calling repository's configuration
+variables — so callers no longer need to pass it (it takes effect with
+`go-cache-bucket`, as before). Do not pin `GOPROXY`
+in a repository's `devbox.json` `env` block: `devbox run` re-applies
+that block over the job environment and the CI proxy is silently
+bypassed. `setup-devbox` warns when it finds one.
 
 ## 3. Release — one tag, every artifact
 

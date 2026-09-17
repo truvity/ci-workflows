@@ -125,6 +125,11 @@ on:
         type: string
         default: ""
       goproxy:
+        description: >-
+          Go module proxy. Empty falls back to the CALLER's
+          `vars.CI_GOPROXY` (a reusable workflow reads the caller
+          repository's variables); both empty leaves Go's default. Applied
+          only alongside go-cache-bucket, like the rest of the cache wiring.
         required: false
         type: string
         default: ""
@@ -146,9 +151,12 @@ on:
           Node projects: cache the yarn fetch cache across runs and point
           npm/yarn at the CI plane's read-through registry when it
           answers (fallback, not dependency — same probe as check.yaml).
+          Default true: the yarn cache is skipped without a root
+          yarn.lock and the probe without a self-hosted runner, so it
+          is a no-op for repositories without Node.
         required: false
         type: boolean
-        default: false
+        default: true
       strip-local-tools:
         required: false
         type: string
@@ -218,11 +226,14 @@ jobs:
           module-app-private-key: ${{ secrets.module-app-private-key }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
-          goproxy: ${{ inputs.goproxy }}
+          goproxy: ${{ inputs.goproxy || vars.CI_GOPROXY }}
           aws-config-file: ${{ inputs.aws-config-file }}
 
+      # No root yarn.lock, nothing to cache: without this guard the
+      # default-on input would make every non-Node repo save an empty
+      # path and warn about it.
       - name: Cache the yarn fetch cache
-        if: inputs.node-cache
+        if: inputs.node-cache && hashFiles('yarn.lock') != ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .yarn/cache
@@ -234,7 +245,10 @@ jobs:
       # in-cluster http host is the design (YARN_UNSAFE_HTTP_WHITELIST
       # names exactly it, or berry refuses plain http — YN0081).
       - name: Point npm and yarn at the CI-plane cache
-        if: inputs.node-cache
+        # Self-hosted only: a GitHub-hosted runner can never resolve the
+        # in-cluster name, and probing there would print the
+        # "unreachable" warning on every job of every hosted caller.
+        if: inputs.node-cache && runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
           if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
