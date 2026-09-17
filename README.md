@@ -151,6 +151,11 @@ Strict `= "success"` means a **skipped** call fails the gate too. That is
 the point: a fork PR gets no id-token, so its suites skip, and a skip
 must not hand it a green required check for something that never ran.
 
+How a job reads a third-party credential at run time, as itself, instead
+of holding a copy of it as a repository secret — the OIDC exchange, the
+policy that decides, and how to move one consumer without breaking a
+release — is **[docs/secrets.md](docs/secrets.md)**.
+
 ## Contributing
 
 Push access (branch → PR) is granted per team in gitops
