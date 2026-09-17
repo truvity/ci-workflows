@@ -298,7 +298,7 @@ jobs:
           fi
           echo "all checks green on ${GITHUB_SHA}"
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@cbe1f184c857c118cd75874d80c026596ada7595 # master 2026-09-13 (cbe1f18)
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@326ee195d3140dd3bc60ea76f5d6b0664855accd # master 2026-09-17 (326ee19)
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
