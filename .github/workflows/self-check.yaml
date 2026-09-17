@@ -41,6 +41,15 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
+      # The one rule in this repository that decides whether a repository
+      # is touched at all, run against a stub API. A wrong answer there
+      # is silent — a repository the fleet skips looks exactly like a
+      # repository with nothing to do — so the shapes it must survive are
+      # pinned here. No network and no token: the stub is a local
+      # http.server and `api-url` points discover.sh at it.
+      - name: discovery cases
+        run: ./hack/discover-cases.sh
+
       # The reusable workflows pin the composite action by SHA, which means
       # the pin can go stale: change the action, forget the pin, and every
       # consumer keeps bootstrapping with the old one while master looks

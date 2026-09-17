@@ -156,16 +156,32 @@ deliberate decision).
     and broke master — a semantic change that belongs to the team.
     Automation moves the `toolchain` line only.
 11. **`gh pr merge --auto` on a repo with no required checks merges
-    immediately.** Gate the arming on the protection actually having
-    required contexts; otherwise leave the PR for a human.
-    And read the protection through **GraphQL `refUpdateRule`**, not the
-    REST protection endpoint: REST needs admin:read, which neither the
-    App token nor GITHUB_TOKEN carries, so it 404'd on every private
-    repo and the gate silently concluded "no required checks" — auto-
-    merge never armed where it mattered most. `refUpdateRule` shows the
-    effective rule to any viewer (`null` = no protection, `[]` = no
-    required contexts). A permission gap in the *probe* fails toward
-    manual merging, which looks like policy, not like a bug.
+    immediately.** Gate the arming on a required check actually
+    existing; otherwise leave the PR for a human.
+
+    Read **both** places a required check can live, because either one
+    is a green worth waiting for:
+
+    - a **repository ruleset**, through
+      `GET /repos/{owner}/{repo}/rules/branches/{branch}` — the
+      effective rules for that branch, already merged across every
+      ruleset that applies. It needs only `Metadata: read`.
+    - **classic branch protection**, through
+      `GET /repos/{owner}/{repo}/branches/{branch}/protection`, falling
+      back to GraphQL `refUpdateRule` when that is not readable: REST
+      needs `Administration: read`, which neither the App token nor
+      GITHUB_TOKEN carries, so it 404'd on every private repo and the
+      gate silently concluded "no required checks". `refUpdateRule`
+      shows the rule to any viewer (`null` = no protection, `[]` = no
+      required contexts) — but **as it applies to that viewer**: where
+      `enforce_admins` is false, an administrator sees `[]` on a branch
+      that really does require checks, which is why REST goes first
+      wherever it answers.
+
+    Reading only classic protection left every ruleset-gated repository
+    unarmed. A permission gap in the *probe* fails toward manual
+    merging, which looks like policy, not like a bug — which is exactly
+    why it went unnoticed for so long.
 12. **The ARC runner image has no `gh`.** Hosted runners preinstall the
     GitHub CLI; the pool image bakes nix, devbox and build tools only.
     The workflow installs a pinned `gh` when absent (gate on detection,

@@ -38,8 +38,8 @@ parity:
 
 | job | enrolment | the repository also needs |
 |---|---|---|
-| renovate | listed under `renovate.<estate>` | a renovate config at its root, and a required status check (unless `require-check: false`) |
-| parity | listed under `parity.<estate>` | a `devbox.json`, and a required status check (unless `require-check: false`) |
+| renovate | listed under `renovate.<estate>` | a renovate config at its root, and a [required status check](#what-counts-as-a-required-status-check) (unless `require-check: false`) |
+| parity | listed under `parity.<estate>` | a `devbox.json`, and a [required status check](#what-counts-as-a-required-status-check) (unless `require-check: false`) |
 
 The list is the fleet's scope, reviewed like any other change. A listed
 repository the App cannot reach — not installed on it, renamed, deleted —
@@ -51,6 +51,42 @@ that merge on green. With nothing gating the merge, an auto-merge lands
 **immediately and unvalidated**. `require-check: false` exists for an
 estate whose repositories do not automerge and review dependency PRs by
 hand.
+
+### What counts as a required status check
+
+A branch can be gated in two entirely separate ways, and **either one
+makes the repository eligible**:
+
+| source | read with | the App needs |
+|---|---|---|
+| a repository **ruleset** (repository- or organisation-level) | `GET /repos/{owner}/{repo}/rules/branches/{branch}` — the *effective* rules for that branch, already merged across every ruleset that applies, `evaluate` and `disabled` ones left out | `Metadata: read` (every installation token has it) |
+| **classic branch protection** | `GET /repos/{owner}/{repo}/branches/{branch}/protection` first — authoritative and viewer-independent; it answers `404 Branch not protected` when there is none | `Administration: read` |
+| ↳ fallback when the above is not readable | GraphQL `defaultBranchRef.refUpdateRule.requiredStatusCheckContexts` | nothing beyond seeing the repository |
+
+Discovery counts a repository as gated when **either** source requires at
+least one check. Reading classic protection alone skipped every
+repository whose merge gate had moved into a ruleset — and a skip is the
+normal outcome for most of an installation, so nothing looked wrong.
+
+The GraphQL fallback exists because the fleet App does not carry
+`Administration: read`; it is a fallback rather than the first choice
+because `refUpdateRule` reports the rule **as it applies to the viewer**.
+On a branch whose protection does not apply to administrators
+(`enforce_admins: false`), an administrator is told there are no required
+contexts at all — so it under-reports for exactly the identity most
+likely to be debugging the rule by hand.
+
+**A read that fails is `unknown`, never `no`.** If a source answers 403,
+or a 404 that means "not yours to read" rather than "not protected", the
+repository is **kept** and processed, the run carries a warning, and the
+step summary lists it under *Required-check rule not decided*. A
+repository must never be dropped because a read failed — that is
+indistinguishable from a repository with nothing to do.
+
+The rule is exercised against a stub API by `hack/discover-cases.sh`,
+which this repository's own CI runs: either source alone, both, neither,
+a ruleset with rules but no status-check rule, a protection object with
+no required checks, and each of the failure shapes.
 
 ## Two estates, two runner classes
 
@@ -95,10 +131,13 @@ is asked for as narrow as the job's work:
 | parity-fleet | per repository | `github-app` | that one | `contents:write`, `pull_requests:write` |
 | auto-release | `tag-roster` | `github-app` | the repository it runs in | `contents:write`, `pull_requests:read` |
 
-Discovery is not narrowed in permissions although it only reads: GraphQL's
-`refUpdateRule`, which the required-check rule reads, answers for the
-viewer, and a weaker token could find no required check where the
-repository's own job would.
+Discovery is not narrowed in permissions although it only reads: the
+required-check rule's fallback, GraphQL's `refUpdateRule`, answers for
+the viewer, and a weaker token could find no required check where the
+repository's own job would. Its two REST sources ask for no more than the
+grant already gives — `Metadata: read` for the effective rules of a
+branch, and `Administration: read` for classic protection, which the App
+does not have and does not need (the fallback covers it).
 
 **The caller grants `id-token: write`**, in either mode: the jobs that mint
 declare it, and a called workflow can only narrow its caller's permissions.
@@ -241,7 +280,7 @@ gives a green PR a run that finds it green.
 | `approver-client-id` | `""` | the approver App's client id (`app-key`); empty disables the approval sweep |
 | `go-modules-client-id` | `""` | an App that may read private Go modules, for `go.sum` regeneration (`app-key`) |
 | `debug-oidc-claims` | `false` | print the `discover` job's OIDC claims, not the token |
-| `require-check` | `true` | skip repositories with no required status check; `false` only for an estate whose repositories do not automerge |
+| `require-check` | `true` | skip repositories with no required status check, from [either source](#what-counts-as-a-required-status-check); `false` only for an estate whose repositories do not automerge |
 | `filter` | `""` | RE2 over `owner/name`; only matches are processed — use it to shard a large estate across schedules |
 | `allowed-commands` | `[]` | `RENOVATE_ALLOWED_COMMANDS`, exact strings the repositories' `postUpgradeTasks` may run |
 | `log-level` | `info` | `debug` to see why a repository produced nothing |
@@ -296,7 +335,9 @@ One run discovers the repositories that carry `devbox.json`, then runs the
 with the App token, `devbox update` on the full day, every pair aligned,
 one pull request on a fixed branch (`chore/devbox-update`, force-pushed,
 so a re-run updates the open PR), auto-merge armed only where a required
-check exists. The push runs inside devbox so the repository's own
+check exists — read from
+[both sources](#what-counts-as-a-required-status-check), and left unarmed
+when neither answers. The push runs inside devbox so the repository's own
 pre-push hooks vet the result — they are the safety net, not an obstacle.
 
 Inputs: `estate`, `runner`, `token-source` (`app-key|access-roster`),
