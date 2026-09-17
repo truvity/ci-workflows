@@ -70,7 +70,10 @@ private repository bill; measure after the first week.
 
 ## Where the tokens come from
 
-Both workflows take `token-source`:
+Both workflows take `token-source`. So does the shared
+[`auto-release.yaml`](estate-lifecycle.md#where-the-tagging-token-comes-from),
+which is not a fleet workflow — it runs inside each repository — but
+takes the same two sources under the same names:
 
 | `token-source` | the caller passes | each job |
 |---|---|---|
@@ -90,6 +93,7 @@ is asked for as narrow as the job's work:
 | renovate-fleet | per repository | `approver-github-app` | that one | `pull_requests:write` |
 | parity-fleet | `discover` | `github-app` | all | the grant's |
 | parity-fleet | per repository | `github-app` | that one | `contents:write`, `pull_requests:write` |
+| auto-release | `tag-roster` | `github-app` | the repository it runs in | `contents:write`, `pull_requests:read` |
 
 Discovery is not narrowed in permissions although it only reads: GraphQL's
 `refUpdateRule`, which the required-check rule reads, answers for the
@@ -98,6 +102,9 @@ repository's own job would.
 
 **The caller grants `id-token: write`**, in either mode: the jobs that mint
 declare it, and a called workflow can only narrow its caller's permissions.
+(`auto-release.yaml` is the exception, and deliberately: its two sources
+are two jobs, so the `app-key` one asks for nothing new and its dozen
+callers keep working untouched.)
 
 An issuer pins a grant to the job's identity token: the caller repository,
 its default branch, the event, the caller file (`workflow_ref`) and this
