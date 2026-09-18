@@ -139,6 +139,39 @@ on:
         required: false
         type: boolean
         default: false
+      openbao-issuer:
+        description: >-
+          The access-roster issuer that mints the token the OpenBAO login
+          presents. Set it, with the three below, to read the
+          goreleaser-pro licence at run time instead of passing it as a
+          secret (docs/secrets.md).
+        required: false
+        type: string
+        default: ""
+      openbao-address:
+        description: The OpenBAO API base URL — a private endpoint, so a self-hosted runner.
+        required: false
+        type: string
+        default: ""
+      openbao-namespace:
+        description: The OpenBAO namespace the licence path lives in.
+        required: false
+        type: string
+        default: ""
+      openbao-ca:
+        description: PEM of the CA that signed OpenBAO's certificate, where the runner's trust store does not cover it.
+        required: false
+        type: string
+        default: ""
+      goreleaser-licence-path:
+        description: >-
+          KV path holding the goreleaser-pro licence, read as the job
+          itself. Empty keeps the `goreleaser-key` secret. While both are
+          set the read may fail and the secret still stands behind it, so
+          a first rollout cannot break a release.
+        required: false
+        type: string
+        default: ""
     secrets:
       goreleaser-key:
         description: goreleaser-pro licence, for callers that use it.
@@ -390,6 +423,27 @@ jobs:
           echo "$RUNNER_TEMP/goreleaser-pro" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/goreleaser-pro/goreleaser" --version
 
+      # The licence as something this job READS, not as a copy every
+      # caller holds: the run's own OIDC identity exchanged at
+      # access-roster, one login, one read of one path (docs/secrets.md).
+      # The issuer's grants and one read-only policy decide it; no input
+      # here can widen that.
+      #
+      # `continue-on-error` is the rollout, not the destination. A caller
+      # that has proven the read drops its `goreleaser-key` secret, and
+      # the fallback below then resolves to empty on its own.
+      - name: Read the goreleaser licence from OpenBAO
+        id: licence
+        if: inputs.goreleaser-licence-path != ''
+        continue-on-error: true
+        uses: truvity/ci-workflows/.github/actions/openbao-secrets@e760edca07d033510353b754e19cae46cee465e0 # v2.27.0
+        with:
+          issuer: ${{ inputs.openbao-issuer }}
+          address: ${{ inputs.openbao-address }}
+          namespace: ${{ inputs.openbao-namespace }}
+          ca-cert: ${{ inputs.openbao-ca }}
+          path: ${{ inputs.goreleaser-licence-path }}
+
       - name: Release
         # The command reaches the shell through env and word-splits
         # there — an expression spliced into the script text would be
@@ -403,7 +457,7 @@ jobs:
         env:
           RELEASE_COMMAND: ${{ inputs.command }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_KEY: ${{ secrets.goreleaser-key }}
+          GORELEASER_KEY: ${{ steps.licence.outputs.value || secrets.goreleaser-key }}
           CI_BUILDX_CACHE: ${{ inputs.buildx-cache }}
           # No profiles on a runner: the default credential chain must
           # resolve the job's OIDC role from env. A stray AWS_PROFILE
