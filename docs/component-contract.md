@@ -227,6 +227,13 @@ The traps each copy has met:
   placeholder values and `example` domains, never a real value "because it
   is only an example".
 
+- **Commit messages.** The canary reads tracked files, not history. A
+  commit that fixed one of these patterns quoted a real account id in its
+  message as the example of what must still match — and landed, message
+  and all, in every repository that vendors the script. A message is as
+  public as a file and cannot be edited after the push. Quote a
+  placeholder, never the value.
+
 The canary is a floor. It cannot read prose, so the rest is a review rule
 for every file, commit message and pull request text in a public
 repository: **no names of the consuming estate's organisations, clusters,
