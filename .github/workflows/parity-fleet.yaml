@@ -400,7 +400,7 @@ jobs:
           proto: "false"
           github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-workflows/.github/actions/devbox-parity@ded7c2ca452f1fe6bfe898351a21e42c2bc080fa # master 2026-09-16 (git add fix, ci-workflows#108)
+      - uses: truvity/ci-workflows/.github/actions/devbox-parity@2a0a1e4ecc7dfd9d0828c1b8adbc4578f6d9d2a1 # master 2026-09-18 (ruleset auto-merge, ci-workflows#118)
         id: parity
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
