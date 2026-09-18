@@ -48,7 +48,7 @@ steps:
   - uses: truvity/ci-workflows/.github/actions/openbao-secrets@<sha>
     id: licence
     with:
-      issuer: ${{ vars.CI_ACCESS_ROSTER_ISSUER }}
+      issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
       address: ${{ vars.CI_OPENBAO_ADDRESS }}
       namespace: ${{ vars.CI_OPENBAO_NAMESPACE }}
       ca-cert: ${{ vars.CI_OPENBAO_CA }}
@@ -68,7 +68,7 @@ underscores (`maven-username` → `MAVEN_USERNAME`):
   - uses: truvity/ci-workflows/.github/actions/openbao-secrets@<sha>
     id: publish
     with:
-      issuer: ${{ vars.CI_ACCESS_ROSTER_ISSUER }}
+      issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
       address: ${{ vars.CI_OPENBAO_ADDRESS }}
       namespace: ${{ vars.CI_OPENBAO_NAMESPACE }}
       ca-cert: ${{ vars.CI_OPENBAO_CA }}
@@ -100,6 +100,27 @@ multi-line secret is masked whole. The file is owner-only, lives under
 - **Caller variables** for the issuer, the address, the namespace and —
   where the runner's trust store does not already cover the endpoint —
   the CA certificate. Never literals here: this repository is public.
+
+## Through release-private.yaml
+
+A private release does not need the step at all: the reusable workflow
+reads the goreleaser-pro licence itself when the caller names a path.
+
+```yaml
+    with:
+      openbao-issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
+      openbao-address: ${{ vars.CI_OPENBAO_ADDRESS }}
+      openbao-namespace: ${{ vars.CI_OPENBAO_NAMESPACE }}
+      openbao-ca: ${{ vars.CI_OPENBAO_CA }}
+      goreleaser-licence-path: ci/goreleaser
+    secrets:
+      goreleaser-key: ${{ secrets.GORELEASER_KEY }} # until a run has read the path
+```
+
+The read is allowed to fail while both are set, and the secret stands
+behind it. Drop the `secrets:` line once a release run shows the read
+succeeded — the fallback then resolves to empty and the licence has one
+home.
 
 ## Keeping the GitHub secret until it is proven
 
