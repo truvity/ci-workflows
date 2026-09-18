@@ -14,8 +14,11 @@ Two rules that make it work:
    exactly the whitespace/ordering surprises helm upgrades introduce.
 2. **The cases double as schema fixtures.** With `values.schema.json`
    in the chart, every case is validated on render — and each repo's
-   lint recipe adds the negative probe (`--set bogusKey=1` must FAIL),
-   so the strictness itself is tested.
+   lint recipe renders the negative fixtures under
+   `tests/invalid/<chart>/` (one per refusal, `unknown-key.yaml` among
+   them), every one of which must FAIL, so the strictness itself is
+   tested. [component-contract.md](component-contract.md) §6 has the
+   convention.
 
 `hack/golden.sh` in this repository is the CANONICAL copy; chart repos
 vendor it verbatim (it is ~50 lines and must run locally without any

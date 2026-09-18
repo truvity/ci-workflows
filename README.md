@@ -10,6 +10,12 @@ autopilot, cross-linking
 [ci-plane](https://github.com/truvity/ci-plane) (where CI *runs*, and
 the artifact doctrine).
 
+**If the repository is a public component** — charts, a Go module or
+binaries that an estate consumes — it also follows
+[docs/component-contract.md](docs/component-contract.md): the README and
+`docs/` shape, one tag per release, the CHANGELOG convention, schema,
+goldens and negative fixtures, and the leak canary's known traps.
+
 ## Two rules
 
 **1. Pin by commit SHA, never by tag or branch.** Every repository in both
