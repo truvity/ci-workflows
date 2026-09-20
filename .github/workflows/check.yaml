@@ -148,6 +148,22 @@ on:
         required: false
         type: string
         default: ''
+      go-cache-endpoint:
+        description: >-
+          S3 endpoint URL for the Go cache, for an S3-compatible store that
+          is not AWS (Cloudflare R2, MinIO). From the caller's org
+          variable; empty keeps the AWS default. Meaningful only alongside
+          go-cache-bucket, like the rest of the cache wiring.
+        required: false
+        type: string
+        default: ''
+      go-cache-path-style:
+        description: >-
+          Address the cache bucket path-style rather than virtual-hosted.
+          "true" to enable.
+        required: false
+        type: string
+        default: ''
       go-private:
         description: >-
           Module path prefix to fetch directly over git rather than
@@ -294,6 +310,8 @@ jobs:
           aws-config-file: ${{ inputs.aws-config-file }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
+          go-cache-endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
+          go-cache-path-style: ${{ inputs.go-cache-path-style || vars.CI_GOCACHE_S3_PATH_STYLE }}
           goproxy: ${{ inputs.goproxy || vars.CI_GOPROXY }}
           go-private: ${{ inputs.go-private }}
           codeartifact-domain: ${{ inputs.codeartifact-domain }}
