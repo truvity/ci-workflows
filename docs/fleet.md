@@ -1,19 +1,19 @@
 # Fleet workflows — one job per estate, nothing per repository
 
-`renovate.yaml` and `devbox-update.yaml` run **inside** every repository
-that carries a caller. That shape has one consequence that drives every
-problem it has caused: each repository must be able to read an App key.
-Either an organisation secret whose selected-repository list is kept by
-hand, or a copy pasted into the repository's own secrets. Lists drift,
-keys are copied, and a repository nobody entitled fails without a red
-mark for weeks.
+Dependency updates and version parity used to run **inside** every
+repository, from a caller workflow of its own. That shape had one
+consequence that drove every problem it caused: each repository had to
+be able to read an App key. Either an organisation secret whose
+selected-repository list was kept by hand, or a copy pasted into the
+repository's own secrets. Lists drift, keys are copied, and a repository
+nobody entitled failed without a red mark for weeks.
 
 The fleet workflows invert it. **One scheduled job per estate**, in one
 private caller repository, mints an App token and works through every
 repository the App is installed on, over GitHub's API. The repositories
 it updates run nothing, hold nothing, and appear in no list.
 
-| | per-repository callers | fleet |
+| | the old per-repository callers | fleet |
 |---|---|---|
 | a repository carries | a caller workflow and access to the key | `renovate.json` and/or `devbox.json` |
 | the key lives | in every entitled repository's secrets | in the one caller repository, or nowhere: `token-source: access-roster` |
@@ -357,7 +357,7 @@ cannot know. Every key is optional; no file at all means every default.
 
 | key | values | default | meaning |
 |---|---|---|---|
-| `module-dirs` | array of paths | `[]` | further `go.mod` files to align, relative to the root. The root module is always considered — without this key it is the only one, the limit `devbox-update.yaml` has always had. |
+| `module-dirs` | array of paths | `[]` | further `go.mod` files to align, relative to the root. The root module is always considered — without this key it is the only one, which for a long time was the only thing alignment could see. |
 | `mode` | `auto`, `align` | the run's `mode` input | the parity mode for this repository. |
 
 ```json
@@ -391,23 +391,29 @@ packages), and a pull request is opened on `chore/devbox-update` only if
 one of them actually moved. The commit and the push run inside devbox, so
 the repository's own hooks still vet the result.
 
-## Migrating from the per-repository callers
+## The migration off the per-repository callers is done
 
-Per repository, in this order:
+Both estates are on the fleet jobs, and **v3.0.0 removed
+`renovate.yaml`, `devbox-update.yaml` and `auto-approve.yaml` from this
+library** (2026-09-21, once no repository in either organisation still
+carried one of them). A caller pinned to a v2 SHA keeps resolving that
+commit and keeps working; there is no v3 workflow of those names to
+repoint it at, so such a repository is enrolled with the fleet instead.
 
-1. Add it to the caller repository's `fleet.yaml` under the lists it uses
-   today (`renovate.<estate>`, `parity.<estate>`). A repository whose own
+What that took, per repository, and what it is worth knowing for the
+next estate that adopts the fleet:
+
+1. Add it to the caller repository's enrolment file under the lists it
+   uses (`renovate.<estate>`, `parity.<estate>`). A repository whose own
    caller ran parity in a fixed mode carries that mode over in its
    `.devbox-parity.json` — the fleet run's mode is only a default.
-2. Dispatch the fleet jobs and read the summary: the repository is listed as
-   processed, not as an error.
-3. In the repository, delete `renovate.yaml`, `devbox-update.yaml` and
-   `auto-approve.yaml`. Nothing else in it changes.
+2. Dispatch the fleet jobs and read the summary: the repository is
+   listed as processed, not as an error.
+3. In the repository, delete the callers. Nothing else in it changes.
 
-Once every caller is gone, switch on the caller repository's schedules and
-delete the organisation-level `RENOVATE_*` variable and secret, their
-selected lists, and any repository-level copies.
-
-`renovate.yaml`, `devbox-update.yaml` and `auto-approve.yaml` remain in
-this library until the last caller is gone, then are removed in a major
-release.
+Then switch on the caller repository's schedules and delete the
+organisation-level variables and secrets those callers read, their
+selected-repository lists, and any repository-level copies. The approval
+sweep `auto-approve.yaml` did per repository is now a step inside
+`renovate-fleet.yaml`, configured with `approver-github-app` or
+`approver-client-id` and skipped when neither is set.

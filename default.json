@@ -44,7 +44,7 @@
       "automerge": true
     },
     {
-      "description": "Majors always get a human. The `major` label is load-bearing: ci-workflows' auto-approve workflow refuses to approve anything carrying it.",
+      "description": "Majors always get a human. The `major` label is load-bearing: the fleet renovate job's approval step refuses to approve anything carrying it.",
       "matchUpdateTypes": [
         "major"
       ],

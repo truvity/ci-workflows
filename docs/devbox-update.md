@@ -1,15 +1,21 @@
-# devbox-update — the toolchain triple has one owner
+# devbox-update — version parity, and the toolchain triple's one owner
 
-`devbox-update.yaml` refreshes a repository's devbox packages and, for
-Go repositories, keeps **three things that must agree** aligned in the
-same pull request:
+The `devbox-parity` action, run once per repository by
+[`parity-fleet.yaml`](fleet.md#parity-fleetyaml), refreshes a
+repository's devbox packages and, for Go repositories, keeps **three
+things that must agree** aligned in the same pull request:
 
 1. the `go` binary devbox ships (nixpkgs),
 2. the Go that `golangci-lint` was **built with** (also nixpkgs),
 3. the `go` directive in `go.mod`.
 
 This document is the why, the rules, and every pitfall the rollout hit
-(2026-08-23). Read it before touching the workflow or a caller.
+(2026-08-23). Read it before touching the action or a fleet caller. The
+rules outlived the shape they were found in: until v3.0.0 the same logic
+ran from a `devbox-update.yaml` workflow inside each repository, and
+every pitfall below was paid for there. The name survives that workflow
+because it is still what the run does and what the pull request it opens
+is called (`chore/devbox-update`).
 
 ## Why three things, and why one owner
 
@@ -25,11 +31,11 @@ This document is the why, the rules, and every pitfall the rollout hit
   CVE fixes reach CI before nixpkgs catches up.
 - Therefore the directive has one cap (golangci's build minor) and one
   wish (the newest patch of that line). Two writers — renovate bumping
-  the directive, devbox-update the binaries — produced the 2026-08-22
-  estate-wide lint panics and a day of gate rules papering over the
-  split. **One owner: this workflow.** Renovate's gomod manager leaves
-  `go` alone (`matchDepNames: ["go"], enabled: false` in every Go
-  repository's renovate.json, with a description naming this workflow).
+  the directive, the devbox refresh moving the binaries — produced the
+  2026-08-22 estate-wide lint panics and a day of gate rules papering
+  over the split. **One owner: the parity job.** Renovate's gomod manager
+  leaves `go` alone (`matchDepNames: ["go"], enabled: false` in every Go
+  repository's renovate.json, with a description naming the parity job).
 
 The rule, in one line:
 
@@ -41,7 +47,8 @@ carries the whole minor migration as one ordinary PR per repository.
 
 ## Two cadences, one owner
 
-Callers run a **daily** cron. `mode: auto` (the default):
+The estate's parity caller runs a **daily** cron. `mode: auto` (the
+default):
 
 | Day | What runs | What can change |
 |---|---|---|
@@ -53,17 +60,21 @@ bumps used to give — bar#641's review caught the regression when
 v2.10.0 first moved the directive onto a weekly cadence), and six days a
 week produce no lock churn.
 
-`mode: full` and `mode: align` force a path. A human dispatching right
-after a Go release wants `align` today, not next Monday:
+`mode: full` and `mode: align` force a path for the whole run. A human
+dispatching right after a Go release wants `align` today, not next
+Monday:
 
 ```
-gh workflow run "Devbox Update" --repo <org>/<repo> -f mode=align
+gh workflow run "parity (<estate> estate)" --repo <caller repository> -f mode=align
 ```
 
 (only if the caller exposes `mode` as a dispatch input; otherwise a
-plain dispatch runs `auto`, which on a non-Monday is align-only.)
+plain dispatch runs the caller's `mode`, `auto` by default, which on a
+non-Monday is align-only.) A single repository that needs another mode
+than the run's declares it in its own `.devbox-parity.json` — see
+[fleet.md](fleet.md#devbox-parityjson).
 
-## The align step, exactly (v2.10.7)
+## The align step, exactly
 
 ```
 lang    = go.mod's `go` directive        — READ ONLY, never changed here
@@ -78,6 +89,10 @@ if target > tc:  go mod edit -toolchain=go<target>
                  (or -toolchain=none when target == lang: one line says it)
 ```
 
+Repositories listing further modules in `.devbox-parity.json`
+(`module-dirs`) get the same step per module; the root module is always
+considered.
+
 **The language directive is never raised by automation.** v2.10.0–3
 collapsed both into one `go` line and thereby raised phoenix from
 language 1.23 to 1.26 — which activated go vet's printf analyzer and
@@ -85,27 +100,16 @@ broke master. The language version is a code-semantics decision for
 the repository's team; the toolchain is the CVE channel and is
 automation's to move.
 
-## Calling it
+## Running it
 
-```yaml
-name: Devbox Update
-on:
-  schedule:
-    - cron: "0 1 * * *"   # DAILY — the cadence is the point
-  workflow_dispatch:
-permissions:
-  contents: read
-jobs:
-  update:
-    uses: truvity/ci-workflows/.github/workflows/devbox-update.yaml@<sha> # vX.Y.Z
-    secrets: inherit                                    # same-org callers
-    # secrets:                                          # callers in ANOTHER org
-    #   RENOVATE_APP_PRIVATE_KEY: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
-```
+A repository runs nothing and holds no key. It is listed under
+`parity.<estate>` in the caller repository's enrolment file and carries
+a `devbox.json`; one scheduled job per estate does the rest. The caller
+shape, the inputs and the enrolment rules are in
+[fleet.md](fleet.md#parity-fleetyaml).
 
-The repository needs `vars.RENOVATE_CLIENT_ID` (org-level on both
-estates) and the App's private key as a secret. The PR is opened by the
-renovate App and **auto-merges when the repository's required checks
+The PR is opened by the App the caller repository mints or exchanges a
+token for, and **auto-merges when the repository's required checks
 pass** — the repository's own CI is what validates the aligned triple.
 **Where the default branch has no required checks, auto-merge is NOT
 armed** and a human merges: `gh pr merge --auto` merges *immediately*
@@ -116,13 +120,13 @@ deliberate decision).
 ## Pitfalls — every one of these was hit live
 
 1. **`secrets: inherit` does not cross an organization boundary.**
-   trust-form callers reached the workflow with every secret empty and
-   `vars` resolving fine. The secret is *declared* on `workflow_call`
-   so cross-org callers pass it explicitly; same-org callers keep
-   `inherit`. (renovate.yaml learned this 2026-08-19; devbox-update
-   learned it the day the first trust-form repository called it.)
+   Callers in the second organisation reached the workflow with every
+   secret empty and `vars` resolving fine, which reads as a malformed
+   workflow rather than as a missing secret. Found 2026-08-19 and paid
+   for twice; it is why the fleet workflows declare every secret and
+   pass them explicitly, never by inheritance.
 2. **A reusable workflow's `permissions:` block is a ceiling.** Not a
-   problem here (contents: read is all this workflow needs from
+   problem here (contents: read is all parity-fleet.yaml needs from
    GITHUB_TOKEN; the App token does the writes), but it is why
    check.yaml carries no block at all — see its header.
 3. **Never `devbox run -- jq '<program>'`.** devbox re-quotes argv and
@@ -184,9 +188,9 @@ deliberate decision).
     why it went unnoticed for so long.
 12. **The ARC runner image has no `gh`.** Hosted runners preinstall the
     GitHub CLI; the pool image bakes nix, devbox and build tools only.
-    The workflow installs a pinned `gh` when absent (gate on detection,
-    the setup-devbox doctrine). Private repositories SHOULD run
-    devbox-update on the pool (`runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}`):
+    parity-fleet.yaml installs a pinned `gh` when absent (gate on detection,
+    the setup-devbox doctrine). The private estate's parity caller SHOULD
+    run on the pool (`runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}`):
     the pre-push hook compiles the module, and that took 15–22 minutes
     on a 2-core hosted runner with no caches (paid minutes, a 30-minute
     ceiling, and it reads as a hang) against ~5 minutes on the pool.
@@ -209,19 +213,18 @@ deliberate decision).
 
 ## What this does NOT do
 
-- It does not see modules outside the repository root. The align step
-  reads `./go.mod` and nothing else; a multi-module repository with no
-  root module (pulumi-zitadel: `provider/`, `sdk/`, `tests/integration/`)
-  gets a clean run that says `no go.mod — nothing to align` and its
-  toolchain lines move by hand (2026-08-23: pulumi-zitadel#57 carried
-  two live stdlib CVEs that way). A `module-dirs` input is the known
-  follow-up; until it exists, adopting this workflow on such a
-  repository buys the weekly devbox refresh only.
+- It does not find modules by itself. The align step reads `./go.mod`
+  and the directories a repository names in `module-dirs`, nothing else.
+  Before that key existed it read the root only, and a multi-module
+  repository with no root module got a clean run saying `no go.mod —
+  nothing to align` while its toolchain lines moved by hand (2026-08-23:
+  one such repository carried two live stdlib CVEs that way). A
+  repository that keeps its modules in subdirectories must say so.
 - It does not choose the minor line. nixpkgs does, by shipping `go` and
-  `golangci-lint` built against it; devbox-update follows on the next
-  full run. Renovate's `constraintsFiltering: strict` (kept in every
-  config) stops it picking *dependency* versions that require a newer
-  Go than the directive in the meantime.
+  `golangci-lint` built against it; the next full run follows.
+  Renovate's `constraintsFiltering: strict` (kept in every config) stops
+  it picking *dependency* versions that require a newer Go than the
+  directive in the meantime.
 - It does not skip a repository's hooks or checks — ever. A red PR is
   the repository telling you the aligned triple broke something; that
   is the signal, not an obstacle.

@@ -10,7 +10,7 @@ The three systems, and where their docs live:
 | System | Owns | Docs |
 | --- | --- | --- |
 | [github-structure](https://github.com/truvity/github-structure) | What the repo IS: settings, protection, rulesets, teams, Apps | `docs/{registry,safety,adoption,doctrine}.md` |
-| ci-workflows (this repo) | What the repo DOES on push/PR/schedule: check, release, renovate, devbox-update, auto-release | `docs/` here |
+| ci-workflows (this repo) | What the repo DOES on push/PR/schedule: check, release, auto-release — and, for the whole estate at once, renovate and version parity | `docs/` here |
 | [ci-plane](https://github.com/truvity/ci-plane) | Where CI RUNS: ARC runners, caches — and the estate's artifact doctrine | `docs/{architecture,day-1-install,day-2-operations,normalization}.md` |
 
 ## 1. Birth — declare the repo
@@ -43,15 +43,16 @@ keeps the pin current — a drifting pin is a defect, doctrine B6):
 - `ci.yaml` → `check.yaml` — the one required context, running your
   Justfile recipes on the ARC pool
 - `security.yaml` → `check.yaml` (daily schedule, non-blocking scans)
-- `devbox-update.yaml` → the weekly toolchain alignment
-  (`docs/devbox-update.md`)
-- `renovate.yaml` → the shared npx-based renovate
-  (`docs/renovate.md` — incl. the entitlement silent-skip trap)
 
-The last two are the **per-repository** shape. An estate that runs the
-fleet jobs (`docs/fleet.md`) carries neither: renovate and parity come
-from one caller repository per estate, and a repository opts in by
-having a `renovate.json` and a `devbox.json`, plus the required `check`.
+That is the whole list. **Dependency updates and version parity are not
+callers at all**: they run as one job per estate from one caller
+repository (`docs/fleet.md`), and a repository opts in by being enrolled
+there and carrying a `renovate.json` and a `devbox.json`, plus the
+required `check`. What that job does to a Go repository's toolchain
+triple is `docs/devbox-update.md`; how the renovate engine itself is
+run is `docs/renovate.md`. Until v3.0.0 this library also shipped
+`renovate.yaml`, `devbox-update.yaml` and `auto-approve.yaml` for the
+per-repository shape; they are gone.
 
 `node-cache` defaults to `true` in `check.yaml` and `integration.yaml`
 (no need to pass it): on a self-hosted (ARC) runner the job probes the

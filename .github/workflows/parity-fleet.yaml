@@ -1,12 +1,13 @@
 # Version parity for a whole estate from ONE job: devbox leads, the other
 # manifests follow, one pull request per repository that moved.
 #
-# devbox-update.yaml did this from a caller inside each repository. Here
-# the caller repository holds the App key once; discovery lists every
-# repository the App is installed on that carries a devbox.json and a
-# required status check; and the devbox-parity action runs once per
-# repository as a matrix job. The pairs (go toolchain, playwright) and the
-# rules are in docs/fleet.md and docs/devbox-update.md.
+# Until v3.0.0 this ran from a workflow inside each repository, which
+# meant every repository needed its own way to reach an App key. Here the
+# caller repository holds the key once; discovery lists every repository
+# the App is installed on that carries a devbox.json and a required
+# status check; and the devbox-parity action runs once per repository as
+# a matrix job. The pairs (go toolchain, playwright) and the rules are in
+# docs/fleet.md and docs/devbox-update.md.
 #
 # The run's `mode` is a default: a repository that needs another one
 # declares it in its own `.devbox-parity.json`, so an estate whose
