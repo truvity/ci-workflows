@@ -385,7 +385,7 @@ jobs:
         env:
           ENV_JSON: ${{ inputs.env-json }}
 
-      - uses: truvity/ci-workflows/.github/actions/recipe@49248a6cebd3720ac7f2eaf2e98ec97c0967b3b6 # v2.17.0
+      - uses: truvity/ci-workflows/.github/actions/recipe@217f2eab96a85bdd2293b3c640b012745ce4a64d # v2.21.1
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
