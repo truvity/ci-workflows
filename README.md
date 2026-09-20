@@ -50,8 +50,8 @@ cadences, and every pitfall the rollout hit — is
 
 How renovate and parity run as **one job per estate** instead of a caller
 in every repository — what a repository opts in with, why the caller
-repository is private and the public job still runs hosted, and the
-migration off the per-repository callers — is
+repository is private and the public job still runs hosted, and what the
+migration off the per-repository callers took — is
 **[docs/fleet.md](docs/fleet.md)**.
 
 ## check.yaml
@@ -169,7 +169,8 @@ Push access (branch → PR) is granted per team in gitops
 approval from someone other than the author. The repository is public,
 so a fork PR works with no grant at all.
 
-Running the shared self-hosted Renovate — the daemonless/npx execution
-model, the entitlement silent-skip trap, and integrating repos whose
-pin bumps regenerate derived files (postUpgradeTasks + allowed-commands
-+ platformCommit) — is **[docs/renovate.md](docs/renovate.md)**.
+Running the Renovate engine itself — the daemonless/npx execution
+model, why the approval sweep approves rather than bypasses, and
+integrating repos whose pin bumps regenerate derived files
+(postUpgradeTasks + allowed-commands + platformCommit) — is
+**[docs/renovate.md](docs/renovate.md)**.

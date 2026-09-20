@@ -261,12 +261,15 @@ jobs:
           #    dropped regardless of run id. Non-release CI is "check",
           #    "cluster-access", "moon / ci", "suite …" — none collide.
           #
-          # 3. BOT runs, by name: "renovate / renovate" and "update / update"
-          #    (devbox-update) run on a schedule against master and post a
-          #    check on whatever commit is the tip — a tag that overlaps one
-          #    would fail the gate on a job that says nothing about the
+          # 3. BOT runs, by name: "renovate / renovate" and "update / update".
+          #    A dependency bot that runs on a schedule against master posts
+          #    a check on whatever commit is the tip — a tag that overlaps
+          #    one would fail the gate on a job that says nothing about the
           #    commit's quality (bar, 2026-09-07). dms's inline gate already
-          #    drops them.
+          #    drops them. Both names came from the per-repository callers
+          #    this library retired in v3.0.0; the exclusion stays because
+          #    it costs nothing and a repository may still run a bot of its
+          #    own under either name.
           cat > /tmp/release-gate.jq <<'JQ'
           [.[].check_runs[]
             | select(((.details_url // "") | contains("/runs/" + $runid + "/")) | not)
