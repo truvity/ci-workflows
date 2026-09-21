@@ -105,7 +105,7 @@ jobs:
           # clone gives it nothing to derive from.
           fetch-depth: 0
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@ed180149898f54d29498bfa8236284bf7899e84e # master 2026-09-17 (326ee19)
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
