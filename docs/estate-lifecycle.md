@@ -119,8 +119,27 @@ take:
 
 | `token-source` | the caller passes | the job |
 |---|---|---|
-| `app-key` (default) | `app-id`, and the App's private key as the `CI_AUTOMATION_PRIVATE_KEY` secret | mints with `actions/create-github-app-token` |
+| `app-key` (the input's default) | `app-id`, and the App's private key as the `CI_AUTOMATION_PRIVATE_KEY` secret | mints with `actions/create-github-app-token` |
 | `access-roster` | `access-roster-issuer` and `github-app` (the App's catalogue id); no secret | exchanges its own GitHub OIDC token at the issuer for an installation token, via the [access-roster action](https://github.com/truvity/access-roster) |
+
+**Which one to choose.** `access-roster` if you run an issuer: the
+repository holds nothing, so there is no key to scope to it, rotate, or
+leak, and the issuer's grants decide what the token may do. `app-key` if
+you do not — a single-operator estate with no issuer has nowhere to
+exchange a token, and a key in one organisation secret is an honest
+answer to that.
+
+`app-key` is the input's default for the second case, and defaults are
+not recommendations: **choosing nothing is choosing the path that needs
+a key.** Set `token-source` explicitly and the question stops being
+implicit. A caller that names `app-key` without the secret fails in
+preflight, by name, rather than at the tag push.
+
+The estate this library was built in runs `access-roster` everywhere and
+has held no `CI_AUTOMATION_PRIVATE_KEY` since 2026-09-20, when the
+key-held App was retired. So the rows above describe two supported
+paths, not one live one and one aspiration — but if you are reading this
+to copy what that estate does, copy the second row.
 
 ```yaml
 # .github/workflows/auto-release.yaml — no key anywhere

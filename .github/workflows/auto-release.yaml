@@ -26,11 +26,18 @@
 #
 #   app-key        the caller holds the App's private key as a secret and
 #                  the job mints with actions/create-github-app-token.
+#                  For an estate with no issuer to exchange at.
 #   access-roster  the caller holds no key. The job exchanges its own
 #                  GitHub OIDC identity token at an access-roster issuer
 #                  for an installation token of a catalogue App, narrowed
 #                  to this repository, and the issuer's grants decide.
 #                  Nothing to rotate, nothing to leak from the caller.
+#
+# `app-key` is the DEFAULT because it is the answer that needs no issuer,
+# not because it is the better one. Naming the source explicitly is the
+# point: a caller that falls into app-key by omission is one whose key
+# nobody decided to keep. This estate names access-roster everywhere and
+# has held no CI_AUTOMATION_PRIVATE_KEY since 2026-09-20.
 #
 #   jobs:
 #     tag:
