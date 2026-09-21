@@ -8,8 +8,18 @@
 # exists to catch. So the exemptions are pinned here, each as a case
 # built by transforming the real canonical copy: a repository that
 # rewrote the comments, one that staggered its cron, one whose library
-# pin renovate has not moved yet, one that dropped a trigger, one that
-# does not carry the file at all, and reads that fail.
+# pin renovate has not moved yet, one that dropped a trigger, two that
+# ADDED something the kit does not have, one that does not carry the
+# file at all, and reads that fail.
+#
+# The two "added" cases were measured, not imagined. Every case here
+# until 2026-09-21 removed or rewrote something, because the public
+# estate's callers are the kit. Enrolling private repositories put the
+# other direction on the table: a caller that carries the kit plus its
+# own `with:` inputs (a runner pool, a module proxy) and one that
+# carries the kit plus a top-level block and a renamed job. Both must
+# read `differs` — a comparison that only notices deletions would call
+# either one parity.
 #
 # The action's `api-url` input exists for exactly this: the stub answers
 # on localhost and caller-parity.sh cannot tell the difference.
@@ -36,7 +46,7 @@ mk() { # $1 case, $2 kit file name
   cat >"$work/repos/$1/$2"
 }
 
-for case in identical comments-differ cron-differs pin-differs trigger-missing absent forbidden repo-gone; do
+for case in identical comments-differ cron-differs pin-differs trigger-missing extra-inputs extra-block absent forbidden repo-gone; do
   mkdir -p "$work/repos/$case"
 done
 
@@ -73,6 +83,30 @@ sed -E "s/@[0-9a-f]{40}/@$old_pin/" "$kits/auto-release.yaml" | mk pin-differs a
 # have said so.
 cp "$kits/security.yaml" "$work/repos/trigger-missing/security.yaml"
 sed -e '/^  push:$/,+1d' "$kits/auto-release.yaml" | mk trigger-missing auto-release.yaml
+
+# ADDS inputs the kit does not pass: an estate whose repositories build
+# on their own runner pool and through their own module proxy says so in
+# the caller, and one of them needs a secret as well. Nothing was taken
+# away, so a comparison that only looks for missing lines reads this as
+# parity.
+mk extra-inputs auto-release.yaml <"$kits/auto-release.yaml"
+{
+  cat "$kits/security.yaml"
+  cat <<'EOF'
+      runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+      goproxy: ${{ vars.CI_GOPROXY }}
+    secrets:
+      module-app-private-key: ${{ secrets.MODULE_APP_PRIVATE_KEY }}
+EOF
+} | mk extra-inputs security.yaml
+
+# ADDS a top-level block and renames the job. Same workflow called with
+# the same inputs, so the `uses:` line and the `with:` block match — and
+# it still differs, because what runs and when is not the same.
+mk extra-block auto-release.yaml <"$kits/auto-release.yaml"
+sed -e 's/^  govulncheck:$/  vuln:/' \
+  -e 's/^permissions:$/concurrency:\n  group: security-${{ github.ref }}\n  cancel-in-progress: true\npermissions:/' \
+  "$kits/security.yaml" | mk extra-block security.yaml
 
 # Carries security.yaml and releases nothing, so has no auto-release.yaml
 # — absent, which is a state of its own and not a difference.
@@ -134,7 +168,7 @@ server=$!
 for _ in $(seq 1 100); do [ -s "$work/port" ] && break; sleep 0.1; done
 [ -s "$work/port" ] || { echo "stub API did not start"; exit 1; }
 
-repositories='["stub/identical","stub/comments-differ","stub/cron-differs","stub/pin-differs","stub/trigger-missing","stub/absent","stub/forbidden","stub/repo-gone"]'
+repositories='["stub/identical","stub/comments-differ","stub/cron-differs","stub/pin-differs","stub/trigger-missing","stub/extra-inputs","stub/extra-block","stub/absent","stub/forbidden","stub/repo-gone"]'
 
 export TOKEN=stub-token KITS="$kits" FAIL_ON_DIFF=false \
   REPOSITORIES="$repositories" API="http://127.0.0.1:$(cat "$work/port")" \
@@ -173,11 +207,13 @@ check "its own prose is not a difference" "| stub/comments-differ | same | same 
 check "a staggered cron is not a difference" "| stub/cron-differs | same | same |" "$(row cron-differs)"
 check "a library pin renovate has not moved is not a difference" "| stub/pin-differs | same | same |" "$(row pin-differs)"
 check "a dropped trigger IS a difference" "| stub/trigger-missing | differs | same |" "$(row trigger-missing)"
+check "an ADDED input IS a difference" "| stub/extra-inputs | same | differs |" "$(row extra-inputs)"
+check "an ADDED block and a renamed job ARE a difference" "| stub/extra-block | same | differs |" "$(row extra-block)"
 check "a file the repository does not carry is absent, not differing" "| stub/absent | absent | same |" "$(row absent)"
 check "a 403 is unreadable, not absent and not same" "| stub/forbidden | unreadable | unreadable |" "$(row forbidden)"
 check "a repository that cannot be read at all is unreadable" "| stub/repo-gone | unreadable | unreadable |" "$(row repo-gone)"
 
-check "one difference" "differences=1" "$(grep '^differences=' "$work/output")"
+check "three differences" "differences=3" "$(grep '^differences=' "$work/output")"
 check "one absent file" "absent=1" "$(grep '^absent=' "$work/output")"
 
 check "the difference warns on the run" 1 \
@@ -193,6 +229,13 @@ check "the normalised diff names the missing trigger" 1 \
   "$(grep -c '^-  push:$' "$work/summary" || true)"
 check "the diff is not the whole file" 0 \
   "$(grep -c '^-name: Auto Release$' "$work/summary" || true)"
+
+# The added lines are what makes the two "extra" cases readable: an
+# addition has to show up as an addition, on the repository's side.
+check "the normalised diff names the added input" 1 \
+  "$(grep -c '^+      goproxy: ' "$work/summary" || true)"
+check "the normalised diff names the added block" 1 \
+  "$(grep -c '^+concurrency:$' "$work/summary" || true)"
 
 # Report by default; a gate when the estate asks for one.
 : >"$GITHUB_OUTPUT"
