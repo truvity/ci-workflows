@@ -306,7 +306,7 @@ jobs:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
 
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         id: discover
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -395,7 +395,7 @@ jobs:
       #   require-file   the subject here is the caller workflows
       #                  themselves; a repository that carries no
       #                  devbox.json still carries them.
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         id: discover-callers
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -405,7 +405,7 @@ jobs:
           require-check: "false"
           require-file: ""
 
-      - uses: truvity/ci-workflows/.github/actions/caller-parity@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/caller-parity@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         if: steps.discover-callers.outputs.count != '0'
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -535,12 +535,12 @@ jobs:
           ref: ${{ steps.repo.outputs.base }}
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         with:
           proto: "false"
           github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-workflows/.github/actions/devbox-parity@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/devbox-parity@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         id: parity
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
