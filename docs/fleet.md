@@ -457,6 +457,42 @@ Satisfying the check is therefore cheap: 11 of 11 and 12 of 13 already
 did, without knowing it existed. A new repository copies the kit file
 verbatim and gives its `cron:` a minute of its own.
 
+#### One kit, and the differences that are decisions
+
+A second kind of estate was measured on 2026-09-21: private repositories,
+where only a few carry either file at all.
+
+| file | carried by | against the kit |
+|---|---|---|
+| `auto-release.yaml` | 1 of the private repositories measured | **`same`** — the prose is its own and the `cron:` minute its own, and nothing else differs |
+| `security.yaml` | 3, across two estates | **three shapes, no two alike** |
+
+The first row is the useful one: the kit is not the public estate's kit,
+it is the estate's kit, and a private repository that copied it years
+apart still matches it.
+
+The second row is the answer to "should a private estate get a kit of
+its own", and it is **no**. The three files differ from the canonical
+copy in three unrelated ways — two pass extra `with:` inputs because
+their jobs run on a pool and through a module proxy of their own, one
+of those two also passes a secret, and the third narrows its trigger
+list, adds a `concurrency:` block and renames its job. Each of those is
+argued at length in the file that carries it. There is no shape a
+second kit could hold that all three would match, and a kit that held
+any one of them would bless one repository's local decision as the
+estate's rule.
+
+So an estate whose callers look like this is enrolled **against these
+kits**, and the table carries a `differs` row for each deliberate local
+decision, with the normalised diff that says what it is. That is the
+check working. `fail-on-diff` is what a clean table would earn, and it
+stays off while the table is honest instead.
+
+The two additive shapes are in `hack/caller-parity-cases.sh` — until
+they were measured every case there removed or rewrote something, and a
+comparison that only notices deletions would have reported both as
+parity.
+
 #### Where the canonical copies live
 
 `.github/actions/caller-parity/kits/` in this library, one file per
@@ -471,7 +507,12 @@ dropping a file in that directory.**
 An estate whose callers differ from this one points
 `caller-parity-kits` at a directory in its **caller repository**
 instead, the same way `global-config` keeps renovate's estate policy
-there.
+there. It **replaces the whole set**, not one file: an estate that
+points at its own directory must copy across the kits it does *not*
+disagree with, and those copies then drift from the ones here with
+nothing comparing them. Worth it for an estate whose callers really are
+a different workflow; not worth it for one that disagrees about a file
+or two, which is what a `differs` row is for.
 
 #### Inputs
 
@@ -493,8 +534,9 @@ because the subject is the caller workflows and a repository without a
 The comparison is a script, `caller-parity.sh`, and its rules are
 exercised against a stub API by `hack/caller-parity-cases.sh`, which
 this repository's own CI runs: identical, prose rewritten, cron
-staggered, library pin not yet moved, a dropped trigger, an absent file,
-a 403 and an unreachable repository.
+staggered, library pin not yet moved, a dropped trigger, an added
+`with:` input, an added top-level block with the job renamed, an absent
+file, a 403 and an unreachable repository.
 
 ## The migration off the per-repository callers is done
 
