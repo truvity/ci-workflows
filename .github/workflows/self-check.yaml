@@ -50,6 +50,14 @@ jobs:
       - name: discovery cases
         run: ./hack/discover-cases.sh
 
+      # The other rule whose wrong answer is quiet: what counts as a
+      # DIFFERENCE between a repository's shared caller workflow and the
+      # canonical copy. Too strict and every repository differs over its
+      # own prose; too loose and a repository that dropped a trigger
+      # reads as at parity. Same stub-API shape as the discovery cases.
+      - name: caller-parity cases
+        run: ./hack/caller-parity-cases.sh
+
       # The reusable workflows pin the composite action by SHA, which means
       # the pin can go stale: change the action, forget the pin, and every
       # consumer keeps bootstrapping with the old one while master looks

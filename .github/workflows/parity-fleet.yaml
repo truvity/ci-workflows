@@ -13,6 +13,13 @@
 # declares it in its own `.devbox-parity.json`, so an estate whose
 # repositories disagree about full updates is still ONE run.
 #
+# `caller-parity: true` adds a second, read-only check over the same
+# estate: the shared caller workflows every repository carries
+# (`security.yaml`, `auto-release.yaml`) against the canonical copies in
+# .github/actions/caller-parity/kits. It REPORTS — no branch, no pull
+# request — because the estate has to see what would change before
+# anything changes it. Off by default.
+#
 # Tokens come from App keys the caller passes (`token-source: app-key`) or
 # from an access-roster issuer the job exchanges its GitHub OIDC token at
 # (`token-source: access-roster`) — see renovate-fleet.yaml. Either way the
@@ -118,6 +125,41 @@ on:
         required: false
         type: boolean
         default: true
+      caller-parity:
+        description: >-
+          Also compare each enrolled repository's shared caller
+          workflows (`security.yaml`, `auto-release.yaml`) against the
+          canonical copies this library ships, and REPORT the
+          differences in the run summary. Opens nothing and rewrites
+          nothing. Off by default: it is a new check over an estate
+          nobody has cleaned yet, and a scheduled run that suddenly
+          grows a table is a surprise.
+        required: false
+        type: boolean
+        default: false
+      caller-parity-list:
+        description: >-
+          Dotted path to the caller-parity enrolment list inside
+          repositories-file, e.g. `caller-parity.public`. Empty uses
+          `list` — the same repositories version parity aligns.
+        required: false
+        type: string
+        default: ""
+      caller-parity-kits:
+        description: >-
+          Directory in the CALLER repository holding that estate's own
+          canonical copies, one file per caller workflow. Empty uses the
+          copies in this library, which are the truvity estate's.
+        required: false
+        type: string
+        default: ""
+      caller-parity-fail-on-diff:
+        description: >-
+          Fail the caller-parity job when a repository differs. The lever
+          for turning the report into a gate once the estate is clean.
+        required: false
+        type: boolean
+        default: false
       repositories-file:
         description: YAML file in the caller repository holding the enrolment lists.
         required: false
@@ -273,6 +315,103 @@ jobs:
           repositories: ${{ steps.enrolled.outputs.names }}
           require-check: ${{ inputs.require-check && 'true' || 'false' }}
           require-file: devbox.json
+
+  # The OTHER kind of parity: not the pins inside a repository, but the
+  # shared caller workflows every repository carries. `security.yaml`
+  # and `auto-release.yaml` are one kit in substance across the estate,
+  # and nothing asserted it until a repository quietly lost a trigger.
+  #
+  # Read-only, and one job rather than a matrix: two API reads per
+  # repository, whose whole output is ONE table of the estate — the same
+  # reason renovate-fleet's `majors` job is one job. Hosted, like
+  # `discover` and for the same reason: a public repository must never
+  # be touched from a self-hosted runner, and there is nothing here to
+  # build.
+  #
+  # `needs: discover` for its token-input check, not for its list: this
+  # check has its own enrolment and its own discovery rules.
+  caller-parity:
+    needs: discover
+    if: inputs.caller-parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # token-source access-roster
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.list != '' || inputs.caller-parity-list != '' || inputs.caller-parity-kits != ''
+        with:
+          # The enrolment list, and the estate's own canonical copies
+          # when it keeps them itself.
+          sparse-checkout: |
+            ${{ inputs.repositories-file }}
+            ${{ inputs.caller-parity-kits }}
+          sparse-checkout-cone-mode: false
+
+      - name: Read the enrolment list
+        id: enrolled
+        if: inputs.list != '' || inputs.caller-parity-list != ''
+        env:
+          FILE: ${{ inputs.repositories-file }}
+          LIST: ${{ inputs.caller-parity-list || inputs.list }}
+        run: |
+          set -euo pipefail
+          [ -f "$FILE" ] || { echo "::error::$FILE not found in the caller repository"; exit 1; }
+          # yq ships on GitHub-hosted runners; this job always runs on one.
+          names=$(yq -o=json -I=0 ".${LIST} // []" "$FILE")
+          if [ "$(jq 'length' <<<"$names")" -eq 0 ]; then
+            echo "::error::$FILE has no entries under $LIST"
+            exit 1
+          fi
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+          echo "$LIST: $(jq -r 'join(", ")' <<<"$names")"
+
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: key-token
+        if: inputs.token-source == 'app-key'
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      # Every enrolled repository, because one table covers the estate —
+      # but reading is all this job does, so `contents:read` is all it
+      # asks the issuer for.
+      - uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+        id: roster-token
+        if: inputs.token-source == 'access-roster'
+        with:
+          issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          permissions: contents:read
+
+      # Its own discovery, with two rules relaxed on purpose:
+      #
+      #   require-check  exists because the fleet's other jobs merge on
+      #                  green and need a green to wait for. This one
+      #                  opens nothing, so a repository without a merge
+      #                  gate is still worth reporting on.
+      #   require-file   the subject here is the caller workflows
+      #                  themselves; a repository that carries no
+      #                  devbox.json still carries them.
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+        id: discover-callers
+        with:
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          estate: ${{ inputs.estate }}
+          filter: ${{ inputs.filter }}
+          repositories: ${{ steps.enrolled.outputs.names }}
+          require-check: "false"
+          require-file: ""
+
+      - uses: truvity/ci-workflows/.github/actions/caller-parity@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+        if: steps.discover-callers.outputs.count != '0'
+        with:
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          repositories: ${{ steps.discover-callers.outputs.repositories }}
+          kits-dir: ${{ inputs.caller-parity-kits && format('{0}/{1}', github.workspace, inputs.caller-parity-kits) || '' }}
+          fail-on-diff: ${{ inputs.caller-parity-fail-on-diff && 'true' || 'false' }}
 
   align:
     needs: discover

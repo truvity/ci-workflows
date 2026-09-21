@@ -34,12 +34,15 @@ renovate:
 parity:
   public:  [cloudflare, gateway]
   private: [bar, dms]
+caller-parity:
+  public:  [cloudflare, gateway, tailscale]
 ```
 
 | job | enrolment | the repository also needs |
 |---|---|---|
 | renovate | listed under `renovate.<estate>` | a renovate config at its root, and a [required status check](#what-counts-as-a-required-status-check) (unless `require-check: false`) |
 | parity | listed under `parity.<estate>` | a `devbox.json`, and a [required status check](#what-counts-as-a-required-status-check) (unless `require-check: false`) |
+| caller-parity | listed under the list `caller-parity-list` names, or under `parity.<estate>` when it names none | nothing — it reads, and a repository that carries neither caller file is reported as such |
 
 The list is the fleet's scope, reviewed like any other change. A listed
 repository the App cannot reach — not installed on it, renamed, deleted —
@@ -129,6 +132,7 @@ is asked for as narrow as the job's work:
 | renovate-fleet | per repository | `approver-github-app` | that one | `pull_requests:write` |
 | parity-fleet | `discover` | `github-app` | all | the grant's |
 | parity-fleet | per repository | `github-app` | that one | `contents:write`, `pull_requests:write` |
+| parity-fleet | `caller-parity` | `github-app` | all (one table covers the estate) | `contents:read` |
 | auto-release | `tag-roster` | `github-app` | the repository it runs in | `contents:write`, `pull_requests:read` |
 
 Discovery is not narrowed in permissions although it only reads: the
@@ -344,7 +348,9 @@ Inputs: `estate`, `runner`, `token-source` (`app-key|access-roster`),
 `access-roster-issuer`, `github-app`, `client-id`, `debug-oidc-claims`,
 `list`, `repositories-file`, `mode` (`auto|full|align`), `full-update-day`
 (`1`), `filter`, `require-check` (`true`), `git-user`, `git-email`,
-`timeout-minutes`. The commit author is an input because it should be the
+`timeout-minutes`, and the four `caller-parity*` inputs of the
+[second check](#caller-parity--the-shared-caller-files) this workflow
+carries. The commit author is an input because it should be the
 App's bot identity, which this library cannot know: `git-user` is the bot
 login, `<app name>[bot]`; an empty `git-email` is looked up from it
 (`<bot user id>+<login>@users.noreply.github.com`).
@@ -390,6 +396,105 @@ not `full-update-day`: `devbox update` is skipped, `devbox.json` and
 packages), and a pull request is opened on `chore/devbox-update` only if
 one of them actually moved. The commit and the push run inside devbox, so
 the repository's own hooks still vet the result.
+
+### `caller-parity` — the shared caller files
+
+Version parity is about the pins *inside* a repository. This is about the
+thin caller workflows every repository carries to delegate here, and the
+observation that two of them are **one kit in substance**:
+
+| file | carried by | identical, normalised |
+|---|---|---|
+| `.github/workflows/security.yaml` | 11 public repositories | **11 of 11** — four distinct files as written, one workflow |
+| `.github/workflows/auto-release.yaml` | 13 public repositories | **12 of 13** |
+
+The thirteenth had lost the `push: branches: [master]` trigger, and with
+it the security lane: a vulnerability fix there waited for Monday
+instead of releasing on merge. Nothing in CI said so. It was found by
+reading thirteen files side by side, which is exactly the kind of work
+that does not happen twice.
+
+So `caller-parity: true` compares each enrolled repository's copy
+against a canonical one kept here, and **reports**.
+
+#### What is compared, and what is not
+
+Substance, not bytes. Both sides are normalised before comparison, and
+each exemption is deliberate:
+
+| ignored | why |
+|---|---|
+| comment lines | a repository explains itself in its own words. The four prose variants of `security.yaml` were four ways of saying the same thing. |
+| blank lines | they follow the comments they separated. |
+| the `cron:` line | **the schedule is staggered per repository on purpose** — repositories that tag in the same minute produce downstream pin pull requests that race each other's rebases. Comparing it would report the whole estate as differing, which teaches everyone to ignore the table. |
+| this library's pinned ref in a `uses: …/.github/workflows/…@<sha>` | renovate moves it in each repository on its own schedule, so between a release here and renovate's sweep there the estate is legitimately spread over two pins. The pin has a keeper already. A **third-party** action pin inside a caller is *not* exempt: it is compared. |
+
+Everything else has to match. A repository is free to explain itself; it
+is not free to change what runs.
+
+#### What it does NOT do
+
+**It opens no pull request and rewrites nothing.** A repository that
+differs appears in the run summary with its normalised diff, and a
+human decides which side is wrong — the repository, or the canonical
+copy for the whole estate. Automation that rewrites a repository's own
+CI is a thing to earn, not to start with, and the estate has to be able
+to read what would change before anything does it. `fail-on-diff` turns
+the report into a gate; it stays off until the table is clean.
+
+#### Absent is not differing
+
+Four states per file, and the summary keeps them apart:
+
+| state | meaning |
+|---|---|
+| `same` | identical once normalised |
+| `differs` | listed with a normalised diff, and a warning annotation |
+| `absent` | the repository does not carry the file. **Often correct** — a repository that releases nothing has no `auto-release.yaml`, one with no Go module has no `security.yaml`. Never a warning on its own. |
+| `unreadable` | a read failed. Never reported as any of the other three; a read that fails is not an answer. |
+
+Satisfying the check is therefore cheap: 11 of 11 and 12 of 13 already
+did, without knowing it existed. A new repository copies the kit file
+verbatim and gives its `cron:` a minute of its own.
+
+#### Where the canonical copies live
+
+`.github/actions/caller-parity/kits/` in this library, one file per
+caller workflow, named for the path it is compared against
+(`security.yaml` → `.github/workflows/security.yaml`). They sit inside
+the action so that they are pinned by the same SHA the workflow pins the
+action with, and so that `self-check.yaml`'s "pins are current" gate
+covers them: a kit that changes without the pin moving is caught the
+same way a changed action is. **Adding a third caller to the check is
+dropping a file in that directory.**
+
+An estate whose callers differ from this one points
+`caller-parity-kits` at a directory in its **caller repository**
+instead, the same way `global-config` keeps renovate's estate policy
+there.
+
+#### Inputs
+
+| input | default | meaning |
+|---|---|---|
+| `caller-parity` | `false` | run the check at all. Off by default: it is new, and a scheduled run that suddenly grows a table of findings is a surprise. |
+| `caller-parity-list` | `""` | dotted path to its enrolment list, e.g. `caller-parity.public`. Empty uses `list`. |
+| `caller-parity-kits` | `""` | a directory in the caller repository holding that estate's own canonical copies. Empty uses this library's. |
+| `caller-parity-fail-on-diff` | `false` | fail the job on a difference, once the estate is clean enough to gate. |
+
+The job runs on a GitHub-hosted runner in either estate, like
+`discover`: it only reads the API. It discovers its own repositories,
+with two of `fleet-discover`'s rules relaxed on purpose —
+`require-check: false`, because the rule exists for automation that
+merges on green and this check merges nothing, and no `require-file`,
+because the subject is the caller workflows and a repository without a
+`devbox.json` still has them.
+
+The comparison is a script, `caller-parity.sh`, and its rules are
+exercised against a stub API by `hack/caller-parity-cases.sh`, which
+this repository's own CI runs: identical, prose rewritten, cron
+staggered, library pin not yet moved, a dropped trigger, an absent file,
+a 403 and an unreachable repository.
 
 ## The migration off the per-repository callers is done
 
