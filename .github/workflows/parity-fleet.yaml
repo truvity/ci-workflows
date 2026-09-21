@@ -264,7 +264,7 @@ jobs:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
 
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@2a0a1e4ecc7dfd9d0828c1b8adbc4578f6d9d2a1 # master 2026-09-16 (enrolment list, ci-workflows#105)
+      - uses: truvity/ci-workflows/.github/actions/fleet-discover@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
         id: discover
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -396,12 +396,12 @@ jobs:
           ref: ${{ steps.repo.outputs.base }}
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@ed180149898f54d29498bfa8236284bf7899e84e # master 2026-09-17 (326ee19)
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
         with:
           proto: "false"
           github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-workflows/.github/actions/devbox-parity@2a0a1e4ecc7dfd9d0828c1b8adbc4578f6d9d2a1 # master 2026-09-18 (ruleset auto-merge, ci-workflows#118)
+      - uses: truvity/ci-workflows/.github/actions/devbox-parity@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
         id: parity
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
