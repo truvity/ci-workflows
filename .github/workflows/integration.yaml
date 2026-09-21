@@ -216,7 +216,7 @@ jobs:
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -294,7 +294,7 @@ jobs:
           registries: ${{ inputs.ecr-registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+      - uses: truvity/ci-workflows/.github/actions/setup-remote-builders@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
         if: env.LANE_IMAGES == 'true'
         with:
           remote-builders: ${{ inputs.remote-builders }}
