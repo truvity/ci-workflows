@@ -268,6 +268,27 @@ on:
 # declare the block.
 
 jobs:
+  # Cheap, and separate: a repository that pins an untagged commit of this
+  # library is a repository nobody can say the CI version of. The action
+  # needs no token (the tag list comes from `git ls-remote` on a public
+  # repository) and no toolchain, so it runs on the smallest runner the
+  # caller has and finishes in seconds.
+  #
+  # `uses:` checks the action out for us, which is why there is no second
+  # `actions/checkout` here and no reference to `github.job_workflow_sha`
+  # (actionlint does not know that context and would red every caller).
+  pins:
+    name: pins
+    runs-on: >-
+      ${{ inputs.small-runner != '' && inputs.small-runner || inputs.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: truvity/ci-workflows/.github/actions/tagged-pins@98939fa99a6ac03994253fd00a7b336fac9fe0a9 # v3.2.0
+
   recipe:
     name: ${{ matrix.recipe }}
     # Resolved per matrix entry, so `name:` stays the recipe and the
