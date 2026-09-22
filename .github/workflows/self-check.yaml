@@ -96,6 +96,21 @@ jobs:
             exit 1
           }
 
+      # The rule this library asks of every caller, asked of itself. The
+      # `pins are current` step above cannot see this one: it asks whether
+      # a pin is OLDER than the action, and an untagged commit can be
+      # perfectly current while naming no release. Seven of this
+      # repository's own action pins were labelled `# v3.1.0` while naming
+      # a commit v3.1.0 merely CONTAINS -- a pin that is almost right,
+      # which is the whole failure mode.
+      #
+      # By path, not by pin: inside a PR that edits the action the commit
+      # to pin does not exist yet, and this is the copy under test.
+      - name: fetch tags, which the gate below resolves pins against
+        run: git fetch --tags --force --quiet
+
+      - uses: ./.github/actions/tagged-pins
+
       # This repository is PUBLIC and its history cannot be unpublished.
       # Everything particular -- account ids, role ARNs, registry hosts,
       # bucket names, internal DNS -- belongs in the caller's org variables.
