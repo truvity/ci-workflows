@@ -334,7 +334,7 @@ jobs:
           fi
           echo "all checks green on ${GITHUB_SHA}"
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@a8309f9a4de4cb58306ec4384d31ec6985007f7b # v3.1.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -439,7 +439,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-workflows/.github/actions/openbao-secrets@0534a74bab4341cda598b4f7b8d4a130849c2c48 # v3.1.0
+        uses: truvity/ci-workflows/.github/actions/openbao-secrets@a8309f9a4de4cb58306ec4384d31ec6985007f7b # v3.1.2
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}
