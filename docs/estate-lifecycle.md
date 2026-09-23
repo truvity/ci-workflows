@@ -64,10 +64,31 @@ and `integration.yaml` caches `.yarn/cache` only when a root `yarn.lock`
 exists, so the default is a no-op for non-Node repositories. Pass
 `node-cache: false` to opt out.
 
+The **Go build cache** has two shapes, and a caller picks one by which
+variable is set. `go-cache-bucket` is the original: `GOCACHEPROG` runs
+`go-cache-plugin` on the runner and the runner talks to S3 with the
+pool's own identity. `go-cache-server` is
+[truvity/ci-cache](https://github.com/truvity/ci-cache): `GOCACHEPROG`
+runs `ci-cache agent` and the runner talks to a service, which owns the
+bucket. Both fall back to the caller's org variables
+(`CI_GOCACHE_S3_BUCKET`, `CI_GOCACHE_SERVER`).
+
+**The server wins when both are set.** An estate moves the org variable
+and each repository's workflow pin at different times, and during that
+window the newer path should win rather than the order of two conditions
+deciding it. The server shape writes no `GOCACHE_S3_*` at all: a runner
+on it needs no bucket grant, which is the point of moving.
+
+The two differ in how they fail, and it is worth knowing which you are
+on. The plugin is hard-fail — an unreachable bucket fails the build. The
+agent fails open inside the process, so an unreachable cache costs a
+cold build. Neither is probed in bash; the agent's own behaviour is the
+fallback.
+
 `goproxy` falls back to the caller's `vars.CI_GOPROXY` when the input is
 empty — a reusable workflow reads the calling repository's configuration
 variables — so callers no longer need to pass it (it takes effect with
-`go-cache-bucket`, as before). Do not pin `GOPROXY`
+either cache shape). Do not pin `GOPROXY`
 in a repository's `devbox.json` `env` block: `devbox run` re-applies
 that block over the job environment and the CI proxy is silently
 bypassed. `setup-devbox` warns when it finds one.

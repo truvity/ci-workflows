@@ -58,6 +58,15 @@ jobs:
       - name: caller-parity cases
         run: ./hack/caller-parity-cases.sh
 
+      # What setup-devbox writes into GITHUB_ENV for each cache shape. The
+      # branches are EXECUTED against a stubbed environment rather than read,
+      # because this composite is estate-wide and reaches a repository only
+      # when its pin moves -- so a regression in the bucket path, the one
+      # every repository uses today, would be discovered one repository at a
+      # time over days.
+      - name: cache wiring cases
+        run: ./hack/cache-env-cases.sh
+
       # The reusable workflows pin the composite action by SHA, which means
       # the pin can go stale: change the action, forget the pin, and every
       # consumer keeps bootstrapping with the old one while master looks
