@@ -535,7 +535,7 @@ jobs:
           ref: ${{ steps.repo.outputs.base }}
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@a8309f9a4de4cb58306ec4384d31ec6985007f7b # v3.1.2
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@f40be0657774d421facdff67527530850709f2ae # v3.5.0
         with:
           proto: "false"
           github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
