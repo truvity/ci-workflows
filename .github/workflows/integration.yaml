@@ -183,7 +183,27 @@ on:
 #   packages: read     # ONLY if the repo installs @truvity packages from GitHub Packages
 
 jobs:
+  # A public repository runs on GitHub-hosted runners, always. This refuses
+  # anything else BEFORE a job could land on the estate's own infrastructure,
+  # which is why it hard-codes its own runner rather than taking the caller's.
+  #
+  # The runner group's "allow public repositories" setting is the hard stop
+  # and stays off; this is the second lock, and it exists because the way a
+  # public repository ends up on a self-hosted tier is not malice — it is
+  # copying a private repository's caller, which currently succeeds silently.
+  # A private caller passes immediately and pays a few seconds.
+  runners:
+    name: runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: truvity/ci-workflows/.github/actions/public-runners@abc7684848bd753e607c7d9eaea34af719b7637f # v3.3.0
+        with:
+          runners: ${{ inputs.runner }}
+          visibility: ${{ github.event.repository.visibility }}
+
   suite:
+    needs: runners
     name: integration-${{ matrix.name }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
