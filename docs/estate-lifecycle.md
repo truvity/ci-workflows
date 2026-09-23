@@ -88,6 +88,19 @@ window the newer path should win rather than the order of two conditions
 deciding it. The server shape writes no `GOCACHE_S3_*` at all: a runner
 on it needs no bucket grant, which is the point of moving.
 
+The agent is given an explicit `--local-budget`, and in a container that
+is not a detail. Left to size itself it reads the **filesystem**, which
+on a node is hundreds of gigabytes; everything it then writes to its
+cache directory becomes page cache charged to the container's memory
+limit. Measured on 2026-09-23: jobs went from 54-76 % of their limit
+with zero limit hits to 100 % with 59,190, two runners were starved to
+death mid-step, and the one that survived took 3.4x as long. The local
+tier buys little in CI anyway -- the directory is discarded at job end.
+
+It is also asked for `--metrics`, so the job log carries one line of
+gets, hits, misses and bytes at exit. A cache that cannot be read from
+a job log is a cache nobody can reason about.
+
 The two differ in how they fail, and it is worth knowing which you are
 on. The plugin is hard-fail — an unreachable bucket fails the build. The
 agent fails open inside the process, so an unreachable cache costs a
