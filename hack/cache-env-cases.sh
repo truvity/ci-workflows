@@ -173,12 +173,18 @@ elif [ -s "$missing_dir/github_env" ]; then
 fi
 rm -rf "$missing_dir"
 
-# The agent must be given a BUDGET and asked for METRICS, and neither is
-# cosmetic. Without a budget it sizes its local cache from the filesystem,
-# which inside a cgroup is no bound at all -- the page cache it generates is
-# charged to the container's memory limit and starved two runners to death
-# on 2026-09-23. Without metrics the job log says nothing about hits or
-# misses, which is the only question a cache has to answer.
+# The agent must be asked for METRICS and must NOT be handed a budget.
+#
+# A budget written into the command line wins over the agent's own
+# derivation, which since ci-cache 0.1.2 comes from the container's memory
+# limit -- so a number here would pin every runner tier to the same figure
+# regardless of its size. The agent knows which box it is in; this file does
+# not. (The emergency cap that used to live here is why the rule is worth a
+# case: it was right for a day and wrong the moment the agent could size
+# itself.)
+#
+# Without metrics the job log says nothing about hits or misses, which is
+# the only question a cache has to answer.
 checked=$((checked + 1))
 bud_dir="$(mktemp -d)"
 : > "$bud_dir/github_env"
@@ -188,14 +194,14 @@ extract "Wire the fleet caches (cache server)" > "$bud_dir/step.sh"
 env -i PATH="$bud_dir/bin:/usr/bin:/bin" HOME="$bud_dir" GITHUB_ENV="$bud_dir/github_env" \
     RUNNER_TEMP="$bud_dir/tmp" RUNNER_ENVIRONMENT=self-hosted \
     CACHE_SERVER=http://s:8080 CACHE_GOPROXY= bash "$bud_dir/step.sh" >/dev/null 2>&1
-for flag in --local-budget --metrics; do
-    if ! grep -q -- "$flag" "$bud_dir/github_env"; then
-        echo "FAIL [agent flags]: GOCACHEPROG carries no $flag"
-        fail=$((fail + 1))
-    fi
-done
-if grep -qE -- '--local-budget +0( |$)' "$bud_dir/github_env"; then
-    echo "FAIL [agent flags]: --local-budget 0 means 'size from the filesystem', which is no budget in a container"
+if ! grep -q -- "--metrics" "$bud_dir/github_env"; then
+    echo "FAIL [agent flags]: GOCACHEPROG carries no --metrics"
+    fail=$((fail + 1))
+fi
+if grep -q -- "--local-budget" "$bud_dir/github_env"; then
+    echo "FAIL [agent flags]: GOCACHEPROG pins --local-budget, which overrides the agent's"
+    echo "      own derivation from the container's memory limit and applies one number"
+    echo "      to every runner tier"
     fail=$((fail + 1))
 fi
 rm -rf "$bud_dir"
