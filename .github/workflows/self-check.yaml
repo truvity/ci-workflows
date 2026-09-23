@@ -111,6 +111,18 @@ jobs:
 
       - uses: ./.github/actions/tagged-pins
 
+      # The rule this library is about to ask of every public caller, asked
+      # of itself first. By path, for the same reason as the gate above: the
+      # commit to pin does not exist yet inside the PR that adds the action.
+      #
+      # This repository is public and runs hosted, so the expected answer is
+      # "ok" -- which is the point. A guard nobody runs is a guard nobody
+      # knows is broken.
+      - uses: ./.github/actions/public-runners
+        with:
+          runners: ubuntu-latest
+          visibility: ${{ github.event.repository.visibility }}
+
       # This repository is PUBLIC and its history cannot be unpublished.
       # Everything particular -- account ids, role ARNs, registry hosts,
       # bucket names, internal DNS -- belongs in the caller's org variables.

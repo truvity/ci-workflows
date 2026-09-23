@@ -253,6 +253,28 @@ minutes are free for public repositories, so recipes fan out as wide as
 they like. Nothing in a component's CI needs an id-token except the
 auto-release tagger.
 
+**The rule is enforced, not remembered.** `.github/actions/public-runners`
+asks the calling repository's visibility and refuses any runner label that
+is not one of GitHub's own platforms (`ubuntu-*`, `windows-*`, `macos-*`).
+It runs on a hosted runner itself, before any job that would land on the
+estate's own infrastructure, so a public repository that copies a private
+repository's caller — which is exactly how it would happen — is told so in
+seconds rather than quietly taking a self-hosted tier.
+
+Two locks, because the consequence is not recoverable. The runner group's
+"allow public repositories" setting is the hard one and stays off; this is
+the second. The reasoning is in the action's own header: a fork's pull
+request receives no secrets and no id-token, so the usual argument stops
+there, but the *runner* is the exposure. On a self-hosted pool a job
+inherits what the runner's own identity can reach and writes the shared
+build caches that trusted jobs read afterwards, and a poisoned cache entry
+is a supply-chain compromise no amount of ephemerality undoes.
+
+When a public repository genuinely needs the estate — a suite that can only
+run against a real cluster — a **private** repository checks it out at a
+pinned version and runs that suite itself. The result travels with the pin,
+which is the same evidence §9 asks a consumer's pin bump to carry.
+
 ## 9. Consumers
 
 **The public repository does not name its consumers or the versions they
