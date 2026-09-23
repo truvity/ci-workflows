@@ -128,14 +128,38 @@ run_case "server + goproxy" "Wire the fleet caches (cache server)" \
     "GOCACHEPROG GOPROXY" \
     CACHE_SERVER=http://s:8080 CACHE_GOPROXY=http://p
 
-# The server branch must refuse a runner image that predates the binary,
-# rather than leave GOCACHEPROG naming a program that is not there.
+# A GitHub-hosted runner gets NOTHING, and this is the case that a real run
+# taught. gitops' security workflow passes no cache inputs on purpose; an org
+# variable read inside the reusable workflow gave it one anyway, on a hosted
+# runner, and the job failed on the refusal below. The refusal was right and
+# the reach was wrong.
+checked=$((checked + 1))
+hosted_dir="$(mktemp -d)"
+: > "$hosted_dir/github_env"
+extract "Wire the fleet caches (cache server)" > "$hosted_dir/step.sh"
+if ! env -i PATH="/usr/bin:/bin" HOME="$hosted_dir" GITHUB_ENV="$hosted_dir/github_env" \
+       RUNNER_TEMP="$hosted_dir/tmp" RUNNER_ENVIRONMENT=github-hosted \
+       CACHE_SERVER=http://s:8080 CACHE_GOPROXY= \
+       bash "$hosted_dir/step.sh" >"$hosted_dir/out" 2>&1; then
+    echo "FAIL [github-hosted]: the step failed; a hosted runner must be skipped, not refused"
+    sed 's/^/    /' "$hosted_dir/out" | tail -2
+    fail=$((fail + 1))
+elif [ -s "$hosted_dir/github_env" ]; then
+    echo "FAIL [github-hosted]: wrote GITHUB_ENV on a hosted runner"
+    sed 's/^/    /' "$hosted_dir/github_env" | head -2
+    fail=$((fail + 1))
+fi
+rm -rf "$hosted_dir"
+
+# The server branch must refuse a SELF-HOSTED runner image that predates the
+# binary, rather than leave GOCACHEPROG naming a program that is not there.
 checked=$((checked + 1))
 missing_dir="$(mktemp -d)"
 : > "$missing_dir/github_env"
 extract "Wire the fleet caches (cache server)" > "$missing_dir/step.sh"
 if env -i PATH="/usr/bin:/bin" HOME="$missing_dir" GITHUB_ENV="$missing_dir/github_env" \
-       RUNNER_TEMP="$missing_dir/tmp" CACHE_SERVER=http://s:8080 CACHE_GOPROXY= \
+       RUNNER_TEMP="$missing_dir/tmp" RUNNER_ENVIRONMENT=self-hosted \
+       CACHE_SERVER=http://s:8080 CACHE_GOPROXY= \
        bash "$missing_dir/step.sh" >"$missing_dir/out" 2>&1; then
     echo "FAIL [no ci-cache on PATH]: the step succeeded; it must refuse"
     fail=$((fail + 1))

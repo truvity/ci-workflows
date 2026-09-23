@@ -70,8 +70,17 @@ variable is set. `go-cache-bucket` is the original: `GOCACHEPROG` runs
 pool's own identity. `go-cache-server` is
 [truvity/ci-cache](https://github.com/truvity/ci-cache): `GOCACHEPROG`
 runs `ci-cache agent` and the runner talks to a service, which owns the
-bucket. Both fall back to the caller's org variables
-(`CI_GOCACHE_S3_BUCKET`, `CI_GOCACHE_SERVER`).
+bucket. The **caller passes both**, from its own org variables
+(`CI_GOCACHE_S3_BUCKET`, `CI_GOCACHE_SERVER`), and the shared workflow
+reads neither on its behalf.
+
+That is deliberate and was learned the hard way. A caller decides **per
+workflow** whether a Go cache applies at all: gitops' `ci.yaml` passes
+one and its `security.yaml` passes none. A fallback to the org variable
+inside the reusable workflow took that decision away and handed the
+security workflow a cache it had declined — on a GitHub-hosted runner,
+which can reach neither the binary nor an in-cluster service, so the
+job failed outright.
 
 **The server wins when both are set.** An estate moves the org variable
 and each repository's workflow pin at different times, and during that

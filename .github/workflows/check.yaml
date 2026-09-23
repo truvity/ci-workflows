@@ -141,13 +141,16 @@ on:
         default: ''
       go-cache-server:
         description: >-
-          Base URL of a truvity/ci-cache server. Empty falls back to the
-          CALLER's `vars.CI_GOCACHE_SERVER` (a reusable workflow reads the
-          caller repository's variables). TAKES PRECEDENCE over
-          go-cache-bucket when both resolve to a value: an estate moves the
-          org variable and each repository's workflow pin at different
-          times, and during that window the newer path should win rather
-          than the order of two conditions deciding it.
+          Base URL of a truvity/ci-cache server. The CALLER passes it, as
+          it does go-cache-bucket, and there is deliberately NO fallback to
+          `vars.CI_GOCACHE_SERVER` here: a caller decides per workflow
+          whether a Go cache applies at all, and reading the org variable
+          inside this workflow took that decision away. gitops' security
+          workflow passes no cache inputs on purpose and got one anyway,
+          on a GitHub-hosted runner that can reach neither the binary nor
+          the service. TAKES PRECEDENCE over go-cache-bucket when both are
+          set, so a caller migrating from one to the other does not depend
+          on the order of two conditions.
         required: false
         type: string
         default: ''
@@ -364,7 +367,7 @@ jobs:
         with:
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
-          go-cache-server: ${{ inputs.go-cache-server || vars.CI_GOCACHE_SERVER }}
+          go-cache-server: ${{ inputs.go-cache-server }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           go-cache-endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
