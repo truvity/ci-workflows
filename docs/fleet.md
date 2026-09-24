@@ -86,7 +86,8 @@ step summary lists it under *Required-check rule not decided*. A
 repository must never be dropped because a read failed — that is
 indistinguishable from a repository with nothing to do.
 
-The rule is exercised against a stub API by `hack/discover-cases.sh`,
+The rule is exercised against a stub API by
+[`hack/discover-cases.sh`](https://github.com/truvity/ci-actions/blob/master/hack/discover-cases.sh),
 which this repository's own CI runs: either source alone, both, neither,
 a ruleset with rules but no status-check rule, a protection object with
 no required checks, and each of the failure shapes.
@@ -488,17 +489,19 @@ decision, with the normalised diff that says what it is. That is the
 check working. `fail-on-diff` is what a clean table would earn, and it
 stays off while the table is honest instead.
 
-The two additive shapes are in `hack/caller-parity-cases.sh` — until
-they were measured every case there removed or rewrote something, and a
-comparison that only notices deletions would have reported both as
-parity.
+The two additive shapes are in
+[`hack/caller-parity-cases.sh`](https://github.com/truvity/ci-actions/blob/master/hack/caller-parity-cases.sh)
+— until they were measured every case there removed or rewrote
+something, and a comparison that only notices deletions would have
+reported both as parity.
 
 #### Where the canonical copies live
 
-`.github/actions/caller-parity/kits/` in this library, one file per
-caller workflow, named for the path it is compared against
-(`security.yaml` → `.github/workflows/security.yaml`). They sit inside
-the action so that they are pinned by the same SHA the workflow pins the
+[`caller-parity/kits/`](https://github.com/truvity/ci-actions/tree/master/caller-parity/kits)
+in truvity/ci-actions, one file per caller workflow, named for the path
+it is compared against (`security.yaml` →
+`.github/workflows/security.yaml`). They sit inside the action so that
+they are pinned by the same SHA the workflow pins the
 action with, and so that `self-check.yaml`'s "pins are current" gate
 covers them: a kit that changes without the pin moving is caught the
 same way a changed action is. **Adding a third caller to the check is
@@ -532,8 +535,9 @@ because the subject is the caller workflows and a repository without a
 `devbox.json` still has them.
 
 The comparison is a script, `caller-parity.sh`, and its rules are
-exercised against a stub API by `hack/caller-parity-cases.sh`, which
-this repository's own CI runs: identical, prose rewritten, cron
+exercised against a stub API by
+[`hack/caller-parity-cases.sh`](https://github.com/truvity/ci-actions/blob/master/hack/caller-parity-cases.sh),
+which this repository's own CI runs: identical, prose rewritten, cron
 staggered, library pin not yet moved, a dropped trigger, an added
 `with:` input, an added top-level block with the job renamed, an absent
 file, a 403 and an unreachable repository.

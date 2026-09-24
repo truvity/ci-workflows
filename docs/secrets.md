@@ -7,9 +7,10 @@ there, and rotated by hand in as many places as hold a copy. Nothing says
 which job may use one, because a secret in a repository is a secret for
 every workflow in it.
 
-`.github/actions/openbao-secrets` reads one path of secrets at run time,
-as the job itself, from an OpenBAO KV v2 mount. Nothing is stored in the
-repository, and what a job may read is decided outside it.
+[`openbao-secrets`](https://github.com/truvity/ci-actions/tree/master/openbao-secrets)
+reads one path of secrets at run time, as the job itself, from an
+OpenBAO KV v2 mount. Nothing is stored in the repository, and what a job
+may read is decided outside it.
 
 ## The chain
 
@@ -42,10 +43,10 @@ permissions:
   id-token: write # the read IS an exchange of the job's identity token
 
 steps:
-  - uses: truvity/ci-workflows/.github/actions/setup-devbox@<sha>
+  - uses: truvity/ci-actions/setup-devbox@<sha>
     with: { github-token: "${{ secrets.GITHUB_TOKEN }}" }
 
-  - uses: truvity/ci-workflows/.github/actions/openbao-secrets@<sha>
+  - uses: truvity/ci-actions/openbao-secrets@<sha>
     id: licence
     with:
       issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
@@ -65,7 +66,7 @@ Several keys at once come back as a file instead, one
 underscores (`maven-username` → `MAVEN_USERNAME`):
 
 ```yaml
-  - uses: truvity/ci-workflows/.github/actions/openbao-secrets@<sha>
+  - uses: truvity/ci-actions/openbao-secrets@<sha>
     id: publish
     with:
       issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}

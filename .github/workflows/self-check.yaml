@@ -1,4 +1,18 @@
-# This repository's own CI. Two gates, both earned the hard way.
+# This repository's own CI. One gate, and it is smaller than it was.
+#
+# Three case harnesses and a pin-staleness gate left on 2026-09-24 with
+# the composite actions themselves (INF-971). What they tested now lives
+# and is tested in truvity/ci-actions: discovery, caller parity and the
+# cache wiring are properties of the actions, and `pins are current`
+# existed only because a workflow here pinned an action here.
+#
+# That gate cannot come back, and should not. It asked whether a pin was
+# older than the action file it named -- a question with no answer inside
+# the pull request that introduces the action, because the commit to pin
+# does not exist until the merge and rebase-merge rewrites it. Across
+# repositories the question is simply not raised: an action change is one
+# pull request THERE, and a pin bump is one pull request HERE, against a
+# tag that already exists.
 name: self-check
 
 on:
@@ -17,18 +31,23 @@ concurrency:
 jobs:
   # `check`, the estate's one canonical required-context name (gitops
   # cfg/github.yaml merge-gate doctrine). Renamed from `lint` when this
-  # repository gained a merge gate — renaming a required job wedges every
+  # repository gained a merge gate -- renaming a required job wedges every
   # open PR, so the name changed BEFORE the context became required.
+  #
+  # Since 2026-09-24 it is also the WHOLE gate: `review: none` on the
+  # gitops row, so green here is what merges a pull request. A check that
+  # is not run here is a check nobody runs.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history: the pin check below asks whether a pinned SHA is
-          # at-or-after the action's last change, and a depth-1 clone knows
-          # neither commit.
-          fetch-depth: 0
+          # Depth 1 again. The full history was here for `pins are
+          # current`, which compared two commits in this repository; the
+          # gates that remain read the working tree and the libraries'
+          # remote tag lists, neither of which needs local history.
+          fetch-depth: 1
 
       # A workflow with a syntax error does not go red -- GitHub declines to
       # run it, which reads as "no CI configured" rather than as a failure.
@@ -41,99 +60,30 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
-      # The one rule in this repository that decides whether a repository
-      # is touched at all, run against a stub API. A wrong answer there
-      # is silent — a repository the fleet skips looks exactly like a
-      # repository with nothing to do — so the shapes it must survive are
-      # pinned here. No network and no token: the stub is a local
-      # http.server and `api-url` points discover.sh at it.
-      - name: discovery cases
-        run: ./hack/discover-cases.sh
-
-      # The other rule whose wrong answer is quiet: what counts as a
-      # DIFFERENCE between a repository's shared caller workflow and the
-      # canonical copy. Too strict and every repository differs over its
-      # own prose; too loose and a repository that dropped a trigger
-      # reads as at parity. Same stub-API shape as the discovery cases.
-      - name: caller-parity cases
-        run: ./hack/caller-parity-cases.sh
-
-      # What setup-devbox writes into GITHUB_ENV for each cache shape. The
-      # branches are EXECUTED against a stubbed environment rather than read,
-      # because this composite is estate-wide and reaches a repository only
-      # when its pin moves -- so a regression in the bucket path, the one
-      # every repository uses today, would be discovered one repository at a
-      # time over days.
-      - name: cache wiring cases
-        run: ./hack/cache-env-cases.sh
-
-      # The reusable workflows pin the composite action by SHA, which means
-      # the pin can go stale: change the action, forget the pin, and every
-      # consumer keeps bootstrapping with the old one while master looks
-      # fine. Nothing else would notice.
+      # The rule this library asks of every caller, asked of itself: a pin
+      # into the shared CI library must name a RELEASE. A pin to an
+      # untagged commit works perfectly until somebody asks what version a
+      # repository is on, and the `# v1.0.0` beside it is then a wish.
       #
-      # Master-only by construction. Inside a PR that edits the action, the
-      # commit to pin does not exist yet -- rebase-merge rewrites it -- so
-      # the correct sequence is genuinely two PRs: land the action, then
-      # pin it. This gate is what makes forgetting the second one loud.
-      - name: pins are current
-        if: github.event_name == 'push'
-        run: |
-          fail=0
-          # Every action in this repo, not just setup-devbox: a second
-          # one arrived (recipe/) and a gate that names one action only
-          # protects one action only.
-          #
-          # Process substitution, not a pipe: a piped `while` runs in a
-          # subshell and `fail` would never escape it.
-          while read -r action; do
-            name=$(basename "$action")
-            last=$(git log -1 --format=%H -- "$action")
+      # It judges BOTH halves of the library now, which is the whole
+      # reason it takes a list: every action pin in this repository points
+      # at truvity/ci-actions, and a guard that knew only the old name
+      # would pass over all nineteen of them in silence.
+      - uses: truvity/ci-actions/tagged-pins@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
 
-            while read -r pin; do
-              if git merge-base --is-ancestor "$last" "$pin" 2>/dev/null; then
-                echo "ok    ${name} @ ${pin:0:12}"
-              else
-                echo "STALE ${name} @ ${pin:0:12} predates ${last:0:12}"
-                fail=1
-              fi
-            done < <(grep -ho "${name}@[0-9a-f]\{40\}" .github/workflows/*.yaml | cut -d@ -f2 | sort -u)
-          done < <(find .github/actions -mindepth 1 -maxdepth 1 -type d | sort)
-          [ "$fail" = 0 ] || {
-            echo "::error::A pinned action SHA is older than the action itself."
-            echo "Open a follow-up PR repointing every pin at ${last:0:12} or later."
-            exit 1
-          }
-
-      # The rule this library asks of every caller, asked of itself. The
-      # `pins are current` step above cannot see this one: it asks whether
-      # a pin is OLDER than the action, and an untagged commit can be
-      # perfectly current while naming no release. Seven of this
-      # repository's own action pins were labelled `# v3.1.0` while naming
-      # a commit v3.1.0 merely CONTAINS -- a pin that is almost right,
-      # which is the whole failure mode.
-      #
-      # By path, not by pin: inside a PR that edits the action the commit
-      # to pin does not exist yet, and this is the copy under test.
-      - name: fetch tags, which the gate below resolves pins against
-        run: git fetch --tags --force --quiet
-
-      - uses: ./.github/actions/tagged-pins
-
-      # The rule this library is about to ask of every public caller, asked
-      # of itself first. By path, for the same reason as the gate above: the
-      # commit to pin does not exist yet inside the PR that adds the action.
-      #
-      # This repository is public and runs hosted, so the expected answer is
-      # "ok" -- which is the point. A guard nobody runs is a guard nobody
-      # knows is broken.
-      - uses: ./.github/actions/public-runners
+      # The rule this library asks of every public caller, asked of itself
+      # first. This repository is public and runs hosted, so the expected
+      # answer is "ok" -- which is the point. A guard nobody runs is a
+      # guard nobody knows is broken.
+      - uses: truvity/ci-actions/public-runners@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
         with:
           runners: ubuntu-latest
           visibility: ${{ github.event.repository.visibility }}
 
       # This repository is PUBLIC and its history cannot be unpublished.
       # Everything particular -- account ids, role ARNs, registry hosts,
-      # bucket names, internal DNS -- belongs in the caller's org variables.
+      # bucket names, internal DNS -- belongs in the caller's org
+      # variables. truvity/ci-actions carries its own copy of this, for
+      # the same reason and over its own files.
       - name: leak canary
         run: ./hack/leak-canary.sh

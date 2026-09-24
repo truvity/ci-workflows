@@ -328,7 +328,7 @@ jobs:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
 
-      - uses: truvity/ci-workflows/.github/actions/fleet-discover@a8309f9a4de4cb58306ec4384d31ec6985007f7b # v3.1.2
+      - uses: truvity/ci-actions/fleet-discover@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
         id: discover
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
