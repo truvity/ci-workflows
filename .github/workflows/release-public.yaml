@@ -23,6 +23,12 @@
 #       with:
 #         charts: '["github-roster"]'
 #         nix-flakes: '["github-roster"]'
+#
+#   A repository whose chart lives inside the thing it deploys names the
+#   directory rather than moving the chart out of it:
+#
+#         charts: '["url-shortener"]'
+#         chart-root: examples/url-shortener/charts
 name: release-public
 
 on:
@@ -30,12 +36,25 @@ on:
     inputs:
       charts:
         description: >-
-          JSON array of chart directory names under charts/. Empty for
-          binaries only (ocictl, pulumi-zitadel). More than one is
-          normal — zitadel-operator ships its CRDs as a second chart.
+          JSON array of chart directory names under `chart-root`
+          (`charts/` by default). Empty for binaries only (ocictl,
+          pulumi-zitadel). More than one is normal — zitadel-operator
+          ships its CRDs as a second chart.
         required: false
         type: string
         default: '[]'
+      chart-root:
+        description: >-
+          The directory the `charts` names are relative to.
+
+          The default suits a repository whose charts are its own. A
+          repository whose chart belongs to something INSIDE it — a worked
+          example, a subproject — names that directory here, rather than
+          moving the chart away from the component it deploys and leaving
+          the two to be read in different places.
+        required: false
+        type: string
+        default: charts
       chart-registry:
         required: false
         type: string
@@ -160,6 +179,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHARTS: ${{ inputs.charts }}
+          CHART_ROOT: ${{ inputs.chart-root }}
           REGISTRY: ${{ inputs.chart-registry }}
           APP_VERSION_MODE: ${{ inputs.chart-app-version }}
           # renovate: datasource=github-releases depName=truvity/ocictl
@@ -197,7 +217,7 @@ jobs:
               *) echo "::error::chart-app-version must be 'release' or 'chart', got '${APP_VERSION_MODE}'"; exit 1 ;;
             esac
             devbox run -- "$RUNNER_TEMP/helmctl/helmctl" package \
-              --chart "charts/${chart}" \
+              --chart "${CHART_ROOT}/${chart}" \
               --version "$version" "${app_version_args[@]}" \
               --output dist/
             "$RUNNER_TEMP/helmctl/helmctl" push \
