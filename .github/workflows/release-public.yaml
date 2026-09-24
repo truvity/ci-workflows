@@ -199,6 +199,13 @@ jobs:
       # docker driver cannot.
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
+      # IMAGE_TAG is the version WITHOUT the leading v. The git tag is
+      # `v0.4.2` and the image tag is `0.4.2`; passing github.ref_name
+      # straight through published `…:v0.4.2`, which is a different image
+      # from every one that came before it.
+      - name: The version
+        run: echo "IMAGE_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - name: GoReleaser
         run: devbox run -- goreleaser release --clean
         env:
@@ -207,10 +214,14 @@ jobs:
           # naming none of them ignores all three, so every existing caller
           # renders byte-identically.
           IMAGE_REPO: ${{ inputs.image-repo }}
-          IMAGE_TAG: ${{ github.ref_name }}
           GITHUB_RELEASE_DISABLED: "false"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KO_DOCKER_REPO: ${{ inputs.ko-docker-repo }}
+          # `image-repo` wins where it is given, because KO_DOCKER_REPO
+          # OVERRIDES a `repositories:` in the configuration — quietly.
+          # A release published every image to the bare default and only
+          # failed afterwards, writing an SBOM to a repository that was
+          # never meant to hold one.
+          KO_DOCKER_REPO: ${{ inputs.image-repo || inputs.ko-docker-repo }}
 
       # The git tag is the sole version authority: a chart's own version
       # field is a placeholder that never moves, and is stamped here.
