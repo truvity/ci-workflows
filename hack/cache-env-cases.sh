@@ -1,219 +1,129 @@
 #!/usr/bin/env bash
-# What `setup-devbox` writes into GITHUB_ENV for each cache shape.
+# What `setup-devbox` does about caches, now that it does not do the caching.
 #
-# This composite is estate-wide: every repository in both organizations runs
-# it, and it reaches them only when a pin moves, so a mistake here is
-# discovered one repository at a time over days. The two cache branches write
-# the environment the Go toolchain then obeys -- GOCACHEPROG names a program
-# that must exist, and a wrong value fails at the first `go` invocation with a
-# message about the toolchain rather than about this action.
+# The wiring moved to truvity/ci-cache's own `setup` action, which is tested
+# there by executing its step bodies (hack/setup-cases.sh, 21 cases). What
+# stays here is the SEAM: that this composite delegates, that it hands over
+# every input the cache needs, that the retired input is not silently
+# ignored, and that the one local step still runs.
 #
-# So the branches are EXECUTED here, against a stubbed environment, and the
-# variable names they emit are compared with what each shape is supposed to
-# produce. Reading the YAML is not enough: the bucket branch must keep
-# behaving exactly as it did after a change that only meant to add a
-# neighbour.
+# The seam is worth its own cases because it is where the two repositories
+# can disagree without either being wrong on its own -- an input added there
+# and not passed here is a cache that quietly does less, which is exactly
+# the failure mode this whole line of work was chasing.
 set -uo pipefail
 
-# yq reads the step out of the action. A missing tool must be one clear line
-# rather than six cases failing with "no step named ...", which reads like the
-# action changed.
-if ! command -v yq >/dev/null 2>&1; then
-    echo "yq (mikefarah) is required: ubuntu-latest ships it, devbox provides yq-go"
-    exit 1
-fi
+# The C locale, for the same reason the executing harness pins it: anything
+# compared as text must not depend on where the machine thinks it is.
+export LC_ALL=C
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
-action="$root/.github/actions/setup-devbox/action.yaml"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+action="$here/.github/actions/setup-devbox/action.yaml"
+[ -f "$action" ] || { echo "no action at $action" >&2; exit 2; }
+
+command -v yq >/dev/null || { echo "yq (mikefarah) is required: ubuntu-latest ships it, devbox provides yq-go" >&2; exit 2; }
 
 fail=0
 checked=0
 
-# The two steps' scripts, pulled out by name so a rename is a loud failure
-# rather than a silently skipped case.
-extract() {
-    yq -r ".runs.steps[] | select(.name == \"$1\") | .run" "$action"
-}
+step_field() { yq -r ".runs.steps[] | select(.name == \"$1\") | $2" "$action"; }
 
-# names prints the variable names a run of the script emitted, sorted. Values
-# are deliberately ignored: they carry random heredoc delimiters, and what
-# must not drift is WHICH variables a shape sets.
+# --- the delegation itself ------------------------------------------------
 #
-# LC_ALL=C, because the order is compared as a string: in a UTF-8 locale
-# `sort` ignores the underscore and puts GOCACHE_DIR before GOCACHEPROG,
-# while the C locale does the opposite. Without this the harness passes on
-# one machine and fails on the runner.
-names() {
-    grep -oE '^[A-Z_][A-Z0-9_]*<<|^[A-Z_][A-Z0-9_]*=' "$1" \
-        | sed 's/<<$//; s/=$//' | LC_ALL=C sort -u | tr '\n' ' ' | sed 's/ $//'
-}
-
-run_case() {
-    local label="$1" step="$2" want="$3"
-    shift 3
-
-    checked=$((checked + 1))
-
-    local dir script env_file
-    dir="$(mktemp -d)"
-    script="$dir/step.sh"
-    env_file="$dir/github_env"
-    : > "$env_file"
-
-    if ! extract "$step" > "$script"; then
-        echo "FAIL [$label]: no step named \"$step\" in the action"
-        fail=$((fail + 1))
-        rm -rf "$dir"
-        return
-    fi
-
-    if [ ! -s "$script" ]; then
-        echo "FAIL [$label]: step \"$step\" has an empty run block"
-        fail=$((fail + 1))
-        rm -rf "$dir"
-        return
-    fi
-
-    # A stub for the binary the server branch insists on. Its absence is its
-    # own case below.
-    mkdir -p "$dir/bin"
-    printf '#!/bin/sh\nexit 0\n' > "$dir/bin/ci-cache"
-    chmod +x "$dir/bin/ci-cache"
-
-    local out
-    out="$(env -i PATH="$dir/bin:/usr/bin:/bin" HOME="$dir" \
-        GITHUB_ENV="$env_file" RUNNER_TEMP="$dir/tmp" "$@" \
-        bash "$script" 2>&1)"
-    local rc=$?
-
-    if [ $rc -ne 0 ]; then
-        echo "FAIL [$label]: the step exited $rc"
-        echo "$out" | sed 's/^/    /' | tail -3
-        fail=$((fail + 1))
-        rm -rf "$dir"
-        return
-    fi
-
-    local got
-    got="$(names "$env_file")"
-
-    if [ "$got" != "$want" ]; then
-        echo "FAIL [$label]: GITHUB_ENV sets"
-        echo "     got  $got"
-        echo "     want $want"
-        fail=$((fail + 1))
-    fi
-
-    rm -rf "$dir"
-}
-
-# The bucket shape, unchanged. This is the case that matters most: it is what
-# every repository does today, and adding the server branch must not move it.
-run_case "bucket only" "Wire the fleet caches" \
-    "GOCACHEPROG GOCACHE_DIR GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_REGION" \
-    CACHE_BUCKET=b CACHE_REGION=r CACHE_ENDPOINT= CACHE_PATH_STYLE= CACHE_GOPROXY=
-
-run_case "bucket + endpoint + path-style + goproxy" "Wire the fleet caches" \
-    "GOCACHEPROG GOCACHE_DIR GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_ENDPOINT_URL GOCACHE_S3_PATH_STYLE GOCACHE_S3_REGION GOPROXY" \
-    CACHE_BUCKET=b CACHE_REGION=r CACHE_ENDPOINT=https://e CACHE_PATH_STYLE=true CACHE_GOPROXY=http://p
-
-# The server shape. No bucket, region, endpoint or metrics: the agent talks to
-# the server and the server owns the object store. A stray GOCACHE_S3_* here
-# would send the runner at the bucket with an identity it is about to lose.
-run_case "server only" "Wire the fleet caches (cache server)" \
-    "GOCACHEPROG" \
-    CACHE_SERVER=http://s:8080 CACHE_GOPROXY=
-
-run_case "server + goproxy" "Wire the fleet caches (cache server)" \
-    "GOCACHEPROG GOPROXY" \
-    CACHE_SERVER=http://s:8080 CACHE_GOPROXY=http://p
-
-# A GitHub-hosted runner gets NOTHING, and this is the case that a real run
-# taught. gitops' security workflow passes no cache inputs on purpose; an org
-# variable read inside the reusable workflow gave it one anyway, on a hosted
-# runner, and the job failed on the refusal below. The refusal was right and
-# the reach was wrong.
+# Pinned by SHA, not by tag or branch. A moving ref here would let the cache
+# wiring of every repository in both organizations change without a single
+# pin moving, which is the property this repository exists to prevent.
 checked=$((checked + 1))
-hosted_dir="$(mktemp -d)"
-: > "$hosted_dir/github_env"
-extract "Wire the fleet caches (cache server)" > "$hosted_dir/step.sh"
-if ! env -i PATH="/usr/bin:/bin" HOME="$hosted_dir" GITHUB_ENV="$hosted_dir/github_env" \
-       RUNNER_TEMP="$hosted_dir/tmp" RUNNER_ENVIRONMENT=github-hosted \
-       CACHE_SERVER=http://s:8080 CACHE_GOPROXY= \
-       bash "$hosted_dir/step.sh" >"$hosted_dir/out" 2>&1; then
-    echo "FAIL [github-hosted]: the step failed; a hosted runner must be skipped, not refused"
-    sed 's/^/    /' "$hosted_dir/out" | tail -2
-    fail=$((fail + 1))
-elif [ -s "$hosted_dir/github_env" ]; then
-    echo "FAIL [github-hosted]: wrote GITHUB_ENV on a hosted runner"
-    sed 's/^/    /' "$hosted_dir/github_env" | head -2
-    fail=$((fail + 1))
-fi
-rm -rf "$hosted_dir"
+uses="$(step_field "Wire the fleet caches" ".uses")"
+case "$uses" in
+    truvity/ci-cache/setup@[0-9a-f]*)
+        sha="${uses##*@}"
+        if [ "${#sha}" -ne 40 ]; then
+            echo "FAIL [pin]: ci-cache/setup is pinned to \"$sha\", which is not a full 40-character SHA"
+            fail=$((fail + 1))
+        fi
+        ;;
+    *)
+        echo "FAIL [pin]: the cache step does not use a SHA-pinned truvity/ci-cache/setup; it uses \"$uses\""
+        fail=$((fail + 1))
+        ;;
+esac
 
-# The server branch must refuse a SELF-HOSTED runner image that predates the
-# binary, rather than leave GOCACHEPROG naming a program that is not there.
-checked=$((checked + 1))
-missing_dir="$(mktemp -d)"
-: > "$missing_dir/github_env"
-extract "Wire the fleet caches (cache server)" > "$missing_dir/step.sh"
-if env -i PATH="/usr/bin:/bin" HOME="$missing_dir" GITHUB_ENV="$missing_dir/github_env" \
-       RUNNER_TEMP="$missing_dir/tmp" RUNNER_ENVIRONMENT=self-hosted \
-       CACHE_SERVER=http://s:8080 CACHE_GOPROXY= \
-       bash "$missing_dir/step.sh" >"$missing_dir/out" 2>&1; then
-    echo "FAIL [no ci-cache on PATH]: the step succeeded; it must refuse"
-    fail=$((fail + 1))
-elif ! grep -q "runner image too old" "$missing_dir/out"; then
-    echo "FAIL [no ci-cache on PATH]: refused, but not with the image message"
-    sed 's/^/    /' "$missing_dir/out" | tail -2
-    fail=$((fail + 1))
-elif [ -s "$missing_dir/github_env" ]; then
-    echo "FAIL [no ci-cache on PATH]: refused but still wrote GITHUB_ENV"
-    fail=$((fail + 1))
-fi
-rm -rf "$missing_dir"
-
-# The agent must be asked for METRICS and must NOT be handed a budget.
+# --- every input the cache needs crosses the seam -------------------------
 #
-# A budget written into the command line wins over the agent's own
-# derivation, which since ci-cache 0.1.2 comes from the container's memory
-# limit -- so a number here would pin every runner tier to the same figure
-# regardless of its size. The agent knows which box it is in; this file does
-# not. (The emergency cap that used to live here is why the rule is worth a
-# case: it was right for a day and wrong the moment the agent could size
-# itself.)
-#
-# Without metrics the job log says nothing about hits or misses, which is
-# the only question a cache has to answer.
+# Listed explicitly rather than derived: the point is to notice when the
+# action downstream grows an input this one does not pass, and a rule that
+# derived the list from the same file could not notice that.
 checked=$((checked + 1))
-bud_dir="$(mktemp -d)"
-: > "$bud_dir/github_env"
-mkdir -p "$bud_dir/bin"
-printf '#!/bin/sh\nexit 0\n' > "$bud_dir/bin/ci-cache"; chmod +x "$bud_dir/bin/ci-cache"
-extract "Wire the fleet caches (cache server)" > "$bud_dir/step.sh"
-env -i PATH="$bud_dir/bin:/usr/bin:/bin" HOME="$bud_dir" GITHUB_ENV="$bud_dir/github_env" \
-    RUNNER_TEMP="$bud_dir/tmp" RUNNER_ENVIRONMENT=self-hosted \
-    CACHE_SERVER=http://s:8080 CACHE_GOPROXY= bash "$bud_dir/step.sh" >/dev/null 2>&1
-if ! grep -q -- "--metrics" "$bud_dir/github_env"; then
-    echo "FAIL [agent flags]: GOCACHEPROG carries no --metrics"
-    fail=$((fail + 1))
-fi
-if grep -q -- "--local-budget" "$bud_dir/github_env"; then
-    echo "FAIL [agent flags]: GOCACHEPROG pins --local-budget, which overrides the agent's"
-    echo "      own derivation from the container's memory limit and applies one number"
-    echo "      to every runner tier"
-    fail=$((fail + 1))
-fi
-rm -rf "$bud_dir"
+for pair in "bucket:go-cache-bucket" "region:go-cache-region" \
+            "endpoint:go-cache-endpoint" "path-style:go-cache-path-style" \
+            "goproxy:goproxy"; do
+    to="${pair%%:*}"; from="${pair##*:}"
+    got="$(step_field "Wire the fleet caches" ".with.\"$to\"")"
+    case "$got" in
+        *"inputs.$from"*) ;;
+        *)
+            echo "FAIL [inputs]: ci-cache/setup's \"$to\" is wired to \"$got\", expected inputs.$from"
+            fail=$((fail + 1))
+            ;;
+    esac
+done
 
-# The two branches must be mutually exclusive. Both writing GOCACHEPROG would
-# leave the last step in file order to win, which is not a decision anybody
-# made.
+# --- the retired input is refused loudly, not ignored quietly -------------
+#
+# go-cache-server pointed at a cache server that was measured out of the Go
+# path. Dropping it silently would repeat the fault that started all this: a
+# variable that named something gone, a fall-through that cost four
+# milliseconds, and days before anyone noticed.
 checked=$((checked + 1))
-bucket_if="$(yq -r '.runs.steps[] | select(.name == "Wire the fleet caches") | .if' "$action")"
-if [[ "$bucket_if" != *"go-cache-server == ''"* ]]; then
-    echo "FAIL [precedence]: the bucket step does not stand down for the server"
-    echo "     its condition is: $bucket_if"
+cond="$(step_field "Warn on the retired cache-server input" ".if")"
+case "$cond" in
+    *"go-cache-server != ''"*) ;;
+    *)
+        echo "FAIL [retired]: the warning step's condition is \"$cond\"; it must fire when go-cache-server is set"
+        fail=$((fail + 1))
+        ;;
+esac
+
+checked=$((checked + 1))
+d="$(mktemp -d)"
+step_field "Warn on the retired cache-server input" ".run" > "$d/step.sh"
+: > "$d/env"
+env -i PATH="/usr/bin:/bin" HOME="$d" GITHUB_ENV="$d/env" bash "$d/step.sh" > "$d/out" 2>&1
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo "FAIL [retired]: the warning step exited $rc; telling a caller something must not fail its job"
+    fail=$((fail + 1))
+fi
+if ! grep -q "::warning::" "$d/out"; then
+    echo "FAIL [retired]: the step emitted no ::warning::, so a caller would never learn the input is dead"
+    fail=$((fail + 1))
+fi
+if [ -s "$d/env" ]; then
+    echo "FAIL [retired]: the warning step wrote GITHUB_ENV; it must only speak"
+    fail=$((fail + 1))
+fi
+rm -rf "$d"
+
+# --- nothing here wires a cache any more ----------------------------------
+#
+# If a `run:` step in this composite starts writing GOCACHEPROG again, two
+# places decide the same thing and the last one in file order wins -- which
+# is not a decision anybody made.
+checked=$((checked + 1))
+if yq -r '.runs.steps[] | select(.run) | .run' "$action" | grep -q "GOCACHEPROG"; then
+    echo "FAIL [ownership]: a run: step in setup-devbox writes GOCACHEPROG; that belongs to ci-cache/setup now"
+    fail=$((fail + 1))
+fi
+
+# --- the local step that stays --------------------------------------------
+#
+# devbox re-applies devbox.json's env block over the job environment, so a
+# GOPROXY pinned there silently beats whatever the cache wiring set. That
+# check is about devbox, not about caches, so it did not move.
+checked=$((checked + 1))
+if [ "$(step_field "Guard GOPROXY against devbox.json" ".name")" != "Guard GOPROXY against devbox.json" ]; then
+    echo "FAIL [guard]: the devbox.json GOPROXY guard is gone; it is about devbox, not about caches"
     fail=$((fail + 1))
 fi
 
@@ -227,4 +137,4 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 
-echo "cache wiring holds ($checked cases checked)"
+echo "cache seam holds ($checked cases checked)"
