@@ -458,6 +458,51 @@ Satisfying the check is therefore cheap: 11 of 11 and 12 of 13 already
 did, without knowing it existed. A new repository copies the kit file
 verbatim and gives its `cron:` a minute of its own.
 
+#### A kit that is a block, not a file
+
+Not everything shared across the estate is a whole file. The Go import
+bans (`lint/golangci-depguard.yaml` in `truvity/policy`) live **inside**
+each repository's `.golangci.yaml`, beside settings that are
+legitimately that repository's own — golangci-lint v2 cannot extend a
+configuration from a URL, so the block is a hand copy in every Go
+repository that has one.
+
+A hand copy with no drift detection has a half-life, which is the
+failure the block itself exists to prevent. So `kits/kits.yaml` in
+`truvity/ci-actions` says, per kit, where it lives and which subtree is
+the shared part:
+
+```yaml
+golangci-depguard.yaml:
+  path: .golangci.yaml
+  compare: .linters.settings.depguard   # in the repository's file
+  within: .depguard                     # in the kit
+  enabled: false
+```
+
+A kit with no entry is the default shape: the whole file, at
+`.github/workflows/<name>`.
+
+A subtree is compared **as data** — canonical JSON, keys sorted — rather
+than as normalised text. What a copied block has to keep is its data: a
+repository that reindents it, writes its own comments around it or
+orders the keys differently has the same bans, and calling any of those
+a difference would be noise nobody reads. A repository missing one
+`deny` entry does not have the same bans, and neither does one that
+dropped the block entirely — which reads as `differs`, not `absent`,
+because the file it belongs in is right there.
+
+`enabled: false` is how a kit ships **written but not yet compared**.
+The depguard kit is off today: all nine copies are byte-identical, and
+the estate-wide pass that will touch every one of those repositories is
+already scheduled, so turning it on there costs one coordination instead
+of two. It is one line.
+
+Note that `enabled: false` is read with `yq` without the `//`
+alternative operator, because that operator treats `false` as absent —
+a kit turned off would have been compared anyway, silently, which is the
+only way a lever is worse than not having one.
+
 #### One kit, and the differences that are decisions
 
 A second kind of estate was measured on 2026-09-21: private repositories,
