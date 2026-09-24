@@ -217,6 +217,59 @@ if [[ "$bucket_if" != *"go-cache-server == ''"* ]]; then
     fail=$((fail + 1))
 fi
 
+# The DIRECT step is the server step with the bucket in place of the server:
+# same binary, same flag rules. It must name `ci-cache direct`, carry
+# --metrics, carry no --local-budget, and hand the agent its store in the
+# agent's own configuration names -- which are the server's, because it is
+# the same loader. A run that emitted GOCACHEPROG but no bucket would start
+# an agent that refuses ("direct mode needs an object store") at the first
+# `go` invocation, with a message about the toolchain.
+checked=$((checked + 1))
+dir_dir="$(mktemp -d)"
+: > "$dir_dir/github_env"
+mkdir -p "$dir_dir/bin"
+printf '#!/bin/sh\nexit 0\n' > "$dir_dir/bin/ci-cache"; chmod +x "$dir_dir/bin/ci-cache"
+extract "Wire the fleet caches (agent, direct)" > "$dir_dir/step.sh"
+env -i PATH="$dir_dir/bin:/usr/bin:/bin" HOME="$dir_dir" GITHUB_ENV="$dir_dir/github_env" \
+    RUNNER_TEMP="$dir_dir/tmp" RUNNER_ENVIRONMENT=self-hosted \
+    CACHE_BUCKET=b CACHE_REGION=r CACHE_ENDPOINT= CACHE_PATH_STYLE= CACHE_GOPROXY= \
+    bash "$dir_dir/step.sh" >/dev/null 2>&1
+if ! grep -qE 'GOCACHEPROG<<' "$dir_dir/github_env" || ! grep -q -- "ci-cache direct" "$dir_dir/github_env"; then
+    echo "FAIL [direct]: GOCACHEPROG does not run \`ci-cache direct\`"
+    fail=$((fail + 1))
+fi
+if ! grep -q -- "--metrics" "$dir_dir/github_env"; then
+    echo "FAIL [direct]: GOCACHEPROG carries no --metrics"
+    fail=$((fail + 1))
+fi
+if grep -q -- "--local-budget" "$dir_dir/github_env"; then
+    echo "FAIL [direct]: GOCACHEPROG pins --local-budget"
+    fail=$((fail + 1))
+fi
+got="$(names "$dir_dir/github_env")"
+want="CI_CACHE_STORE_BUCKET CI_CACHE_STORE_REGION GOCACHEPROG"
+if [ "$got" != "$want" ]; then
+    echo "FAIL [direct]: variables set: $got"
+    echo "               want:          $want"
+    fail=$((fail + 1))
+fi
+rm -rf "$dir_dir"
+
+# Three steps now, and every pair must be exclusive, for the reason the
+# two-step case gives: two writers of GOCACHEPROG leave file order to decide.
+checked=$((checked + 1))
+direct_if="$(yq -r '.runs.steps[] | select(.name == "Wire the fleet caches (agent, direct)") | .if' "$action")"
+if [[ "$direct_if" != *"go-cache-server == ''"* ]]; then
+    echo "FAIL [precedence]: the direct step does not stand down for the server"
+    echo "     its condition is: $direct_if"
+    fail=$((fail + 1))
+fi
+if [[ "$bucket_if" != *"go-cache-direct == ''"* ]]; then
+    echo "FAIL [precedence]: the bucket step does not stand down for the direct agent"
+    echo "     its condition is: $bucket_if"
+    fail=$((fail + 1))
+fi
+
 if [ "$checked" -eq 0 ]; then
     echo "NOTHING CHECKED — the harness found no cases, which is a failure of the harness"
     exit 1

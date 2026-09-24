@@ -59,6 +59,15 @@ inputs:
       during that window rather than the order of two `if` conditions
       deciding it.
     default: ""
+  go-cache-direct:
+    description: >-
+      EXPERIMENT. "true" runs the ci-cache AGENT straight against
+      go-cache-bucket, with no server in the chain — the agent's `direct`
+      mode — instead of go-cache-plugin. Same binary as go-cache-server,
+      one flag different, so a job wired this way and a job wired to the
+      server differ in exactly one thing: the server. Meaningful only with
+      go-cache-bucket and an empty go-cache-server.
+    default: ""
   goproxy:
     description: In-cluster Go module proxy with a public fallback.
     default: ""
@@ -530,8 +539,62 @@ runs:
         CACHE_SERVER: ${{ inputs.go-cache-server }}
         CACHE_GOPROXY: ${{ inputs.goproxy }}
 
+    # The agent DIRECT path: the same ci-cache binary the server path runs,
+    # pointed at the bucket instead of a server. It exists to answer one
+    # question -- does the server contribute anything the bucket alone does
+    # not -- and it answers it by holding everything else constant. Runs
+    # instead of the plugin step below, never beside it, for the reason the
+    # server step gives.
+    - name: Wire the fleet caches (agent, direct)
+      if: inputs.go-cache-direct != '' && inputs.go-cache-bucket != '' && inputs.go-cache-server == ''
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+          echo "::notice::go-cache-direct ignored on a GitHub-hosted runner"
+          exit 0
+        fi
+
+        if ! command -v ci-cache >/dev/null 2>&1; then
+          echo "::error::ci-cache not on PATH — runner image too old for go-cache-direct"
+          exit 1
+        fi
+
+        write_env() {
+          local d
+          d="EOF_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          printf '%s<<%s\n%s\n%s\n' "$1" "$d" "$2" "$d" >> "$GITHUB_ENV"
+        }
+
+        # No --local-budget, for the reason the server step gives at
+        # length: the agent sizes itself from the cgroup, and a number
+        # here would win over that. --metrics for the summary line, which
+        # is the whole point of running this at all.
+        write_env GOCACHEPROG "ci-cache direct --cache-dir ${RUNNER_TEMP}/ci-cache --metrics"
+
+        # The store, in the agent's own configuration names -- the same
+        # ones the server reads, because it is the same config loader.
+        write_env CI_CACHE_STORE_BUCKET "$CACHE_BUCKET"
+        write_env CI_CACHE_STORE_REGION "$CACHE_REGION"
+        if [ -n "$CACHE_ENDPOINT" ]; then
+          write_env CI_CACHE_STORE_ENDPOINT "$CACHE_ENDPOINT"
+        fi
+        if [ -n "$CACHE_PATH_STYLE" ]; then
+          write_env CI_CACHE_STORE_PATH_STYLE "$CACHE_PATH_STYLE"
+        fi
+        if [ -n "$CACHE_GOPROXY" ]; then
+          write_env GOPROXY "$CACHE_GOPROXY"
+        fi
+      env:
+        CACHE_BUCKET: ${{ inputs.go-cache-bucket }}
+        CACHE_REGION: ${{ inputs.go-cache-region }}
+        CACHE_ENDPOINT: ${{ inputs.go-cache-endpoint }}
+        CACHE_PATH_STYLE: ${{ inputs.go-cache-path-style }}
+        CACHE_GOPROXY: ${{ inputs.goproxy }}
+
     - name: Wire the fleet caches
-      if: inputs.go-cache-bucket != '' && inputs.go-cache-server == ''
+      if: inputs.go-cache-bucket != '' && inputs.go-cache-server == '' && inputs.go-cache-direct == ''
       shell: bash
       # Only when asked: hosted runners have no VPC endpoint and no pool
       # identity, so pointing GOCACHEPROG at S3 there would fail every
