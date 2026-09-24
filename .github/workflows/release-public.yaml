@@ -55,19 +55,29 @@ on:
         required: false
         type: string
         default: charts
-      chart-manifests:
+      chart-images:
         description: >-
-          Name of a workflow ARTIFACT holding helmctl release manifests,
-          one `<chart>.yaml` per chart that needs one. A chart with a file
-          there is packaged from it — version, appVersion and values, the
-          last deep-merged into the chart's own values.yaml — and a chart
-          without one is packaged from the tag exactly as before.
+          Where the charts' image values come from. `goreleaser` derives
+          them from `dist/artifacts.json` — the digests of what GoReleaser
+          just built and pushed in this same job — via
+          `helmctl goreleaser-manifest`, and packages each chart from that.
+          Empty (the default) packages from the tag, as before.
 
-          This is how a release pins its images BY DIGEST. A digest only
-          exists once the image is built, so the job that builds them
-          writes the manifest and uploads it, and this workflow runs after
-          it. Empty (the default) keeps the old order, where charts can
-          publish before their images exist.
+          This is what makes the ordering impossible to get wrong. A digest
+          exists only once the image is built, so a release that packaged
+          charts in an earlier job published them with their image values
+          empty: it rendered, it pushed, the run was green, and the chart
+          could not install. One job, and the charts are packaged from a
+          file that does not exist until the images are pushed.
+        required: false
+        type: string
+        default: ""
+      image-repo:
+        description: >-
+          Passed to GoReleaser as IMAGE_REPO, for a configuration whose
+          image destination is templated. ONE destination per repository —
+          public to ghcr, private to ECR — so that local, CI and release
+          differ only in this value and never in what is built.
         required: false
         type: string
         default: ""
@@ -185,9 +195,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
 
+      # dockers_v2 builds multi-platform images with buildx; the default
+      # docker driver cannot.
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
       - name: GoReleaser
         run: devbox run -- goreleaser release --clean
         env:
+          # For a configuration whose image destination, tag and release
+          # switch are templated — one file, three loops. A configuration
+          # naming none of them ignores all three, so every existing caller
+          # renders byte-identically.
+          IMAGE_REPO: ${{ inputs.image-repo }}
+          IMAGE_TAG: ${{ github.ref_name }}
+          GITHUB_RELEASE_DISABLED: "false"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KO_DOCKER_REPO: ${{ inputs.ko-docker-repo }}
 
@@ -203,13 +224,6 @@ jobs:
       # to `helm package` internally, so it runs under devbox where helm is
       # on PATH, and authenticates to ghcr with GITHUB_TOKEN directly — no
       # registry login step.
-      # The manifests the image build wrote, if this release pins digests.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: inputs.charts != '[]' && inputs.chart-manifests != ''
-        with:
-          name: ${{ inputs.chart-manifests }}
-          path: ${{ runner.temp }}/chart-manifests
-
       - name: Package and push charts
         if: inputs.charts != '[]'
         env:
@@ -218,7 +232,7 @@ jobs:
           CHART_ROOT: ${{ inputs.chart-root }}
           REGISTRY: ${{ inputs.chart-registry }}
           APP_VERSION_MODE: ${{ inputs.chart-app-version }}
-          CHART_MANIFESTS: ${{ inputs.chart-manifests }}
+          CHART_IMAGES: ${{ inputs.chart-images }}
           REQUIRE_IMAGE_DIGESTS: ${{ inputs.require-image-digests }}
           # renovate: datasource=github-releases depName=truvity/ocictl
           HELMCTL_VERSION: "0.5.1"
@@ -258,10 +272,15 @@ jobs:
             # values to bake in, so it REPLACES the two version flags
             # rather than sitting beside them. A chart with no manifest is
             # packaged exactly as it was before this input existed.
-            manifest="$RUNNER_TEMP/chart-manifests/${chart}.yaml"
-            if [ -n "$CHART_MANIFESTS" ] && [ -f "$manifest" ]; then
+            if [ "$CHART_IMAGES" = "goreleaser" ]; then
+              # The digests of what GoReleaser pushed MINUTES AGO, in this
+              # same job. helmctl reads its dist/ and writes the manifest;
+              # the chart is packaged from that rather than from the tag,
+              # so its image values cannot be empty.
+              manifest="$RUNNER_TEMP/${chart}-manifest.yaml"
+              "$RUNNER_TEMP/helmctl/helmctl" goreleaser-manifest \
+                --goreleaser-dist dist --output "$manifest"
               package_args=(--manifest "$manifest")
-              echo "packaging from ${chart}.yaml"
             else
               package_args=(--version "$version" "${app_version_args[@]}")
             fi
