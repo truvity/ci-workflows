@@ -2,6 +2,19 @@
 
 Shared reusable workflows for both Truvity organizations.
 
+The **composite actions** these workflows are built from moved to
+[truvity/ci-actions](https://github.com/truvity/ci-actions) on
+2026-09-24, with their history and their case harnesses. A workflow
+cannot pin the commit that introduces an action in its own repository —
+the commit does not exist until the merge, and rebase-merge rewrites it —
+so every action change here was a three-step dance with a red `master` in
+between. Across repositories the question is not raised: an action change
+is one pull request there, a pin bump is one pull request here, against a
+tag that already exists.
+
+Nothing changes for a caller: callers reference *workflows*, and the
+workflows carry the pins.
+
 **Start here if you are setting up a repository:**
 [docs/estate-lifecycle.md](docs/estate-lifecycle.md) — birth to
 autopilot, cross-linking
@@ -25,6 +38,9 @@ estate. Tags move; commit SHAs do not.
 ```yaml
 uses: truvity/ci-workflows/.github/workflows/check.yaml@<40-char-sha>
 ```
+
+Pin the commit **of a tag**: `tagged-pins` refuses anything else, and it
+judges pins into both halves of the library.
 
 **2. Mechanism only.** Account ids, role ARNs, registry hostnames, bucket
 names, cluster names and internal DNS are **caller inputs or org

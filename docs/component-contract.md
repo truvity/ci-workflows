@@ -253,10 +253,12 @@ minutes are free for public repositories, so recipes fan out as wide as
 they like. Nothing in a component's CI needs an id-token except the
 auto-release tagger.
 
-**The rule is enforced, not remembered.** `.github/actions/public-runners`
-asks the calling repository's visibility and refuses any runner label that
-is not one of GitHub's own platforms (`ubuntu-*`, `windows-*`, `macos-*`).
-It runs on a hosted runner itself, before any job that would land on the
+**The rule is enforced, not remembered.**
+[`public-runners`](https://github.com/truvity/ci-actions/tree/master/public-runners)
+asks the calling repository's visibility and refuses any runner label
+that is not one of GitHub's own platforms (`ubuntu-*`, `windows-*`,
+`macos-*`). It runs on a hosted runner itself, before any job that would
+land on the
 estate's own infrastructure, so a public repository that copies a private
 repository's caller — which is exactly how it would happen — is told so in
 seconds rather than quietly taking a self-hosted tier.

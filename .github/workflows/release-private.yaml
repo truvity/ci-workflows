@@ -98,7 +98,7 @@ on:
           buildx builder, `platforms=endpoint` entries separated by
           whitespace — from the caller's org variable
           (vars.CI_REMOTE_BUILDERS_STABLE), never a literal here. See
-          .github/actions/setup-remote-builders for the format.
+          truvity/ci-actions setup-remote-builders for the format.
         required: false
         type: string
         default: ""
@@ -334,7 +334,7 @@ jobs:
           fi
           echo "all checks green on ${GITHUB_SHA}"
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@e7d0193f467f32cbcca587adc011362cb265a364 # v3.7.0
+      - uses: truvity/ci-actions/setup-devbox@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -353,7 +353,7 @@ jobs:
 
       # ARC: the CI plane's warm BuildKit builders as the buildx builder
       # (native builds on a hot layer cache; no QEMU). Inlined rather
-      # than `uses:`-ing .github/actions/setup-remote-builders because a
+      # than `uses:`-ing truvity/ci-actions setup-remote-builders because a
       # reusable workflow can only reference an action by a commit that
       # already exists; the action is the same step for callers that run
       # their release inline (dms). Keep the two in step.
@@ -439,7 +439,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-workflows/.github/actions/openbao-secrets@a8309f9a4de4cb58306ec4384d31ec6985007f7b # v3.1.2
+        uses: truvity/ci-actions/openbao-secrets@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}
