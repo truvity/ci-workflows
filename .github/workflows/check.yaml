@@ -141,16 +141,16 @@ on:
         default: ''
       go-cache-server:
         description: >-
-          Base URL of a truvity/ci-cache server. The CALLER passes it, as
-          it does go-cache-bucket, and there is deliberately NO fallback to
-          `vars.CI_GOCACHE_SERVER` here: a caller decides per workflow
-          whether a Go cache applies at all, and reading the org variable
-          inside this workflow took that decision away. gitops' security
-          workflow passes no cache inputs on purpose and got one anyway,
-          on a GitHub-hosted runner that can reach neither the binary nor
-          the service. TAKES PRECEDENCE over go-cache-bucket when both are
-          set, so a caller migrating from one to the other does not depend
-          on the order of two conditions.
+          RETIRED and ignored; passing it warns. The Go build cache goes
+          straight to go-cache-bucket. See the input of the same name in
+          the setup-devbox action for why the server left the Go path.
+
+          The rule it used to illustrate still holds for every cache
+          input here: the CALLER passes them and there is deliberately NO
+          fallback to an org variable inside this workflow. gitops'
+          security workflow passes none on purpose and once got one
+          anyway, on a GitHub-hosted runner that could reach neither the
+          binary nor the service.
         required: false
         type: string
         default: ''
