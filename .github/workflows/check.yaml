@@ -154,6 +154,14 @@ on:
         required: false
         type: string
         default: ''
+      go-cache-direct:
+        description: >-
+          EXPERIMENT. "true" runs the ci-cache agent straight against
+          go-cache-bucket with no server in the chain, instead of
+          go-cache-plugin. See the action input of the same name.
+        required: false
+        type: string
+        default: ''
       go-cache-bucket:
         description: ARC only — from the caller's org variable, never hard-coded here.
         required: false
@@ -363,11 +371,12 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-workflows/.github/actions/setup-devbox@e7d0193f467f32cbcca587adc011362cb265a364 # v3.7.0
+      - uses: truvity/ci-workflows/.github/actions/setup-devbox@a5559880154d19f39dc0127d11898144657a6e08 # EXPERIMENT agent-direct, not a release
         with:
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
           go-cache-server: ${{ inputs.go-cache-server }}
+          go-cache-direct: ${{ inputs.go-cache-direct }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           go-cache-endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
