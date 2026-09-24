@@ -55,6 +55,35 @@ on:
         required: false
         type: string
         default: charts
+      chart-manifests:
+        description: >-
+          Name of a workflow ARTIFACT holding helmctl release manifests,
+          one `<chart>.yaml` per chart that needs one. A chart with a file
+          there is packaged from it — version, appVersion and values, the
+          last deep-merged into the chart's own values.yaml — and a chart
+          without one is packaged from the tag exactly as before.
+
+          This is how a release pins its images BY DIGEST. A digest only
+          exists once the image is built, so the job that builds them
+          writes the manifest and uploads it, and this workflow runs after
+          it. Empty (the default) keeps the old order, where charts can
+          publish before their images exist.
+        required: false
+        type: string
+        default: ""
+      require-image-digests:
+        description: >-
+          Refuse to package a chart unless every entry under its top-level
+          `images:` map carries a digest.
+
+          READ THIS BEFORE TURNING IT ON: the check looks for `images:`
+          and nothing else. A chart that spells its images some other way
+          has no entries to check, passes, and publishes mutable
+          references under a flag that says otherwise — a guard that
+          silently does not guard. Adopt the shape first, then set this.
+        required: false
+        type: boolean
+        default: false
       chart-registry:
         required: false
         type: string
@@ -174,6 +203,13 @@ jobs:
       # to `helm package` internally, so it runs under devbox where helm is
       # on PATH, and authenticates to ghcr with GITHUB_TOKEN directly — no
       # registry login step.
+      # The manifests the image build wrote, if this release pins digests.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: inputs.charts != '[]' && inputs.chart-manifests != ''
+        with:
+          name: ${{ inputs.chart-manifests }}
+          path: ${{ runner.temp }}/chart-manifests
+
       - name: Package and push charts
         if: inputs.charts != '[]'
         env:
@@ -182,6 +218,8 @@ jobs:
           CHART_ROOT: ${{ inputs.chart-root }}
           REGISTRY: ${{ inputs.chart-registry }}
           APP_VERSION_MODE: ${{ inputs.chart-app-version }}
+          CHART_MANIFESTS: ${{ inputs.chart-manifests }}
+          REQUIRE_IMAGE_DIGESTS: ${{ inputs.require-image-digests }}
           # renovate: datasource=github-releases depName=truvity/ocictl
           HELMCTL_VERSION: "0.5.1"
         run: |
@@ -216,9 +254,23 @@ jobs:
               chart)   app_version_args=() ;;
               *) echo "::error::chart-app-version must be 'release' or 'chart', got '${APP_VERSION_MODE}'"; exit 1 ;;
             esac
+            # A manifest carries the version, the appVersion and the
+            # values to bake in, so it REPLACES the two version flags
+            # rather than sitting beside them. A chart with no manifest is
+            # packaged exactly as it was before this input existed.
+            manifest="$RUNNER_TEMP/chart-manifests/${chart}.yaml"
+            if [ -n "$CHART_MANIFESTS" ] && [ -f "$manifest" ]; then
+              package_args=(--manifest "$manifest")
+              echo "packaging from ${chart}.yaml"
+            else
+              package_args=(--version "$version" "${app_version_args[@]}")
+            fi
+            if [ "$REQUIRE_IMAGE_DIGESTS" = "true" ]; then
+              package_args+=(--require-image-digests)
+            fi
             devbox run -- "$RUNNER_TEMP/helmctl/helmctl" package \
               --chart "${CHART_ROOT}/${chart}" \
-              --version "$version" "${app_version_args[@]}" \
+              "${package_args[@]}" \
               --output dist/
             "$RUNNER_TEMP/helmctl/helmctl" push \
               --tgz "dist/${chart}-${version}.tgz" \
