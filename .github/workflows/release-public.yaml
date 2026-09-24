@@ -69,6 +69,18 @@ on:
           empty: it rendered, it pushed, the run was green, and the chart
           could not install. One job, and the charts are packaged from a
           file that does not exist until the images are pushed.
+
+          The manifest describes the BUILD, so it names every image the
+          run produced — but each chart is given only the ones it
+          DECLARES, and a chart that declares no `images:` key of its own
+          is given none. That matters for a repository publishing more
+          than one chart, where an application ships beside the data
+          resources it runs against: before helmctl 0.6.1 the second
+          chart received the first one's images, and a values.schema.json
+          with additionalProperties:false then refused every install of
+          it, including one passing no values at all. It packaged, it
+          pushed, the run was green, and the artifact was broken for
+          everyone who pulled it.
         required: false
         type: string
         default: ""
@@ -246,7 +258,7 @@ jobs:
           CHART_IMAGES: ${{ inputs.chart-images }}
           REQUIRE_IMAGE_DIGESTS: ${{ inputs.require-image-digests }}
           # renovate: datasource=github-releases depName=truvity/ocictl
-          HELMCTL_VERSION: "0.5.1"
+          HELMCTL_VERSION: "0.6.1"
         run: |
           set -euo pipefail
 
