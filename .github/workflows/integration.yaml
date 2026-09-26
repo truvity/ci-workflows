@@ -28,6 +28,33 @@
 # A lane's build/test commands are shell: a caller that needs an
 # environment tweak puts it in the command (bar drops CI/GITHUB_ACTIONS
 # for moon: `env CI= GITHUB_ACTIONS= devbox run -- moon run …`).
+#
+# TWO TIERS, one lane shape (docs/tiers.md has the full case):
+#   - shared: a private repository's suites run on the estate's own
+#     runners against the estate's own development cluster — everything
+#     above, unchanged since the day it was written.
+#   - kind: a PUBLIC repository's suites run on a GitHub-hosted runner
+#     against a disposable kind cluster (truvity/ci-actions' `cluster`
+#     action, mode: kind), because a public repository's pull requests
+#     come from forks and must never reach the estate's own runners or
+#     credentials (the same rule check.yaml and public-runners already
+#     enforce). The tier follows `github.event.repository.visibility`,
+#     not a caller's say-so — a public repository cannot opt into
+#     `shared`, ever. `tier` lets a PRIVATE caller opt into `kind`
+#     instead (proving the public path, or just not needing the shared
+#     tenant), which is the only direction the override is allowed to go.
+#
+# The shared path below is BYTE-FOR-BYTE what it was before this tier
+# split: same steps, same conditions, same inputs. It is not routed
+# through the cluster action's own `mode: shared` — that mode resolves
+# `kubectl` from bare PATH and always logs into ECR when
+# `ecr-registries` is set, while this workflow calls `kubectl` through
+# the caller's devbox (no bare kubectl on a self-hosted runner) and
+# lets a lane opt out of ECR/builders/CodeArtifact with `images: false`.
+# Making the two equivalent would mean teaching the action a devbox
+# indirection and a per-matrix-lane images flag it has no way to know
+# about — so a private caller's behaviour stays exactly what it was,
+# and only the new kind branches are new code.
 name: integration
 
 on:
@@ -47,21 +74,60 @@ on:
         required: true
         type: string
       runner:
-        description: Scale-set label for the lane jobs (vars.CI_RUNNER_LABEL_LARGE).
-        required: true
+        description: >-
+          Scale-set label for the lane jobs (vars.CI_RUNNER_LABEL_LARGE).
+          Ignored on the kind tier, which always runs on `ubuntu-latest`
+          (a disposable kind cluster has no reason to run anywhere else,
+          and a public repository could not use a self-hosted label
+          regardless — public-runners refuses it below). Relaxed from
+          required to optional with a hosted default so a kind-tier
+          caller need not pass a meaningless value; every existing
+          shared-tier caller already passes its own label explicitly, so
+          this changes nothing for them.
+        required: false
         type: string
+        default: ubuntu-latest
+      tier:
+        description: >-
+          Force the tier instead of deriving it from the caller's
+          repository visibility. `kind` is allowed for ANY caller — a
+          private repository proving the public path, or one with no
+          shared tenant to use. `shared` is refused for a public
+          repository, always: see docs/tiers.md for why. Empty (the
+          default) derives `kind` for a public repository and `shared`
+          for a private one.
+        required: false
+        type: string
+        default: ""
+      policy-version:
+        description: >-
+          Release tag of truvity/policy whose hack/kind/ box the kind
+          tier stands up (e.g. v0.8.1) — truvity/ci-actions' `cluster`
+          action fetches it at this exact tag. Required when the tier is
+          (or resolves to) kind; ignored on the shared tier.
+        required: false
+        type: string
+        default: ""
       timeout-minutes:
         required: false
         type: number
         default: 60
       gemaal-namespace:
-        description: The CI tenant namespace the suites deploy into.
-        required: true
+        description: >-
+          The namespace the suites deploy into. Required on the shared
+          tier (the CI tenant namespace); on the kind tier it is also the
+          namespace truvity/ci-actions' `cluster` action installs into,
+          and its own default (`e2e`) applies when this is left empty.
+        required: false
         type: string
+        default: ""
       gemaal-server:
-        description: In-cluster gemaal server URL.
-        required: true
+        description: >-
+          In-cluster gemaal server URL. Shared tier only — a kind lane's
+          suite talks to the box directly and leaves this empty.
+        required: false
         type: string
+        default: ""
       aws-config-file:
         description: >-
           Repo-relative aws.ini, the one a laptop uses. Its [default] must
@@ -207,30 +273,77 @@ jobs:
   # public repository ends up on a self-hosted tier is not malice — it is
   # copying a private repository's caller, which currently succeeds silently.
   # A private caller passes immediately and pays a few seconds.
-  runners:
-    name: runners
+  #
+  # This job now ALSO resolves the tier, once, so every lane job (the
+  # matrix below) agrees on it rather than each re-deriving it. It is
+  # named `tier` rather than `runners` for that reason; neither name is
+  # a required-status context anywhere (the caller's fan-in is what a
+  # ruleset names — see the bottom of this file), so renaming it here
+  # carries no risk.
+  tier:
+    name: tier
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.resolve.outputs.tier }}
     steps:
       - uses: truvity/ci-actions/public-runners@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
 
+      # Visibility decides, not the caller — a public repository asking
+      # for `tier: shared` is refused here, before anything else runs,
+      # the same way public-runners above refuses a self-hosted label.
+      # A private repository may ask for `kind` freely: that direction
+      # only ever trades the estate's shared tenant for a cheaper,
+      # disposable one, never the other way round.
+      - name: resolve tier
+        id: resolve
+        env:
+          VISIBILITY: ${{ github.event.repository.visibility }}
+          FORCE_TIER: ${{ inputs.tier }}
+        run: |
+          set -euo pipefail
+          case "$FORCE_TIER" in
+            "")
+              if [ "$VISIBILITY" = public ]; then tier=kind; else tier=shared; fi
+              ;;
+            kind)
+              tier=kind
+              ;;
+            shared)
+              if [ "$VISIBILITY" = public ]; then
+                echo "::error::tier: shared is refused for a public repository — a public repository always runs the kind tier (see docs/tiers.md)."
+                exit 1
+              fi
+              tier=shared
+              ;;
+            *)
+              echo "::error::tier must be 'kind' or 'shared' (or empty to derive it from visibility) — got '$FORCE_TIER'"
+              exit 1
+              ;;
+          esac
+          echo "tier=$tier" >>"$GITHUB_OUTPUT"
+          echo "resolved tier: $tier (visibility=$VISIBILITY, tier input='$FORCE_TIER')"
+
   suite:
-    needs: runners
+    needs: tier
     name: integration-${{ matrix.name }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ needs.tier.outputs.tier == 'kind' && 'ubuntu-latest' || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(inputs.lanes) }}
     env:
+      GEMAAL_TIER: ${{ needs.tier.outputs.tier }}
       GEMAAL_NAMESPACE: ${{ inputs.gemaal-namespace }}
       GEMAAL_SERVER: ${{ inputs.gemaal-server }}
       # Per lane and per attempt: parallel lanes must not share a
       # release, and a re-run must not inherit the previous attempt's.
+      # Same shape truvity/ci-actions' `cluster` action falls back to
+      # when a caller passes it no `release` of its own.
       GEMAAL_RELEASE: ${{ matrix.name }}-r${{ github.run_id }}-a${{ github.run_attempt }}
       GEMAAL_AWS_AMBIENT: "1"
       AWS_CONFIG_FILE: ${{ github.workspace }}/${{ inputs.aws-config-file }}
@@ -264,6 +377,24 @@ jobs:
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy || vars.CI_GOPROXY }}
           aws-config-file: ${{ inputs.aws-config-file }}
+
+      # kind tier only. Launched in the BACKGROUND, right before Build:
+      # the box takes minutes to come up (kind create, Gateway API CRDs,
+      # CNPG, NATS, cert-manager, …) and the lane's Build step needs none
+      # of that — only the registry the box publishes on localhost:5001,
+      # which is up within the first few seconds and which the build
+      # script itself waits for explicitly. So the two run side by side
+      # instead of serially; "mode: wait" below blocks on it right before
+      # Install, which DOES need the whole box.
+      - name: "cluster (mode: kind, background)"
+        if: needs.tier.outputs.tier == 'kind'
+        uses: truvity/ci-actions/cluster@f0c56df8cb20d13c6ebd350f3e5f62d6dfbd4e08 # v1.1.0
+        with:
+          mode: kind
+          background: "true"
+          policy-version: ${{ inputs.policy-version }}
+          namespace: ${{ inputs.gemaal-namespace }}
+          release: ${{ env.GEMAAL_RELEASE }}
 
       # No root yarn.lock, nothing to cache: without this guard the
       # default-on input would make every non-Node repo save an empty
@@ -304,7 +435,7 @@ jobs:
       # anything is built: a wrong tenant fails here, not as a mysterious
       # RBAC error later.
       - name: Identity proof
-        if: inputs.expected-identity != ''
+        if: inputs.expected-identity != '' && needs.tier.outputs.tier != 'kind'
         env:
           EXPECTED: ${{ inputs.expected-identity }}
         run: |
@@ -324,14 +455,21 @@ jobs:
           echo "cluster identity: $WHO"
           [ "$WHO" = "$EXPECTED" ] || { echo "::error::expected cluster identity $EXPECTED, got $WHO"; exit 1; }
 
+      # `&& needs.tier.outputs.tier != 'kind'` on all three of these: a
+      # hard rule, not a per-lane courtesy. A kind lane builds into the
+      # box's own local registry (SNAPSHOT_REGISTRY from the cluster
+      # action above) and needs none of ECR, the CI plane's remote
+      # builders or CodeArtifact — and must never reach them even if a
+      # caller forgets to set `images: false` on a lane that happens to
+      # build no image either way.
       - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
-        if: env.LANE_IMAGES == 'true' && inputs.ecr-registries != ''
+        if: env.LANE_IMAGES == 'true' && inputs.ecr-registries != '' && needs.tier.outputs.tier != 'kind'
         with:
           registries: ${{ inputs.ecr-registries }}
           mask-password: "true"
 
       - uses: truvity/ci-actions/setup-remote-builders@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
-        if: env.LANE_IMAGES == 'true'
+        if: env.LANE_IMAGES == 'true' && needs.tier.outputs.tier != 'kind'
         with:
           remote-builders: ${{ inputs.remote-builders }}
 
@@ -343,7 +481,7 @@ jobs:
       # treats anything derived from inputs as untrusted for GITHUB_ENV.
       - name: Mint a CodeArtifact token
         id: codeartifact
-        if: env.LANE_IMAGES == 'true' && inputs.codeartifact-domain != ''
+        if: env.LANE_IMAGES == 'true' && inputs.codeartifact-domain != '' && needs.tier.outputs.tier != 'kind'
         env:
           CA_DOMAIN: ${{ inputs.codeartifact-domain }}
           CA_OWNER: ${{ inputs.codeartifact-domain-owner }}
@@ -389,6 +527,15 @@ jobs:
               > "$RUNNER_TEMP/cache-report.jq"
             devbox run -- jq -r --arg p "$LANE" -f "$RUNNER_TEMP/cache-report.jq" "$RUNNER_TEMP/cache-images.json"
           } >> "$GITHUB_STEP_SUMMARY" || echo "cache report failed (non-fatal)" >> "$GITHUB_STEP_SUMMARY"
+
+      # kind tier only. Blocks on the background launch above — Install
+      # is the first phase that needs the whole box (fixture and chart
+      # installs land on real Services), not just the registry.
+      - name: "cluster (mode: wait)"
+        if: needs.tier.outputs.tier == 'kind'
+        uses: truvity/ci-actions/cluster@f0c56df8cb20d13c6ebd350f3e5f62d6dfbd4e08 # v1.1.0
+        with:
+          mode: wait
 
       - name: Install (${{ matrix.name }})
         if: matrix.install != ''
