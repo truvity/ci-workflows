@@ -138,6 +138,13 @@ jobs:
 A lane's `build` and `test` are shell, so a caller that needs an
 environment tweak puts it in the command itself.
 
+This workflow runs on **two tiers** — the estate's own runners against
+its development cluster, or a disposable `kind` cluster on a
+GitHub-hosted runner — chosen from the caller's repository visibility,
+never from the caller itself. **[docs/tiers.md](docs/tiers.md)** has the
+full case: why tier follows visibility, the fork refusal, and why a
+`kind` lane's snapshots go to a local registry rather than `ghcr.io`.
+
 ## Required checks
 
 **A reusable workflow cannot supply a required status context.** Every
