@@ -179,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/public-runners@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -195,7 +195,7 @@ jobs:
           # clone gives it nothing to derive from.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/setup-devbox@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 

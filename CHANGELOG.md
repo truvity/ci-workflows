@@ -19,6 +19,10 @@ those tags has a GitHub release.
   Go cache as it is wired today. Comments and docs no longer name private
   repositories, tickets or people.
 
+## v3.14.1
+
+- truvity/ci-actions pins move to v1.3.0: policy-conformance checker fixes (C1, C11, C12) and the `.github/policy-conformance.yaml` exemption file.
+
 ## v3.14.0
 
 - `check.yaml` gains opt-in `policy-conformance` and `policy-conformance-strict` inputs that run truvity/ci-actions' `policy-conformance` action (v1.2.0) against the calling repository.
