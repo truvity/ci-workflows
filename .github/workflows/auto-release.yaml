@@ -1,14 +1,14 @@
-# The last mile of the automatic chain, shared (INF-590): when
+# The last mile of the automatic chain, shared: when
 # renovate's automerged bumps have moved master past the latest
 # release, cut the next patch tag — which the repo's Release workflow
-# turns into artifacts, and gitops' renovate turns into a pin PR.
+# turns into artifacts, and a consumer's renovate turns into a pin PR.
 #
 # The CALLER carries the policy:
 #
 #   on:
 #     schedule:
 #       - cron: "23 5 * * 1"   # STAGGER per repo — six repos tagging in
-#     workflow_dispatch:        # the same minute means six gitops pin
+#     workflow_dispatch:        # the same minute means six downstream pin
 #     push:                     # PRs racing each other
 #       branches: [master]      # security lane: see below
 #   permissions:
@@ -81,13 +81,13 @@
 # Two estate-side prerequisites per adopting repo, or the tag push is
 # rejected / the secrets arrive empty:
 #   - the repo's v* tag ruleset carries the App that cuts the tag as a
-#     bypass actor (gitops cfg/github.yaml `bypass_apps`,
+#     bypass actor (github-structure's `bypass_apps`,
 #     github-structure >= v0.2.0). The two sources are two DIFFERENT
 #     Apps with different ids, so a repository switching source needs
 #     the new App's id there first.
 #   - `app-key`: CI_AUTOMATION_APP_ID (org var) and
 #     CI_AUTOMATION_PRIVATE_KEY (org secret) are entitlement-scoped to
-#     the repo (INF-580). `access-roster`: the issuer grants this
+#     the repo. `access-roster`: the issuer grants this
 #     repository's auto-release job a token of `github-app`.
 name: auto-release
 
@@ -282,7 +282,7 @@ jobs:
       # what the security lane's gate reads the merged PR's labels with.
       # The installation reaches the organisation; this token reaches one
       # repository.
-      - uses: truvity/access-roster@00471daf1ad10c5227cc695b307ffe612c2ced99 # v1.14.0
+      - uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
         id: token
         with:
           issuer: ${{ inputs.access-roster-issuer }}
