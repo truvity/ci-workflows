@@ -352,10 +352,6 @@ jobs:
   # estate access, and needs jq, which a hosted runner guarantees and a
   # self-hosted image need not carry. Full history, because C5 compares
   # the CHANGELOG against the latest tag.
-  #
-  # PENDING v1.2.0: pinned at the head of the ci-actions pull request that
-  # introduces the action; it must move to the v1.2.0 tag's commit before
-  # this merges, and `tagged-pins` refuses it until then.
   policy-conformance:
     name: policy-conformance
     if: inputs.policy-conformance

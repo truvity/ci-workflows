@@ -105,9 +105,8 @@ To hold a component repository to the component contract as well:
 ```
 
 `policy-conformance` runs truvity/ci-actions' action of that name on a
-hosted runner and prints one line per rule, C1 to C12. The action is
-unreleased: this workflow pins the head of the ci-actions pull request
-that adds it until ci-actions v1.2.0 is tagged.
+hosted runner and prints one line per rule, C1 to C12, pinned to its
+v1.3.0 release.
 
 ### Required checks
 
@@ -131,7 +130,7 @@ files:
 | truvity public repositories: access-roster, amazon-eks-pod-identity-webhook, argocd-ecr-updater, cloudflare, cnpg-cluster, gateway, gemaal, github-structure, nats-auth-callout, observability, ocictl, openbao, tailscale | `check`, `release-public`, `auto-release` |
 | truvity/audit, truvity/policy | `check`, `integration` (kind tier), `release-public` |
 | truvity/ci-cache | `check`, `release-public` |
-| truvity/ci-plane | `auto-release` |
+| truvity/ci-plane | `check`, `auto-release` |
 | truvity/workstation | `check` |
 | four private truvity repositories, gitops among them | `check`, `integration` (shared tier), `release-private`, `auto-release` |
 | 19 private trust-form repositories | `check` |
@@ -199,11 +198,12 @@ check.
 
 ## Status
 
-Used in production by both organisations. The latest tag is v3.13.1
-(2026-09-29). There are 79 tags; GitHub releases exist only for
-v1.0.0 to v2.6.0, so the release GitHub marks "Latest" is v2.6.0 from
-2026-08-19 and says nothing about what is current. Read the tags and
-[CHANGELOG.md](CHANGELOG.md) instead.
+Used in production by both organisations. The latest tag is v3.14.2
+(2026-09-29). There are 82 tags; GitHub releases exist for v1.0.0 to
+v2.6.0 and, resuming at v3.14.0, for v3.14.0 to v3.14.2 — nothing
+between v3.0.0 and v3.13.1 has one. The release GitHub marks "Latest"
+is now v3.14.2, so it agrees with the tags again; read the tags and
+[CHANGELOG.md](CHANGELOG.md) for anything earlier.
 
 ## Development
 

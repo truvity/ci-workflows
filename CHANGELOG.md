@@ -2,22 +2,8 @@
 
 Every release of truvity/ci-workflows, newest first. Pin the commit of a
 tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
-comment. Entries from v3.0.0 on are reconstructed from `git log`: none of
-those tags has a GitHub release.
-
-- `check.yaml`: an opt-in `policy-conformance` job
-  (`policy-conformance: true`, and `policy-conformance-strict: true` to
-  fail on a broken rule) runs truvity/ci-actions' `policy-conformance`
-  action against the caller's checkout.
-- The fleet workflows and `auto-release.yaml` pin the `truvity/access-roster`
-  action at v1.39.1 (was v1.11.1 and v1.14.0; the action's inputs did not
-  change).
-- `renovate.json` extends this repository's own preset.
-- Docs: the component contract moved to truvity/policy
-  (`docs/component-contract.md` is now a pointer); the README documents
-  all seven reusable workflows; `docs/estate-lifecycle.md` describes the
-  Go cache as it is wired today. Comments and docs no longer name private
-  repositories, tickets or people.
+comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
+those tags have no GitHub release; v3.14.0 on do.
 
 ## v3.14.2
 
