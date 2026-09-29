@@ -30,10 +30,10 @@ tool itself reads:
 # fleet.yaml in the caller repository
 renovate:
   public:  [cloudflare, gateway, tailscale]
-  private: [bar, dms]
+  private: [app, service]
 parity:
   public:  [cloudflare, gateway]
-  private: [bar, dms]
+  private: [app, service]
 caller-parity:
   public:  [cloudflare, gateway, tailscale]
 ```

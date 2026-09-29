@@ -1,0 +1,209 @@
+# Changelog
+
+Every release of truvity/ci-workflows, newest first. Pin the commit of a
+tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
+comment. Entries from v3.0.0 on are reconstructed from `git log`: none of
+those tags has a GitHub release.
+
+## Unreleased
+
+- `check.yaml`: an opt-in `policy-conformance` job
+  (`policy-conformance: true`, and `policy-conformance-strict: true` to
+  fail on a broken rule) runs truvity/ci-actions' `policy-conformance`
+  action against the caller's checkout.
+- The fleet workflows and `auto-release.yaml` pin the `truvity/access-roster`
+  action at v1.39.1 (was v1.11.1 and v1.14.0; the action's inputs did not
+  change).
+- `renovate.json` extends this repository's own preset.
+- Docs: the component contract moved to truvity/policy
+  (`docs/component-contract.md` is now a pointer); the README documents
+  all seven reusable workflows; `docs/estate-lifecycle.md` describes the
+  Go cache as it is wired today. Comments and docs no longer name private
+  repositories, tickets or people.
+
+## v3.13.1
+
+2026-09-29.
+
+- Renovate preset: the "0.x minors are breaking" rule matches Go's
+  `v`-prefixed versions, and gomod updates run `go mod tidy`.
+
+## v3.13.0
+
+2026-09-26.
+
+- `integration.yaml` has two tiers, picked from the calling repository's
+  visibility: a disposable kind cluster on a hosted runner for a public
+  repository (through ci-actions' `cluster`), the shared development
+  cluster for a private one. A public caller asking for `tier: shared` is
+  refused.
+- Licensed MIT.
+
+## v3.12.2
+
+2026-09-24.
+
+- `release-public.yaml`: helmctl 0.6.1, which gives a chart only its own
+  images.
+
+## v3.12.1
+
+2026-09-24.
+
+- `release-public.yaml`: `KO_DOCKER_REPO` follows `image-repo`, and
+  `IMAGE_TAG` drops the `v`.
+
+## v3.12.0
+
+2026-09-24.
+
+- `release-public.yaml`: packages charts from the images GoReleaser just
+  pushed.
+
+## v3.11.0
+
+2026-09-24.
+
+- `release-public.yaml`: a chart can be packaged from a release manifest,
+  digest-pinned.
+- Docs: a caller-parity kit can be a block inside a file.
+
+## v3.10.0
+
+2026-09-24.
+
+- `release-public.yaml`: a chart need not live at the repository's root.
+
+## v3.9.0
+
+2026-09-24.
+
+- The composite actions moved to
+  [truvity/ci-actions](https://github.com/truvity/ci-actions), with their
+  history and case harnesses; the workflows here pin them there.
+
+## v3.8.0
+
+2026-09-24.
+
+- `setup-devbox` delegates the cache wiring to `truvity/ci-cache/setup`.
+
+## v3.7.1
+
+2026-09-23.
+
+- Workflows pin `setup-devbox` at v3.7.0.
+
+## v3.7.0
+
+2026-09-23. The action only.
+
+- `setup-devbox`: the Go cache agent sizes its own local budget.
+
+## v3.6.1
+
+2026-09-23.
+
+- Workflows pin `setup-devbox` at v3.6.0.
+
+## v3.6.0
+
+2026-09-23. The action only.
+
+- `setup-devbox`: the agent's local budget is capped and it reports
+  metrics; the caller, not the workflow, passes `go-cache-server`.
+
+## v3.5.1
+
+2026-09-23.
+
+- Workflows pin `setup-devbox` at v3.5.0.
+
+## v3.5.0
+
+2026-09-23.
+
+- `setup-devbox`: a `go-cache-server` input and the agent that uses it
+  (since retired: the input is ignored and warns).
+
+## v3.4.0
+
+2026-09-23.
+
+- Every shared workflow refuses a self-hosted runner in a public
+  repository.
+
+## v3.3.0
+
+2026-09-23.
+
+- `public-runners` action: refuses a self-hosted runner in a public
+  repository.
+- `check.yaml` refuses a caller that pins an untagged ci-workflows
+  commit.
+
+## v3.2.0
+
+2026-09-22.
+
+- `tagged-pins` action: a ci-workflows pin must name a release.
+
+## v3.1.2
+
+2026-09-21.
+
+- Docs: `auto-release`'s `token-source` default is documented as a
+  default, not a recommendation.
+
+## v3.1.1
+
+2026-09-21.
+
+- `caller-parity` cases cover the shapes a private estate's callers
+  have.
+
+## v3.1.0
+
+2026-09-21.
+
+- `caller-parity`: the shared caller workflows are compared against
+  canonical kits, and reported.
+
+## v3.0.2
+
+2026-09-21.
+
+- Every internal action pin is one release commit.
+
+## v3.0.1
+
+2026-09-21.
+
+- Action pins bumped (renovate's proposal, minus the deleted files).
+
+## v3.0.0
+
+2026-09-21. **Breaking.**
+
+- The per-repository `renovate.yaml`, `devbox-update.yaml` and
+  `auto-approve.yaml` are gone; `renovate-fleet.yaml` and
+  `parity-fleet.yaml` run them once per estate.
+
+## v2.x and earlier
+
+2026-08-16 to 2026-09-21: v1.0.0 to v2.29.0, 54 tags. GitHub releases,
+with notes, exist for v1.0.0 to v2.6.0; after that, the tag messages and
+`git log` are the record. In outline:
+
+- v1.0.0: the five shared workflows. v1.1.0: a named step per recipe.
+- v2.0.0: **one job per recipe** in `check.yaml` (breaking: status
+  contexts became `<caller job> / <recipe>`). v2.1.x: per-recipe peak
+  memory reporting. v2.2.0: the small-runner tier. v2.3.x and v2.4.0:
+  private Go modules through a GitHub App token.
+- Later v2.x: the medium-runner tier; opt-in npm cache wiring; the shared
+  `auto-release.yaml` with its security lane, then tokens from
+  access-roster instead of an App key; deterministic chart publishing
+  through helmctl; the shared renovate preset (`default.json`); the
+  reusable `integration.yaml`; `release-private.yaml` on the CI plane's
+  warm builders; secrets read from OpenBao at run time; and
+  `renovate-fleet.yaml` / `parity-fleet.yaml`, one job per estate.

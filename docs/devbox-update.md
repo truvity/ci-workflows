@@ -56,7 +56,7 @@ default):
 | every other day | align only | go.mod — and only if Go shipped a patch |
 
 So a stdlib CVE reaches CI within a day (the cadence renovate's hourly
-bumps used to give — bar#641's review caught the regression when
+bumps used to give — a caller's review caught the regression when
 v2.10.0 first moved the directive onto a weekly cadence), and six days a
 week produce no lock churn.
 
@@ -133,8 +133,8 @@ deliberate decision).
    mangles the program (`syntax error, unexpected ')'`). jq is the
    runner's. The same trap applies to any tool given a program as a
    string.
-4. **A repository's devbox `init_hook` may print to stdout.** gitops's
-   prints the lefthook sync line on every `devbox run`, which corrupted
+4. **A repository's devbox `init_hook` may print to stdout.** One
+   caller's prints the lefthook sync line on every `devbox run`, which corrupted
    `go mod edit -json` output. The current directive is read from
    go.mod with awk — nothing in the read path goes through devbox.
 5. **The directive is monotonic.** The first prototype run hit a
