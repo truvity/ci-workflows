@@ -477,26 +477,39 @@ golangci-depguard.yaml:
   path: .golangci.yaml
   compare: .linters.settings.depguard   # in the repository's file
   within: .depguard                     # in the kit
-  enabled: false
+  source: truvity/policy@v1.28.7        # the canonical copy's own origin
+  enabled: true
 ```
 
 A kit with no entry is the default shape: the whole file, at
 `.github/workflows/<name>`.
 
-A subtree is compared **as data** — canonical JSON, keys sorted — rather
-than as normalised text. What a copied block has to keep is its data: a
-repository that reindents it, writes its own comments around it or
-orders the keys differently has the same bans, and calling any of those
-a difference would be noise nobody reads. A repository missing one
-`deny` entry does not have the same bans, and neither does one that
-dropped the block entirely — which reads as `differs`, not `absent`,
-because the file it belongs in is right there.
+A subtree is compared **as data** — canonical JSON, keys AND arrays
+sorted — rather than as normalised text. What a copied block has to keep
+is its data: a repository that reindents it, writes its own comments
+around it, orders the keys differently, or pastes its `deny:` entries
+back in a different order has the same bans, and calling any of those a
+difference would be noise nobody reads. A repository missing one `deny`
+entry does not have the same bans, and neither does one that dropped the
+block entirely — which reads as `differs`, not `absent`, because the
+file it belongs in is right there. Nor does one that added an entry the
+canonical copy does not have: it is not a *weaker* set of bans, but it is
+still the repository doing something the estate's copy does not say, and
+this check exists so a human reads that and decides which side is right
+— exactly as an added `with:` input or an added block does for the two
+file kits above.
 
-`enabled: false` is how a kit ships **written but not yet compared**.
-The depguard kit is off today: all nine copies are byte-identical, and
-the estate-wide pass that will touch every one of those repositories is
-already scheduled, so turning it on there costs one coordination instead
-of two. It is one line.
+`enabled: false` is how a kit ships **written but not yet compared** —
+the depguard kit shipped that way in `truvity/ci-actions` v1.0.0, off
+until the estate-wide pass that would put it in step landed. That pass
+is done: eleven public Go repositories carry the block, all
+byte-identical, and the kit is `enabled: true` since. The canonical copy
+in `caller-parity/kits/` is itself a hand copy — of
+`lint/golangci-depguard.yaml` in `truvity/policy`, pinned by the kit's
+own `source:` field — and `truvity/ci-actions`' self-check reads that
+pin and fails if the two have drifted, so the half-life this check closes
+for eleven consumers does not reopen one level up, in the library's own
+copy.
 
 Note that `enabled: false` is read with `yq` without the `//`
 alternative operator, because that operator treats `false` as absent —
