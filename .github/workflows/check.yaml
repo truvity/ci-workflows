@@ -317,7 +317,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/public-runners@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -343,7 +343,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: truvity/ci-actions/tagged-pins@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/tagged-pins@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
 
   # Opt-in, and report-only unless the caller asks for strict: the
   # component contract's checkable rules, one line each, in the job log
@@ -367,7 +367,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/policy-conformance@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -408,7 +408,7 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/setup-devbox@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/setup-devbox@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
         with:
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
@@ -490,7 +490,7 @@ jobs:
         env:
           ENV_JSON: ${{ inputs.env-json }}
 
-      - uses: truvity/ci-actions/recipe@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
+      - uses: truvity/ci-actions/recipe@73a8e54d28025275f2b2750ae4bfc56f008b36cb # v1.3.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
