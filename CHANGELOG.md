@@ -5,8 +5,6 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 on are reconstructed from `git log`: none of
 those tags has a GitHub release.
 
-## Unreleased
-
 - `check.yaml`: an opt-in `policy-conformance` job
   (`policy-conformance: true`, and `policy-conformance-strict: true` to
   fail on a broken rule) runs truvity/ci-actions' `policy-conformance`
@@ -20,6 +18,13 @@ those tags has a GitHub release.
   all seven reusable workflows; `docs/estate-lifecycle.md` describes the
   Go cache as it is wired today. Comments and docs no longer name private
   repositories, tickets or people.
+
+## v3.14.0
+
+- `check.yaml` gains opt-in `policy-conformance` and `policy-conformance-strict` inputs that run truvity/ci-actions' `policy-conformance` action (v1.2.0) against the calling repository.
+- Every `truvity/ci-actions` pin moves to v1.2.0, which pins ci-cache at a tagged release and inlines its own auto-release.
+- Doctrine lives in truvity/policy: `docs/component-contract.md`, `golden-renders.md` and `estate-lifecycle.md` point at `docs/contracts/component.md` instead of restating it; the Go cache section says ci-cache's `setup` wires the caches.
+- README documents all seven reusable workflows with their consumers; private repository names, ticket keys and a real App id are gone from public text; the fleet workflows use the access-roster action at v1.39.1; `renovate.json` extends this repository's own preset.
 
 ## v3.13.1
 
