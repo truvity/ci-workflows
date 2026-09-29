@@ -14,6 +14,13 @@
     "security:gomodIndirectSecurityUpdates",
     "helpers:pinGitHubActionDigests"
   ],
+  "vulnerabilityAlerts": {
+    "description": "The `security` label is load-bearing: .github/workflows/auto-release.yaml releases immediately on a push whose merged PR carries it. This preset adds it to all vulnerability PRs, and enables automerge so security updates land automatically without manual approval.",
+    "labels": [
+      "security"
+    ],
+    "automerge": true
+  },
   "rebaseWhen": "behind-base-branch",
   "gomod": {
     "description": [
