@@ -9,7 +9,7 @@
     "other. The overrides below are this repository's merge shape: rebase-merged",
     "pull requests that GitHub's own auto-merge finishes once `check` is green,",
     "and a `security` label on vulnerability-alert PRs, which auto-release's",
-    "security lane reads to release outside the weekly batch."
+    "security lane reads to release outside the weekly batch (a hand-written `fix:` does too, and renovate's never)."
   ],
   "automergeType": "pr",
   "automergeStrategy": "rebase",

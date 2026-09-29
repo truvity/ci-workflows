@@ -60,6 +60,11 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
+      # auto-release's release gate (security lane, fix lane, batch),
+      # run for every case against a stubbed `gh`.
+      - name: auto-release cases
+        run: ./hack/auto-release-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a

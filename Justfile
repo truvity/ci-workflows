@@ -100,6 +100,10 @@ runners:
 leak-canary:
     @./hack/leak-canary.sh
 
+# auto-release's release-decision cases
+auto-release-cases:
+    @./hack/auto-release-cases.sh
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary
+check: lint pins runners leak-canary auto-release-cases
     @echo "✓ All checks passed"
