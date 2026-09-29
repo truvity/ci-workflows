@@ -146,7 +146,7 @@ files:
   [ci-cache](https://github.com/truvity/ci-cache) owns cache wiring (its
   `setup` action, called from `setup-devbox`) and the cache server;
   [ci-plane](https://github.com/truvity/ci-plane) is where work executes
-  (runner images, `arc-runners`, `ci-builders`).
+  (runner and nix-worker images, `arc-runners`, `ci-builders`).
 - **[policy](https://github.com/truvity/policy)**: the component contract
   every public repository is held to, and the `hack/kind/` box the kind
   tier of `integration.yaml` runs.
