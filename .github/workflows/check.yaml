@@ -2,7 +2,7 @@
 # organizations, every language, either task runner, either runner flow.
 #
 # ONE JOB PER RECIPE, in parallel. This shape was argued both ways in one
-# day and the numbers settled it (Oleg, 2026-08-16). Measured on gitops:
+# day and the numbers settled it (2026-08-16). Measured on one caller:
 # lint 119s, test 95s, build 76s, drift-check 42s, two trivial linters
 # 36s each. Parallel is max ≈ 2min; the same recipes in sequence are
 # sum ≈ 5min.
@@ -16,7 +16,7 @@
 # runners pack onto nodes far better than one wide one.
 #
 # The counter-argument — six runners is six NODES — holds only while ARC
-# is one-runner-per-node (INF-550). It stops holding the moment density
+# is one-runner-per-node. It stops holding the moment density
 # lands, which is why this is the shape to build toward.
 #
 # It serves `moon` repositories too: a monorepo is `command: moon`,
@@ -43,7 +43,7 @@ on:
       node-cache:
         description: >-
           Probe the CI plane's npm read-through cache
-          (npm-cache.ci-cache.svc, INF-581) and point npm and yarn at
+          (npm-cache.ci-cache.svc) and point npm and yarn at
           it for the job when it answers; when it does not, leave the
           defaults so a down cache degrades CI to slow, never to
           broken. Acts only on self-hosted (ARC) runners: on a
@@ -73,7 +73,7 @@ on:
           DOWN, never up: list only recipes whose peak memory you have
           measured, and leave anything unproven on the default.
 
-          Recipes are not one population. On gitops the three linters
+          Recipes are not one population. On one caller the three linters
           peak at a flat ~4.0Gi while build and lint want 13-20Gi, so a
           single profile means an actionlint job over a handful of YAML
           files holds an entire 32Gi node for 34 seconds. The
@@ -147,7 +147,7 @@ on:
 
           The rule it used to illustrate still holds for every cache
           input here: the CALLER passes them and there is deliberately NO
-          fallback to an org variable inside this workflow. gitops'
+          fallback to an org variable inside this workflow. A caller's
           security workflow passes none on purpose and once got one
           anyway, on a GitHub-hosted runner that could reach neither the
           binary nor the service.
@@ -237,6 +237,26 @@ on:
         required: false
         type: number
         default: 30
+      policy-conformance:
+        description: >-
+          Run the `policy-conformance` job: truvity/ci-actions'
+          policy-conformance action, which checks this repository against
+          the component contract's rules C1-C12 (truvity/policy
+          docs/contracts/component.md) and prints one line per rule.
+          Report-only unless policy-conformance-strict is also true. OFF by
+          default: a repository opts in when it is a component the
+          contract applies to.
+        required: false
+        type: boolean
+        default: false
+      policy-conformance-strict:
+        description: >-
+          With policy-conformance, fail the job on any failed rule instead
+          of reporting it as a warning. Turn it on once the repository
+          passes, so it stays passing.
+        required: false
+        type: boolean
+        default: false
     secrets:
       gitlab-token:
         description: >-
@@ -275,7 +295,6 @@ on:
 #     contents: read     # always — checkout
 #     id-token: write    # ONLY if recipes reach AWS/k8s through accessctl
 #     packages: read     # ONLY if it installs @truvity packages from GitHub Packages
-#                        # (gitops docs/guides/add-repo-to-ci.md)
 #
 # Public repositories omit id-token: fork PRs never receive it, and
 # nothing in a public repository's recipes should want it. A caller with
@@ -325,6 +344,32 @@ jobs:
           fetch-depth: 1
 
       - uses: truvity/ci-actions/tagged-pins@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
+
+  # Opt-in, and report-only unless the caller asks for strict: the
+  # component contract's checkable rules, one line each, in the job log
+  # and the job summary. Always on a hosted runner, whatever the caller's
+  # runner inputs say: it reads the checkout and nothing else, needs no
+  # estate access, and needs jq, which a hosted runner guarantees and a
+  # self-hosted image need not carry. Full history, because C5 compares
+  # the CHANGELOG against the latest tag.
+  #
+  # PENDING v1.2.0: pinned at the head of the ci-actions pull request that
+  # introduces the action; it must move to the v1.2.0 tag's commit before
+  # this merges, and `tagged-pins` refuses it until then.
+  policy-conformance:
+    name: policy-conformance
+    if: inputs.policy-conformance
+    needs: runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: truvity/ci-actions/policy-conformance@7c91034b788d430f8dc2d43d82b78db0cb0dc859 # pending v1.2.0
+        with:
+          strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
   recipe:
     name: ${{ matrix.recipe }}
@@ -382,7 +427,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Registry override only when the cache answers a 2s ping —
-      # fallback-not-dependency (INF-583). npm_config_registry covers
+      # fallback-not-dependency. npm_config_registry covers
       # npm and yarn classic (classic still FETCHES lockfile-resolved
       # URLs, so at worst it bypasses the cache); YARN_NPM_REGISTRY_SERVER
       # covers berry, whose npm protocol derives fetch URLs from the
@@ -401,7 +446,7 @@ jobs:
             # registries outright (YN0081 "Unsafe http requests must be
             # explicitly whitelisted") — without it the override below
             # turns every berry install into a hard fail whenever the
-            # cache answers the ping (bar, 2026-08-27). An in-cluster svc
+            # cache answers the ping (2026-08-27). An in-cluster svc
             # hostname over http is the design here, not an accident, so
             # the whitelist names exactly that host.
             {
@@ -435,8 +480,8 @@ jobs:
       # or $( ) would execute.
       #
       # CAVEAT: devbox.json's own `env` WINS over anything set here, for
-      # the same variable name, inside `devbox run`. Measured in bar
-      # across four runs (2026-08-16) with a deliberate conflict.
+      # the same variable name, inside `devbox run`. Measured in one
+      # caller across four runs (2026-08-16) with a deliberate conflict.
       - name: Caller-supplied environment
         if: inputs.env-json != '{}'
         run: |
@@ -454,7 +499,7 @@ jobs:
       # for free, so a job can report what it ACTUALLY needed instead of
       # leaving everyone to infer it from a snapshot — which is how the
       # estate ended up sizing runners at 10Gi against a measurement
-      # taken on one node, and OOM-killing on another (INF-550).
+      # taken on one node, and OOM-killing on another.
       #
       # Per recipe, because each recipe is its own job here: `lint` and
       # `build` have very different appetites and averaging them is how
@@ -494,7 +539,7 @@ jobs:
 
           # Both places on purpose. The summary is where a human looks;
           # the log is the only one a script can read, and sizing runners
-          # (INF-550) means collecting this across many runs, not reading
+          # means collecting this across many runs, not reading
           # it off a web page one at a time.
           echo "$line"
           echo "- $line" >> "$GITHUB_STEP_SUMMARY"
