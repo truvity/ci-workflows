@@ -410,7 +410,7 @@ observation that two of them are **one kit in substance**:
 | `.github/workflows/auto-release.yaml` | 13 public repositories | **12 of 13** |
 
 The thirteenth had lost the `push: branches: [master]` trigger, and with
-it the security lane: a vulnerability fix there waited for Monday
+it the immediate-release lanes (security and fix): a vulnerability fix there waited for Monday
 instead of releasing on merge. Nothing in CI said so. It was found by
 reading thirteen files side by side, which is exactly the kind of work
 that does not happen twice.

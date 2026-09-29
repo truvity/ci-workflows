@@ -14,12 +14,23 @@
 #   permissions:
 #     contents: read
 #
-# The push trigger is the SECURITY LANE (2026-08-27): renovate labels
-# vulnerability-alert PRs `security` and automerges them; a push whose
-# merged PR carries that label releases immediately instead of waiting
-# for Monday's batch. Every other push exits quietly — ordinary bumps
-# still batch weekly. Callers without the push trigger simply keep the
-# weekly-only behavior.
+# The push trigger carries two IMMEDIATE lanes; everything else exits
+# quietly and waits for the weekly batch:
+#
+#   security  renovate labels vulnerability-alert PRs `security` and
+#             automerges them; a push whose merged PR carries that label
+#             releases at once (2026-08-27).
+#   fix       a push whose merged change is a hand-written conventional
+#             `fix:`, `fix(scope):` or `fix!:` releases at once. The PR
+#             TITLE is the source of truth (a squash merge writes it, a
+#             reviewer read it); a title with no conventional prefix
+#             defers to the PR's commits, any one of which being a fix
+#             releases (a rebase merge). Renovate PRs never take this
+#             lane, so `fix(deps)` bumps batch. A revert titled
+#             `Revert "fix: ..."` is not a fix and batches. The bump is
+#             still one patch, `fix!` included.
+#
+# Callers without the push trigger simply keep the weekly-only behavior.
 #
 # TOKENS come from one of two sources (`token-source`), the same two the
 # fleet workflows take:
@@ -196,13 +207,13 @@ jobs:
           app-id: ${{ inputs.app-id }}
           private-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
 
-      # The security lane's gate: a push releases only when the commit's
-      # merged PR is `security`-labeled (renovate stamps its
-      # vulnerability-alert PRs with it). Rebase merges map every pushed
-      # commit to its PR, so the association lookup holds across the
-      # estate's merge method. Ordinary pushes exit quietly here — the
-      # weekly schedule remains their lane.
-      - name: Release only security-labeled pushes
+      # The release gate: a push releases only when the commit's merged
+      # PR is `security`-labeled or a hand-written fix (see the header).
+      # Rebase merges map every pushed commit to its PR, so the
+      # association lookup holds across the estate's merge method.
+      # Other pushes exit quietly here — the weekly schedule remains
+      # their lane. Both jobs' blocks are tested by hack/auto-release-cases.sh.
+      - name: Release security and fix pushes
         id: gate
         if: github.event_name == 'push'
         env:
@@ -215,17 +226,54 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
-            --jq '[.[].labels[].name] | join(",")')
-          case ",$labels," in
-          *,security,*)
-            echo "security-labeled merge — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"
-            ;;
-          *)
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "push without a security-labeled PR — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"
-            ;;
-          esac
+          # >>> gate (hack/auto-release-cases.sh runs this block; keep both jobs identical)
+          release() { echo "$1 — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          batch() { echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$1 — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          conv='^[A-Za-z]+(\([^)]*\))?!?: '
+          fix='^fix(\([^)]*\))?!?: '
+          prs=$(gh api "repos/$REPO/commits/$SHA/pulls")
+          n=$(jq 'length' <<<"$prs")
+          if [ "$n" -gt 0 ]; then
+            # Security lane, unchanged: any associated PR labelled `security`.
+            if jq -e 'any(.[]; any(.labels[]; .name == "security"))' <<<"$prs" >/dev/null; then
+              release "security-labeled merge"
+            fi
+            # Fix lane. For each associated PR that renovate did not open
+            # (a Bot login containing "renovate", or the preset's
+            # `dependencies` label): the PR TITLE is the source of truth,
+            # since it is what a squash merge writes and what a reviewer
+            # read. A conventional title decides alone, so a `feat:` title
+            # over a fix commit batches. Only a title with no conventional
+            # prefix defers to the PR's commits, any one of which being a
+            # fix releases (rebase merges of several commits).
+            while IFS=$'\t' read -r num title; do
+              if [[ "$title" =~ $fix ]]; then
+                release "fix merge (#$num)"
+              elif [[ "$title" =~ $conv ]]; then
+                continue
+              fi
+              subjects=$(gh api "repos/$REPO/pulls/$num/commits" --paginate \
+                --jq '.[].commit.message | split("\n")[0]')
+              while IFS= read -r subject; do
+                if [[ "$subject" =~ $fix ]]; then
+                  release "fix commit in unconventionally titled merge (#$num)"
+                fi
+              done <<<"$subjects"
+            done < <(jq -r '.[]
+              | select(((.user.type == "Bot" and (.user.login | test("renovate"; "i")))
+                        or any(.labels[]; .name == "dependencies")) | not)
+              | [.number, .title] | @tsv' <<<"$prs")
+          else
+            # No PR (direct push): the head commit's subject, same rules.
+            head=$(gh api "repos/$REPO/commits/$SHA")
+            subject=$(jq -r '.commit.message | split("\n")[0]' <<<"$head")
+            if [[ "$subject" =~ $fix ]] \
+               && ! jq -e '(.author.type == "Bot" and (.author.login | test("renovate"; "i")))' <<<"$head" >/dev/null; then
+              release "fix commit pushed directly"
+            fi
+          fi
+          batch "push without a security label or a hand-written fix"
+          # <<< gate
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -279,7 +327,7 @@ jobs:
 
       # THIS repository only, and the two permissions the steps below
       # use: `contents: write` pushes the tag, `pull_requests: read` is
-      # what the security lane's gate reads the merged PR's labels with.
+      # what the release gate reads the merged PR's labels, title and commits with.
       # The installation reaches the organisation; this token reaches one
       # repository.
       - uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
@@ -290,7 +338,7 @@ jobs:
           repositories: ${{ steps.repo.outputs.name }}
           permissions: contents:write,pull_requests:read
 
-      - name: Release only security-labeled pushes
+      - name: Release security and fix pushes
         id: gate
         if: github.event_name == 'push'
         env:
@@ -299,17 +347,54 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
-            --jq '[.[].labels[].name] | join(",")')
-          case ",$labels," in
-          *,security,*)
-            echo "security-labeled merge — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"
-            ;;
-          *)
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "push without a security-labeled PR — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"
-            ;;
-          esac
+          # >>> gate (hack/auto-release-cases.sh runs this block; keep both jobs identical)
+          release() { echo "$1 — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          batch() { echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$1 — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          conv='^[A-Za-z]+(\([^)]*\))?!?: '
+          fix='^fix(\([^)]*\))?!?: '
+          prs=$(gh api "repos/$REPO/commits/$SHA/pulls")
+          n=$(jq 'length' <<<"$prs")
+          if [ "$n" -gt 0 ]; then
+            # Security lane, unchanged: any associated PR labelled `security`.
+            if jq -e 'any(.[]; any(.labels[]; .name == "security"))' <<<"$prs" >/dev/null; then
+              release "security-labeled merge"
+            fi
+            # Fix lane. For each associated PR that renovate did not open
+            # (a Bot login containing "renovate", or the preset's
+            # `dependencies` label): the PR TITLE is the source of truth,
+            # since it is what a squash merge writes and what a reviewer
+            # read. A conventional title decides alone, so a `feat:` title
+            # over a fix commit batches. Only a title with no conventional
+            # prefix defers to the PR's commits, any one of which being a
+            # fix releases (rebase merges of several commits).
+            while IFS=$'\t' read -r num title; do
+              if [[ "$title" =~ $fix ]]; then
+                release "fix merge (#$num)"
+              elif [[ "$title" =~ $conv ]]; then
+                continue
+              fi
+              subjects=$(gh api "repos/$REPO/pulls/$num/commits" --paginate \
+                --jq '.[].commit.message | split("\n")[0]')
+              while IFS= read -r subject; do
+                if [[ "$subject" =~ $fix ]]; then
+                  release "fix commit in unconventionally titled merge (#$num)"
+                fi
+              done <<<"$subjects"
+            done < <(jq -r '.[]
+              | select(((.user.type == "Bot" and (.user.login | test("renovate"; "i")))
+                        or any(.labels[]; .name == "dependencies")) | not)
+              | [.number, .title] | @tsv' <<<"$prs")
+          else
+            # No PR (direct push): the head commit's subject, same rules.
+            head=$(gh api "repos/$REPO/commits/$SHA")
+            subject=$(jq -r '.commit.message | split("\n")[0]' <<<"$head")
+            if [[ "$subject" =~ $fix ]] \
+               && ! jq -e '(.author.type == "Bot" and (.author.login | test("renovate"; "i")))' <<<"$head" >/dev/null; then
+              release "fix commit pushed directly"
+            fi
+          fi
+          batch "push without a security label or a hand-written fix"
+          # <<< gate
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

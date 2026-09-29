@@ -149,6 +149,24 @@ declared, none hand-set:
 2. the repo can get a token of that App — see below
 3. `vars.AUTO_RELEASE == "true"` — the deliberate arming act
 
+Two pushes to the default branch release at once instead of waiting for
+the batch: a merged `security`-labelled PR, and a hand-written
+conventional `fix:` / `fix(scope):` / `fix!:`. Everything else (renovate
+PRs including `fix(deps)`, `feat`, `chore`, `docs`, reverts) waits for
+the weekly batch. Rules for the fix lane:
+
+- **The PR title is the source of truth**, the text a squash merge writes
+  and a reviewer read. A conventional title decides alone: `fix:` over
+  `feat:` commits releases, `feat:` over a `fix:` commit batches.
+- A title with no conventional prefix defers to the PR's commits, and any
+  one being a fix releases (a rebase merge of several commits).
+- Renovate is recognised by a Bot login containing `renovate`, or the
+  preset's `dependencies` label. It never takes the fix lane.
+- `Revert "fix: ..."` and `revert:` are not fixes and batch.
+- The bump is still one patch, including for `fix!:`; a major stays a
+  human's tag.
+- A push with no PR (direct) is judged on the head commit's subject.
+
 Stagger the caller's cron: repos tagging in the same minute produce
 downstream pin PRs that race each other's rebases.
 
@@ -201,7 +219,7 @@ organisation secret, or in an entitlement list: the issuer holds the App
 and its grants decide which **job** may have a token of it. The token
 this job asks for is **one repository — its own — with `contents: write`
 and `pull_requests: read`**: enough to push the tag and to read the
-merged PR's labels for the security lane, and nothing else. The grant
+merged PR's labels, title and commits for the release gate, and nothing else. The grant
 pins the job's identity: the repository, `refs/heads/master`, the event,
 this repository's `auto-release.yaml` as `job_workflow_ref` at any
 commit, and the caller's own file as `workflow_ref`.
