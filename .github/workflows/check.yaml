@@ -367,7 +367,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@7c91034b788d430f8dc2d43d82b78db0cb0dc859 # pending v1.2.0
+      - uses: truvity/ci-actions/policy-conformance@433c200e1f51d185cf21b6ffc428668ebf7a23cb # pending v1.2.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
