@@ -207,19 +207,21 @@ v1.0.0 to v2.6.0, so the release GitHub marks "Latest" is v2.6.0 from
 
 ## Development
 
-There is no Justfile. `self-check.yaml` is the gate, under the `check`
-context: actionlint over every workflow, `tagged-pins` and
-`public-runners` from ci-actions asked of this repository, and
-`hack/leak-canary.sh`. Run the same locally:
+`just check` runs what CI runs on every pull request. Set up your
+environment with `direnv allow`, or run `devbox run just <recipe>` to
+call a recipe without direnv.
 
-```sh
-actionlint                 # rhysd/actionlint 1.7.12, as self-check pins it
-./hack/leak-canary.sh
-```
+The recipes are:
+
+- `just lint` — actionlint over every workflow.
+- `just pins` — verify all pins point to release tags.
+- `just runners` — verify the repository uses public runners.
+- `just leak-canary` — scan for secrets and sensitive data.
+- `just check` — run all recipes (the merge gate).
 
 `check` green is the whole merge gate: no approving review is required,
-and renovate's pull requests merge themselves when it goes green. A
-fork pull request needs no grant. The composite actions are changed in
+and renovate's pull requests merge themselves when it goes green. A fork
+pull request needs no grant. The composite actions are changed in
 ci-actions and reach here as a pin bump.
 
 ## Releasing
