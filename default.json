@@ -91,6 +91,38 @@
     },
     {
       "description": [
+        "devbox.json pins (C6 of the component contract: every package pinned,",
+        "never `latest`) are only real pins if something keeps them from going",
+        "stale. `devbox update` (the fleet parity job) only re-resolves whatever",
+        "a package is ALREADY declared as — a `latest` request gets the newest",
+        "nix build, but an exact pin like `gopls@0.23.0` stays exactly there",
+        "forever; parity never bumps a version number. Renovate's `devbox`",
+        "manager is the only thing that can move a pin forward, and it is",
+        "enabled by default (no `enabledManagers` restriction here narrows it",
+        "out) — explicit `matchManagers` below is belt-and-braces against a",
+        "future edit to the generic rules above scoping them down by manager.",
+        "Several repositories carry a per-repository `\"ignorePaths\":",
+        "[\"devbox.json\", \"devbox.lock\"]` left over from when those files held",
+        "`latest` entries the devbox datasource had nothing useful to compare",
+        "against; now that C6 requires exact pins, that override has to be",
+        "removed from each such repository's own renovate.json or this rule",
+        "never sees the file — ignorePaths is local config, and a preset does",
+        "not get to override what an extending repository set explicitly."
+      ],
+      "matchManagers": [
+        "devbox"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch",
+      "automerge": true
+    },
+    {
+      "description": [
         "Monorepos move as a unit. Five separate open PRs for @veramo/core,",
         "core-types, did-comm, did-manager and did-resolver v7 (truvity/core,",
         "2026-09) are individually unmergeable by construction \u2014 the packages",
