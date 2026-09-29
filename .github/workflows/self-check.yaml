@@ -69,13 +69,13 @@ jobs:
       # reason it takes a list: every action pin in this repository points
       # at truvity/ci-actions, and a guard that knew only the old name
       # would pass over all nineteen of them in silence.
-      - uses: truvity/ci-actions/tagged-pins@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
+      - uses: truvity/ci-actions/tagged-pins@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
 
       # The rule this library asks of every public caller, asked of itself
       # first. This repository is public and runs hosted, so the expected
       # answer is "ok" -- which is the point. A guard nobody runs is a
       # guard nobody knows is broken.
-      - uses: truvity/ci-actions/public-runners@752ccce8a3a3163040d6c017921a642465dde09a # v1.0.0
+      - uses: truvity/ci-actions/public-runners@1f1399e02c165f5a509e5d60a52554f6dcf926b0 # v1.2.0
         with:
           runners: ubuntu-latest
           visibility: ${{ github.event.repository.visibility }}
