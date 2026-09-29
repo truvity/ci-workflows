@@ -19,6 +19,10 @@ those tags has a GitHub release.
   Go cache as it is wired today. Comments and docs no longer name private
   repositories, tickets or people.
 
+## v3.14.2
+
+- `default.json` labels vulnerability PRs `security` and automerges them, so every repo gets auto-release's security lane without a local copy.
+
 ## v3.14.1
 
 - truvity/ci-actions pins move to v1.3.0: policy-conformance checker fixes (C1, C11, C12) and the `.github/policy-conformance.yaml` exemption file.
