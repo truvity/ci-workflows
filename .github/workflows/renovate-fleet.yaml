@@ -321,7 +321,7 @@ jobs:
       # refUpdateRule, answers for the VIEWER, so a token weaker than the
       # matrix jobs' could find no required check where they would, and
       # skip the whole estate.
-      - uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+      - uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -372,7 +372,7 @@ jobs:
           repositories: ${{ steps.repo.outputs.name }}
 
       # Every permission the grant allows: renovate's own list.
-      - uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+      - uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -419,7 +419,7 @@ jobs:
       - name: Exchange a token for reading private Go modules
         id: module-roster-token
         if: inputs.token-source == 'access-roster' && inputs.go-modules-github-app != ''
-        uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+        uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.go-modules-github-app }}
@@ -495,7 +495,7 @@ jobs:
       - name: Exchange the approver token
         id: approver-roster
         if: inputs.token-source == 'access-roster' && inputs.approver-github-app != ''
-        uses: truvity/access-roster@fe5c503b82cbc7a30ff9e3dbff6ed96ea0c4fd69 # v1.11.1
+        uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.approver-github-app }}
