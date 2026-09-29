@@ -1,7 +1,7 @@
 # This repository's own CI. One gate, and it is smaller than it was.
 #
 # Three case harnesses and a pin-staleness gate left on 2026-09-24 with
-# the composite actions themselves (INF-971). What they tested now lives
+# the composite actions themselves. What they tested now lives
 # and is tested in truvity/ci-actions: discovery, caller parity and the
 # cache wiring are properties of the actions, and `pins are current`
 # existed only because a workflow here pinned an action here.
@@ -29,13 +29,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # `check`, the estate's one canonical required-context name (gitops
-  # cfg/github.yaml merge-gate doctrine). Renamed from `lint` when this
+  # `check`, the estate's one canonical required-context name (its
+  # github-structure merge-gate doctrine). Renamed from `lint` when this
   # repository gained a merge gate -- renaming a required job wedges every
   # open PR, so the name changed BEFORE the context became required.
   #
-  # Since 2026-09-24 it is also the WHOLE gate: `review: none` on the
-  # gitops row, so green here is what merges a pull request. A check that
+  # Since 2026-09-24 it is also the WHOLE gate: `review: none` on this
+  # repository's registry row, so green here is what merges a pull request. A check that
   # is not run here is a check nobody runs.
   check:
     runs-on: ubuntu-latest

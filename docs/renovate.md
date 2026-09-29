@@ -70,8 +70,8 @@ red PR stays unmerged with an approval on it.
 
 ## Integrating a repo whose pin bumps require derived files
 
-The gitops pattern (pin bump → rendered values → golden snapshots),
-first proven 2026-08-25:
+The deployment-repository pattern (pin bump → rendered values → golden
+snapshots), first proven 2026-08-25:
 
 1. Annotate the pin and add a custom regex manager over it.
 2. A packageRule with `postUpgradeTasks` running the regeneration

@@ -10,7 +10,7 @@
 # only be tested by a real tag.
 #
 # NO `secrets: inherit` is needed. Every public repo's release runs
-# plain goreleaser (not goreleaser-pro, which is bar's) and pushes with
+# plain goreleaser (goreleaser-pro is release-private's) and pushes with
 # the automatic GITHUB_TOKEN. The caller does need to grant the
 # permissions below, because a reusable workflow cannot widen them.
 #

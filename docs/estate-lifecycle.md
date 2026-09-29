@@ -11,13 +11,19 @@ The three systems, and where their docs live:
 | --- | --- | --- |
 | [github-structure](https://github.com/truvity/github-structure) | What the repo IS: settings, protection, rulesets, teams, Apps | `docs/{registry,safety,adoption,doctrine}.md` |
 | ci-workflows (this repo) | What the repo DOES on push/PR/schedule: check, release, auto-release — and, for the whole estate at once, renovate and version parity | `docs/` here |
-| [ci-plane](https://github.com/truvity/ci-plane) | Where CI RUNS: ARC runners, caches — and the estate's artifact doctrine | `docs/{architecture,day-1-install,day-2-operations,normalization}.md` |
+| [ci-plane](https://github.com/truvity/ci-plane) | Where CI RUNS: ARC runners and the warm builders | `docs/{architecture,day-1-install,day-2-operations}.md` |
+| [ci-cache](https://github.com/truvity/ci-cache) | The caches: the server, its chart, and the `setup` action that wires a job to them | `docs/` there |
+
+What every public component repository must look like is not in any of
+the three: it is the component contract, in
+[truvity/policy](https://github.com/truvity/policy/blob/master/docs/contracts/component.md).
 
 ## 1. Birth — declare the repo
 
-Add a row to the registry (in our estate: `cfg/github.yaml` in gitops)
-and deploy. Profile decides everything defaultable; a public repo that
-releases artifacts also declares its tag ruleset:
+Add a row to the github-structure registry, which each estate keeps in
+its own private configuration repository, and deploy. Profile decides
+everything defaultable; a public repo that releases artifacts also
+declares its tag ruleset:
 
 ```yaml
 my-repo:
@@ -28,17 +34,17 @@ my-repo:
     - name: release-tags
       pattern: refs/tags/v*
       bypass_teams: [role-runner-release]
-      bypass_apps: [4597170]   # ci-automation — the auto-release bot
+      bypass_apps: [123456]    # the tagging App's id — the auto-release bot
 ```
 
 The engine creates the repo, protection, and rulesets; preflight and
-drift keep them honest. Naming and artifact rules: ci-plane's
-`docs/normalization.md` (R/N/B/P criteria).
+drift keep them honest. Naming and artifact rules (image names, chart
+versions, the CHANGELOG): the component contract.
 
 ## 2. CI — adopt the shared workflows
 
 Thin callers, pinned by SHA with the version in a comment (renovate
-keeps the pin current — a drifting pin is a defect, doctrine B6):
+keeps the pin current; a drifting pin is a defect):
 
 - `ci.yaml` → `check.yaml` — the one required context, running your
   Justfile recipes on the ARC pool
@@ -56,68 +62,54 @@ per-repository shape; they are gone.
 
 `node-cache` defaults to `true` in `check.yaml` and `integration.yaml`
 (no need to pass it): on a self-hosted (ARC) runner the job probes the
-CI plane's npm read-through cache
-(`npm-cache.ci-cache.svc`, INF-581/583) and points npm/yarn at it when
-it answers — a down cache degrades the job to *slow* (direct npmjs
+CI plane's in-cluster npm read-through cache and points npm/yarn at it
+when it answers. A down cache degrades the job to *slow* (direct npmjs
 with a warning), never to *broken*. GitHub-hosted runners skip the probe,
 and `integration.yaml` caches `.yarn/cache` only when a root `yarn.lock`
 exists, so the default is a no-op for non-Node repositories. Pass
 `node-cache: false` to opt out.
 
-The **Go build cache** has two shapes, and a caller picks one by which
-variable is set. `go-cache-bucket` is the original: `GOCACHEPROG` runs
-`go-cache-plugin` on the runner and the runner talks to S3 with the
-pool's own identity. `go-cache-server` is
-[truvity/ci-cache](https://github.com/truvity/ci-cache): `GOCACHEPROG`
-runs `ci-cache agent` and the runner talks to a service, which owns the
-bucket. The **caller passes both**, from its own org variables
-(`CI_GOCACHE_S3_BUCKET`, `CI_GOCACHE_SERVER`), and the shared workflow
-reads neither on its behalf.
+The **caches are wired by
+[truvity/ci-cache](https://github.com/truvity/ci-cache)**, not here.
+`setup-devbox` calls ci-cache's nested `setup` action, which reads the
+tree (`go.mod`, `devbox.json`, `yarn.lock`, `.moon/`, Gradle files) and
+wires each build system it finds; a repository never names that action
+itself. For Go, that is the build cache through `go-cache-plugin`, which
+talks to the bucket with the runner's own identity. The action fails
+open: on a GitHub-hosted runner, with no bucket, or with a client binary
+missing, it wires nothing, says why, and the job runs uncached. What it
+wires, and why, is ci-cache's
+[`docs/setup-action.md`](https://github.com/truvity/ci-cache/blob/master/docs/setup-action.md);
+the Go side is
+[`docs/clients/go.md`](https://github.com/truvity/ci-cache/blob/master/docs/clients/go.md).
 
-That is deliberate and was learned the hard way. A caller decides **per
-workflow** whether a Go cache applies at all: gitops' `ci.yaml` passes
-one and its `security.yaml` passes none. A fallback to the org variable
-inside the reusable workflow took that decision away and handed the
-security workflow a cache it had declined — on a GitHub-hosted runner,
-which can reach neither the binary nor an in-cluster service, so the
-job failed outright.
+What stays here is **which jobs get a cache at all**, and that is the
+caller's decision. `go-cache-bucket` and `go-cache-region` come from the
+caller, from its own org variables, and the shared workflow reads
+neither on its behalf. A caller decides **per workflow** whether a Go
+cache applies: a repository's `ci.yaml` passes one and its
+`security.yaml` passes none. A fallback to the org variable inside the
+reusable workflow once took that decision away and handed a security
+workflow a cache it had declined, on a GitHub-hosted runner that could
+reach neither the binary nor the bucket, so the job failed outright.
+In `check.yaml`, `go-cache-endpoint` and `go-cache-path-style`, which
+only describe *how* to reach a bucket the caller already chose, do fall
+back to the caller's `vars.CI_GOCACHE_S3_ENDPOINT` and
+`vars.CI_GOCACHE_S3_PATH_STYLE`.
 
-**The server wins when both are set.** An estate moves the org variable
-and each repository's workflow pin at different times, and during that
-window the newer path should win rather than the order of two conditions
-deciding it. The server shape writes no `GOCACHE_S3_*` at all: a runner
-on it needs no bucket grant, which is the point of moving.
-
-The agent is **not** given a `--local-budget`, and that is deliberate.
-It sizes its local cache from the container's memory limit, at a
-quarter of it, because everything it writes to its cache directory
-becomes page cache charged to that limit. A number written into the
-caller would win over that and apply one figure to every runner tier.
-
-It used to read the **filesystem** instead, which in a container is the
-node's disk. Measured on 2026-09-23: jobs went from 54-76 % of their
-limit with zero reclaim events to 100 % with 59,190, two runners were
-starved to death mid-step, and the one that survived took 3.4x as long.
-`ci-cache` 0.1.2 fixed it; a runner image whose agent predates that
-would size from the node again, and ci-plane ships it from 2.2.0.
-
-It is also asked for `--metrics`, so the job log carries one line of
-gets, hits, misses and bytes at exit. A cache that cannot be read from
-a job log is a cache nobody can reason about.
-
-The two differ in how they fail, and it is worth knowing which you are
-on. The plugin is hard-fail — an unreachable bucket fails the build. The
-agent fails open inside the process, so an unreachable cache costs a
-cold build. Neither is probed in bash; the agent's own behaviour is the
-fallback.
+**`go-cache-server` is retired.** It pointed the Go build cache at
+ci-cache's own server, which was measured out of the Go path: it reached
+parity with the bucket in its own best case and lost to it in CI. The
+input is still accepted so a caller's pin and its org variable can move
+separately, but it does nothing and warns; remove it, and the
+`CI_GOCACHE_SERVER` org variable with it.
 
 `goproxy` falls back to the caller's `vars.CI_GOPROXY` when the input is
-empty — a reusable workflow reads the calling repository's configuration
-variables — so callers no longer need to pass it (it takes effect with
-either cache shape). Do not pin `GOPROXY`
-in a repository's `devbox.json` `env` block: `devbox run` re-applies
-that block over the job environment and the CI proxy is silently
-bypassed. `setup-devbox` warns when it finds one.
+empty (a reusable workflow reads the calling repository's configuration
+variables), so callers need not pass it. Do not pin `GOPROXY` in a
+repository's `devbox.json` `env` block: `devbox run` re-applies that
+block over the job environment and the CI proxy is silently bypassed.
+`setup-devbox` warns when it finds one.
 
 ## 3. Release — one tag, every artifact
 
@@ -126,7 +118,8 @@ ko images (nested `ghcr.io/truvity/<repo>/<role>` — set `ko-docker-repo`
 explicitly; ko's `repositories:` key is inert), charts are packaged and
 pushed **deterministically via helmctl** to `ghcr.io/truvity/charts/*`
 (identical content ⇒ identical digest). The git tag is the sole version
-authority; committed chart versions stay `0.0.0-dev`.
+authority; committed chart `version` and `appVersion` stay `0.0.0`
+(the component contract's C1).
 
 A CLI other repositories install through devbox names its goreleaser
 archive id in `nix-flakes`. The release then carries
@@ -140,10 +133,10 @@ asset URL with `#<id>` to its devbox.json, and devbox.lock pins it:
 
 ## 4. Promotion — pull, never push
 
-The repo never opens deployment PRs. Consumers (gitops) carry a
-renovate-annotated pin per artifact; renovate sees the new release,
-opens the pin PR, automerges it behind render+golden gates, and ArgoCD
-rolls. The pin PR is the deploy record.
+The repo never opens deployment PRs. Consumers (the estate's deployment
+repository) carry a renovate-annotated pin per artifact; renovate sees
+the new release, opens the pin PR, automerges it behind render+golden
+gates, and ArgoCD rolls. The pin PR is the deploy record.
 
 ## 5. Autopilot — arm auto-release
 
@@ -157,7 +150,7 @@ declared, none hand-set:
 3. `vars.AUTO_RELEASE == "true"` — the deliberate arming act
 
 Stagger the caller's cron: repos tagging in the same minute produce
-gitops pin PRs that race each other's rebases.
+downstream pin PRs that race each other's rebases.
 
 ### Where the tagging token comes from
 
@@ -220,9 +213,8 @@ Two things change with the source and are easy to miss:
   callers that stay on keys need no edit — but a caller switching source
   and forgetting the permission fails at job start.
 - **A different App, so a different `bypass_apps` id.** The issuer's App
-  is not the one whose key lives in 1Password; the v* tag ruleset must
-  carry the new App's id (step 1) before the first tag push, or the push
-  is rejected.
+  is not the key-held one; the v* tag ruleset must carry the new App's
+  id (step 1) before the first tag push, or the push is rejected.
 
 After step 5 the loop is closed: a dependency bump lands, merges
 itself, releases itself, and deploys itself — and every link in that

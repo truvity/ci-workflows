@@ -17,8 +17,9 @@ Two rules that make it work:
    lint recipe renders the negative fixtures under
    `tests/invalid/<chart>/` (one per refusal, `unknown-key.yaml` among
    them), every one of which must FAIL, so the strictness itself is
-   tested. [component-contract.md](component-contract.md) §6 has the
-   convention.
+   tested. The component contract's rules C2 and C3
+   ([truvity/policy](https://github.com/truvity/policy/blob/master/docs/contracts/component.md))
+   are the convention.
 
 `hack/golden.sh` in this repository is the CANONICAL copy; chart repos
 vendor it verbatim (it is ~50 lines and must run locally without any

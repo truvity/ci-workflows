@@ -69,11 +69,12 @@ on:
           Strip npm-backed local tooling (the cubic CLI) from a repo's
           .prototools before devbox materializes. Default true: on an ARC
           runner there is no npm until proto installs node, and the
-          tool's proto plugin execs npm from devbox's init hook — bar's
-          first two stable-tier tags died there. The edit is hidden from
-          the index (assume-unchanged), so goreleaser's clean-tree gate
-          still passes; the old "false, keeps the tree clean" default
-          only ever held on hosted runners, which have npm.
+          tool's proto plugin execs npm from devbox's init hook — a
+          private caller's first two stable-tier tags died there. The
+          edit is hidden from the index (assume-unchanged), so
+          goreleaser's clean-tree gate still passes; the old "false,
+          keeps the tree clean" default only ever held on hosted
+          runners, which have npm.
         required: false
         type: string
         default: "true"
@@ -85,7 +86,7 @@ on:
         description: >-
           Runner label. Hosted by default; the heavy private multi-arch
           releases pass the stable tier's scale set
-          (vars.CI_RUNNER_LABEL_STABLE, INF-640). On an ARC runner the
+          (vars.CI_RUNNER_LABEL_STABLE). On an ARC runner the
           image builds go to the CI plane's warm builders
           (remote-builders) instead of QEMU, and the hosted-only steps
           skip themselves on `runner.environment`.
@@ -119,7 +120,7 @@ on:
           Reclaim ~30GB of preinstalled toolchains (dotnet, Android,
           GHC, CodeQL) before building. For GitHub-hosted runners whose
           ~14GB free no longer fits a multi-arch goreleaser publish —
-          both bar releases died on `no space left on device` on
+          two releases died on `no space left on device` on
           2026-08-26. Leave false on ARC runners: their images carry
           none of those directories.
         required: false
@@ -133,7 +134,7 @@ on:
         description: >-
           Install the goreleaser-pro binary at job time (pinned version,
           verified). The Pro EULA forbids redistribution, so the binary
-          must NOT be baked into the public runner image (INF-572) —
+          must NOT be baked into the public runner image —
           fetching it here, on the licensee's own runner, is plain
           internal use. Callers that pass goreleaser-key set this.
         required: false
@@ -181,7 +182,7 @@ on:
 # workflow's block is a CEILING on what the caller granted, not a floor:
 # release-public.yaml's `contents: read` silently dropped the
 # packages:write its callers granted, and integration.yaml's dropped the
-# packages:read bar granted for GitHub Packages (bar#726). Jobs inherit
+# packages:read a caller granted for GitHub Packages. Jobs inherit
 # exactly what the caller grants. Callers declare, at workflow level and
 # on the calling job:
 #
@@ -242,7 +243,7 @@ jobs:
           #
           # Two exclusions, both load-bearing:
           #
-          # 1. Own run, BY RUN ID not by name. bar's copy matched
+          # 1. Own run, BY RUN ID not by name. A caller's copy matched
           #    `.name != "release"` and that broke the moment the job
           #    moved into a reusable workflow: the check run is then named
           #    "<caller-job> / <called-job>", so the filter stopped
@@ -265,11 +266,11 @@ jobs:
           #    A dependency bot that runs on a schedule against master posts
           #    a check on whatever commit is the tip — a tag that overlaps
           #    one would fail the gate on a job that says nothing about the
-          #    commit's quality (bar, 2026-09-07). dms's inline gate already
-          #    drops them. Both names came from the per-repository callers
-          #    this library retired in v3.0.0; the exclusion stays because
-          #    it costs nothing and a repository may still run a bot of its
-          #    own under either name.
+          #    commit's quality (2026-09-07). Another caller's inline
+          #    gate already drops them. Both names came from the
+          #    per-repository callers this library retired in v3.0.0; the
+          #    exclusion stays because it costs nothing and a repository
+          #    may still run a bot of its own under either name.
           cat > /tmp/release-gate.jq <<'JQ'
           [.[].check_runs[]
             | select(((.details_url // "") | contains("/runs/" + $runid + "/")) | not)
@@ -302,8 +303,8 @@ jobs:
           [ "$got" = "$want" ] || { echo "::error::release gate self-test failed: got [$got] want [$want]"; exit 1; }
           echo "gate self-test PASS: newest-queued beats older success; pages flattened; own run and bot runs excluded"
 
-          # curl, not gh: the ARC runner image ships no gh (bar's first two
-          # tags on the stable tier died here with "gh: command not
+          # curl, not gh: the ARC runner image ships no gh (a caller's first
+          # two tags on the stable tier died here with "gh: command not
           # found"); curl and jq it has. Pages fetched by hand into files,
           # then slurped — the same shape --paginate --slurp produced.
           rm -rf "$RUNNER_TEMP/checks" && mkdir -p "$RUNNER_TEMP/checks"
@@ -356,7 +357,7 @@ jobs:
       # than `uses:`-ing truvity/ci-actions setup-remote-builders because a
       # reusable workflow can only reference an action by a commit that
       # already exists; the action is the same step for callers that run
-      # their release inline (dms). Keep the two in step.
+      # their release inline. Keep the two in step.
       - name: Register the remote builders
         if: runner.environment == 'self-hosted'
         env:
@@ -408,7 +409,7 @@ jobs:
       # Job-time, never image-baked: the Pro EULA's no-distribution
       # clause covers the binary even though goreleaser hosts it on a
       # public releases page — public-from-the-vendor grants us no
-      # redistribution right (INF-572).
+      # redistribution right.
       - name: Install goreleaser-pro
         if: inputs.install-goreleaser-pro
         env:
