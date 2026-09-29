@@ -15,6 +15,19 @@
     "helpers:pinGitHubActionDigests"
   ],
   "rebaseWhen": "behind-base-branch",
+  "gomod": {
+    "description": [
+      "postUpdateOptions.gomodTidy: `go get` alone bumps go.mod but leaves",
+      "go.sum carrying the OLD dependency's hashes. Any consumer whose",
+      "recipes run `go mod tidy` (the estate norm) then fails every job on",
+      "the bump PR with \"modified the working tree\" — tidy is not part of",
+      "`go get`, and renovate does not run it unless told to. Security pass,",
+      "2026-09-29."
+    ],
+    "postUpdateOptions": [
+      "gomodTidy"
+    ]
+  },
   "packageRules": [
     {
       "description": [
@@ -62,9 +75,13 @@
         "v0.7.1 rode in that way, carrying jose v5 -> v6 with it. The batch was",
         "red for days and cost a full night to bisect. bar already had this rule",
         "for @openid4vc/**; it is a property of 0.x versioning, not of one",
-        "package, so it belongs to every repo."
+        "package, so it belongs to every repo.",
+        "The regex is `/^v?0\\./`, not `/^0\\./`: Go's module datasource carries",
+        "the `v` prefix on currentVersion (truvity/audit v0.2.5), so the bare",
+        "form never matched a single Go module and every 0.x Go minor rode the",
+        "automerged batch silently. Security pass, 2026-09-29."
       ],
-      "matchCurrentVersion": "/^0\\./",
+      "matchCurrentVersion": "/^v?0\\./",
       "matchUpdateTypes": [
         "minor"
       ],
