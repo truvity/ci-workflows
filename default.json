@@ -123,6 +123,33 @@
     },
     {
       "description": [
+        "The toolchain triad (go, golangci-lint, govulncheck) is OWNED by",
+        "devbox-update, not Renovate, under EITHER manager that can see it:",
+        "gomod (go.mod's `toolchain` directive — already excluded above,",
+        "kept here too so both live in one place) and now devbox (the same",
+        "three as devbox.json package keys, newly reachable now that the",
+        "devbox manager is enabled). golangci-lint and govulncheck each",
+        "embed the Go release they were built with and refuse a newer one,",
+        "so the three can only move together — devbox-parity pins them as",
+        "one unit (docs/devbox-update.md) and verifies they agree; a",
+        "Renovate PR bumping `go` alone here would silently reintroduce",
+        "exactly the mismatch that ownership was built to prevent.",
+        "Repository-level copies of the gomod half of this rule are",
+        "harmless duplicates and do not need to be removed."
+      ],
+      "matchManagers": [
+        "gomod",
+        "devbox"
+      ],
+      "matchDepNames": [
+        "go",
+        "golangci-lint",
+        "govulncheck"
+      ],
+      "enabled": false
+    },
+    {
+      "description": [
         "Monorepos move as a unit. Five separate open PRs for @veramo/core,",
         "core-types, did-comm, did-manager and did-resolver v7 (truvity/core,",
         "2026-09) are individually unmergeable by construction \u2014 the packages",
