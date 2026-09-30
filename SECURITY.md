@@ -13,16 +13,18 @@ Only the latest release is supported with security updates.
 
 ## What is in scope
 
-This repository publishes contracts, schemas, small configuration loaders and
-a worked example. Reports that matter most:
+This repository publishes:
 
-- A loader that accepts a configuration it should refuse, or that reports a
-  secret's value in an error or a log line.
-- A contract or a schema whose defaults are unsafe for anyone who follows
-  them.
-- Anything in the example that would be a vulnerability in a real service,
-  since the example is what people copy.
+- The reusable workflows: `check`, `integration`, `release-public`, `release-private`, `auto-release`, `renovate-fleet` and `parity-fleet`.
+- The shared renovate preset, `default.json`.
+- The documentation, where it tells an adopter to grant a permission or pass a secret it should not.
 
-This repository holds no credentials and its CI runs on hosted runners with
-no access to any private infrastructure. A finding that depends on a
-particular deployment belongs with that deployment's owner.
+Reports that matter most:
+
+- A workflow that asks the caller for wider permissions than it uses, or lets a pull request from a fork reach a credential.
+- Injection: an input or event field interpolated into a `run:` step, so that a branch name or pull request title runs code.
+- A token, key or secret reaching a log, an artifact, a cache or a pull request comment, including the App keys of the fleet jobs and the release credentials.
+- A gate that passes what it should refuse, or `auto-release` cutting a tag it should not.
+
+A finding that depends on how a particular deployment uses this repository
+belongs with that deployment's owner.
