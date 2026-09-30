@@ -5,7 +5,7 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v3.15.0
 
 - `auto-release.yaml` releases at once on a push whose merged change is a hand-written conventional `fix:`, `fix(scope):` or `fix!:`, besides the `security` lane. Renovate PRs (a Bot login containing `renovate`, or the `dependencies` label) never take it, so `fix(deps)` bumps still batch; `feat`, `chore`, `docs`, reverts and the rest wait for the weekly batch. The PR title decides; a title without a conventional prefix defers to the PR's commits (rebase merges). The bump stays one patch, `fix!` included. `workflow_dispatch` and the schedule are unchanged.
 - `hack/auto-release-cases.sh` tests the gate, and runs in `self-check`.
