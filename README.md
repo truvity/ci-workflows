@@ -127,7 +127,7 @@ files:
 
 | consumer | through |
 | -- | -- |
-| truvity public repositories: access-roster, amazon-eks-pod-identity-webhook, argocd-ecr-updater, cloudflare, cnpg, gateway, gemaal, github-structure, nats-auth-callout, observability, ocictl, openbao, tailscale | `check`, `release-public`, `auto-release` |
+| truvity public repositories: access-roster, amazon-eks-pod-identity-webhook, argocd-ecr-updater, cloudflare, cnpg, gateway, gemaal, github-structure, nats, observability, ocictl, openbao, tailscale | `check`, `release-public`, `auto-release` |
 | truvity/audit, truvity/policy | `check`, `integration` (kind tier), `release-public` |
 | truvity/ci-cache | `check`, `release-public` |
 | truvity/ci-plane | `check`, `auto-release` |
