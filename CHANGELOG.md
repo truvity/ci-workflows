@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v3.16.0
+
+- truvity/ci-actions pins move to v1.4.0: `policy-conformance` enforces C10's check-recipe half (the Justfile's `check` must not reach `vuln`), checks C13 (no estate fact as a default, no ticket key in a tracked file) and follows the contract's text for C5 (an automatic patch needs no heading of its own). A caller that set `skip: C13` no longer needs to; one that sets `strict: true` now fails on a hit.
+
 ## v3.15.0
 
 - `auto-release.yaml` releases at once on a push whose merged change is a hand-written conventional `fix:`, `fix(scope):` or `fix!:`, besides the `security` lane. Renovate PRs (a Bot login containing `renovate`, or the `dependencies` label) never take it, so `fix(deps)` bumps still batch; `feat`, `chore`, `docs`, reverts and the rest wait for the weekly batch. The PR title decides; a title without a conventional prefix defers to the PR's commits (rebase merges). The bump stays one patch, `fix!` included. `workflow_dispatch` and the schedule are unchanged.
