@@ -5,7 +5,7 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v3.18.0
 
 - `auto-release.yaml` writes the CHANGELOG heading itself before it tags, so a patch it cuts never leaves shipped changes under `## Unreleased`. A first `## Unreleased` with entries becomes `## vX.Y.Z` (dated only where the newest heading is); a dependency-only patch gets `## vX.Y.Z` with "Dependency updates." only where the newest patch tag has its own heading, and otherwise relies on C5's automatic-patch case. The heading goes in by a pull request the job arms for auto-merge, and the tag names the merged commit. A PR titled `docs(changelog): heading for the vX.Y.0 release` makes the job stand aside; a heading already present is never rewritten. New inputs `changelog-heading` (`auto`, `always`, `never`), `changelog-path` and `changelog-wait-minutes`. **Before a caller moves to this version** its issuer grant for the tagging App must carry `pull_requests: write` (the job now asks for it, except under `changelog-heading: never`), and the repository's auto-merge setting must be on; a key-held App needs the same permission. A repository whose ruleset wants an approval on the heading PR will see the run wait and fail red until someone approves; set `changelog-heading: never` there.
 - `hack/auto-release-cases.sh` runs the tagging step against a real git repository and a stubbed `gh`: heading rename, dated headings, dependency-only patches, opt-out, an open release PR, a PR that never merges and is resumed, and an existing heading.
