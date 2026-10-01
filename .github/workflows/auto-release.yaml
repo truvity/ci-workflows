@@ -89,6 +89,36 @@
 # permission carries it and the source that does not is untouched. The
 # duplication is the price of that; keep the two step lists identical.
 #
+# THE CHANGELOG HEADING. A patch cut while the changelog still says
+# `## Unreleased` ships changes under a heading that names no version, and
+# a consumer reading the pin bump cannot find what they are moving to. So
+# before it tags vX.Y.Z the job writes the heading itself:
+#
+#   - a first `## Unreleased` with entries becomes `## vX.Y.Z` (with
+#     ` — YYYY-MM-DD`, UTC, only if the newest version heading carries a
+#     date);
+#   - with nothing under Unreleased (a dependency-only patch) nothing is
+#     written, because the policy checker's C5 asks no heading of an
+#     automatic patch on a line a hand-cut vX.Y.0 already announced —
+#     UNLESS the repository's newest patch tag has its own heading, which
+#     shows it keeps one per tag; then `## vX.Y.Z` with "Dependency
+#     updates." is added (`changelog-heading: always` forces it);
+#   - a `## vX.Y.Z` heading already there is never rewritten, so a re-run
+#     changes nothing.
+#
+# The default branch is protected (a pull request and its required checks)
+# and the estate gives this App no branch bypass, so the heading goes in as
+# a pull request: the job pushes `auto-release/changelog-vX.Y.Z`, opens the
+# PR, arms auto-merge, waits for it, and tags the MERGED commit — the tag
+# names the commit that carries its own heading. A run that times out
+# (slow checks, or a ruleset that wants an approval) fails red with no tag
+# and the PR left open; the next run resumes that PR. While a PR titled
+# `docs(changelog): heading for the vX.Y.0 release` is open the job stands
+# aside entirely: a person is preparing that heading and the two would race
+# over the same line. Needs the repository's auto-merge setting on and the
+# App's `pull_requests: write` (the access-roster grant must name it).
+# `changelog-heading: never` opts out and restores the old behaviour.
+#
 # Two estate-side prerequisites per adopting repo, or the tag push is
 # rejected / the secrets arrive empty:
 #   - the repo's v* tag ruleset carries the App that cuts the tag as a
@@ -140,6 +170,32 @@ on:
         required: false
         type: string
         default: v
+      changelog-heading:
+        description: >-
+          Whether the workflow writes the CHANGELOG heading before it
+          tags. `auto` (default): rename a first `## Unreleased` that
+          has entries to `## vX.Y.Z`, and give a dependency-only patch a
+          `## vX.Y.Z` heading ("Dependency updates.") only where the
+          newest patch tag has its own heading. `always`: write the
+          dependency-only heading whatever the history says. `never`:
+          the old behaviour exactly — tag, touch nothing, ask the issuer
+          for no pull-request write.
+        required: false
+        type: string
+        default: auto
+      changelog-path:
+        description: The changelog file, relative to the repository root.
+        required: false
+        type: string
+        default: CHANGELOG.md
+      changelog-wait-minutes:
+        description: >-
+          How long to wait for the heading's pull request to merge before
+          the run fails red and leaves it for the next run to resume. Keep
+          it well under the job's 45 minute limit.
+        required: false
+        type: string
+        default: "20"
     secrets:
       CI_AUTOMATION_PRIVATE_KEY:
         description: The App's private key. Required when token-source is `app-key`.
@@ -190,7 +246,7 @@ jobs:
     needs: preflight
     if: inputs.token-source == 'app-key'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     permissions:
       contents: read
     # Queue, never cancel: two near-simultaneous security merges must
@@ -286,23 +342,155 @@ jobs:
         env:
           PREFIX: ${{ inputs.tag-prefix }}
           BOT: ${{ steps.token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          HEADING_MODE: ${{ inputs.changelog-heading }}
+          CHANGELOG: ${{ inputs.changelog-path }}
+          WAIT_MINUTES: ${{ inputs.changelog-wait-minutes }}
         run: |
           set -euo pipefail
+          # >>> tag (hack/auto-release-cases.sh runs this block; keep both jobs identical)
+          summary() { echo "$*" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+          CHANGELOG=${CHANGELOG:-CHANGELOG.md}
+          HEADING_MODE=${HEADING_MODE:-auto}
+          WAIT_MINUTES=${WAIT_MINUTES:-20}
+          BASE=${BASE:-master}
+
           LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
           if [ -z "$LATEST" ]; then
-            echo "no ${PREFIX}* releases yet — a human cuts the first one" >> "$GITHUB_STEP_SUMMARY"
+            summary "no ${PREFIX}* releases yet — a human cuts the first one"
             exit 0
           fi
           if [ "$(git rev-parse "$LATEST^{commit}")" = "$(git rev-parse HEAD)" ]; then
-            echo "master == $LATEST — nothing to release" >> "$GITHUB_STEP_SUMMARY"
+            summary "master == $LATEST — nothing to release"
             exit 0
           fi
           NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
           git config user.name "${BOT}[bot]"
           git config user.email "${BOT}[bot]@users.noreply.github.com"
-          git tag -a "$NEXT" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
+
+          # has_heading FILE TAG: a `## TAG` heading, bare or followed by a date.
+          has_heading() { awk -v t="$2" '$1 == "##" && $2 == t { f = 1 } END { exit !f }' "$1"; }
+
+          # ── The CHANGELOG heading, so the tag never ships under `## Unreleased` ──
+          # TARGET is the commit the tag will name. It stays HEAD unless the heading
+          # has to be written, in which case it becomes the commit that wrote it.
+          TARGET=$(git rev-parse HEAD)
+          edit=""
+          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ]; then
+            # A release PR a person is preparing: do not race it.
+            waiting=$(gh pr list --repo "$REPO" --state open --limit 100 --json title \
+              --jq '[.[] | select(.title | test("^docs\\(changelog\\): heading for the v[0-9]+\\.[0-9]+\\.0 release"))] | length')
+            if [ "${waiting:-0}" != 0 ]; then
+              summary "a changelog-heading PR for a minor or major release is open — leaving $NEXT to it"
+              exit 0
+            fi
+
+            if has_heading "$CHANGELOG" "$NEXT"; then
+              summary "$CHANGELOG already has a heading for $NEXT — tagging as it stands"
+            else
+              first=$(grep -m1 '^## ' "$CHANGELOG" || true)
+              entries=$(awk '/^## /{ n++; next } n == 1 && NF && !/^#/ { c++ } END { print c + 0 }' "$CHANGELOG")
+              if [[ $first != "## Unreleased"* ]] && grep -q '^## Unreleased' "$CHANGELOG"; then
+                echo "::warning::$CHANGELOG has an Unreleased heading that is not the first — leaving it alone"
+                HEADING_MODE=never
+              elif [[ $first == "## Unreleased"* ]] && [ "$entries" -gt 0 ]; then
+                edit=rename
+              fi
+            fi
+          fi
+
+          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ] && [ -z "$edit" ] && ! has_heading "$CHANGELOG" "$NEXT"; then
+            # Nothing under Unreleased: a dependency-only patch. C5 exempts it when
+            # the repo has not been writing patch headings; write one only where it
+            # has (the newest patch tag has its heading) or the caller asked.
+            patch=$(git tag --list "${PREFIX}*" --sort=-version:refname \
+              | grep -E '^[^.]*[0-9]+\.[0-9]+\.[0-9]+$' | awk -F. '$3 + 0 > 0' | head -1 || true)
+            if [ "$HEADING_MODE" = always ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
+              edit=dependency
+            else
+              summary "no entries under Unreleased and no patch heading convention — $NEXT needs none (C5's automatic-patch case)"
+            fi
+          fi
+
+          if [ -n "$edit" ]; then
+            # The newest version heading says whether this repo dates its headings.
+            newest=$(awk '$1 == "##" && $2 ~ /^v[0-9]/ { print; exit }' "$CHANGELOG")
+            title="## $NEXT"
+            dated=' — [0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            if [[ $newest =~ $dated ]]; then
+              title="$title — $(date -u +%F)"
+            fi
+            tmp=$(mktemp)
+            if [ "$edit" = rename ]; then
+              awk -v h="$title" '!done && /^## Unreleased/ { print h; done = 1; next } { print }' "$CHANGELOG" > "$tmp"
+            else
+              awk -v h="$title" '
+                !done && /^## / && !/^## Unreleased/ { print h; print ""; print "- Dependency updates."; print ""; done = 1 }
+                { print }
+                END { exit !done }' "$CHANGELOG" > "$tmp" || { summary "$CHANGELOG has no version heading to place $NEXT above — tagging as it stands"; edit=""; }
+            fi
+            if [ -n "$edit" ]; then
+              cat "$tmp" > "$CHANGELOG"
+            fi
+            rm -f "$tmp"
+          fi
+
+          if [ -n "$edit" ]; then
+            # Master is protected: the heading goes in by pull request, and the tag
+            # waits for the merge so that it names the commit that carries it.
+            BRANCH="auto-release/changelog-$NEXT"
+            N=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
+            if [ -n "$N" ]; then
+              git checkout -q -- "$CHANGELOG"
+              summary "resuming #$N, the heading PR an earlier run opened for $NEXT"
+            else
+              git checkout -q -b "$BRANCH"
+              git add -- "$CHANGELOG"
+              git commit -q -m "docs(changelog): heading for the $NEXT release" \
+                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading."
+              git push -q --force origin "$BRANCH"
+              URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
+                --title "docs(changelog): heading for the $NEXT release" \
+                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.")
+              N=${URL##*/}
+              method=$(gh api "repos/$REPO" \
+                --jq 'if .allow_rebase_merge then "rebase" elif .allow_squash_merge then "squash" else "merge" end')
+              gh pr merge "$N" --repo "$REPO" --auto "--$method" \
+                || gh pr merge "$N" --repo "$REPO" "--$method" \
+                || { echo "::error::could not arm or perform the merge of #$N"; exit 1; }
+              summary "opened #$N for the $NEXT heading and armed its merge"
+            fi
+
+            deadline=$((SECONDS + WAIT_MINUTES * 60))
+            while :; do
+              state=$(gh pr view "$N" --repo "$REPO" --json state --jq .state)
+              [ "$state" != MERGED ] || break
+              if [ "$state" = CLOSED ]; then
+                echo "::error::#$N was closed without merging — no tag cut; the next run opens a fresh one"
+                exit 1
+              fi
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::#$N did not merge within ${WAIT_MINUTES} minutes (checks, or a review the ruleset wants) — no tag cut; the next run resumes it"
+                exit 1
+              fi
+              sleep "${POLL_SECONDS:-30}"
+            done
+            TARGET=$(gh pr view "$N" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)
+            git fetch -q origin "$BASE"
+            if ! git merge-base --is-ancestor "$TARGET" "origin/$BASE" \
+               || ! git show "$TARGET:$CHANGELOG" | has_heading /dev/stdin "$NEXT"; then
+              echo "::error::the merge commit $TARGET of #$N is not on $BASE with the $NEXT heading — no tag cut"
+              exit 1
+            fi
+            git push -q origin --delete "$BRANCH" 2>/dev/null || true
+          fi
+
+          git tag -a "$NEXT" "$TARGET" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
           git push origin "$NEXT"
-          echo "released $NEXT" >> "$GITHUB_STEP_SUMMARY"
+          summary "released $NEXT"
+          # <<< tag
 
   # ── token-source: access-roster ──────────────────────────────────────
   # The same steps, minting differently. See the note at the top of the
@@ -311,7 +499,7 @@ jobs:
     needs: preflight
     if: inputs.token-source == 'access-roster'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write # the exchange
@@ -325,10 +513,14 @@ jobs:
           REPO: ${{ github.repository }}
         run: echo "name=${REPO#*/}" >> "$GITHUB_OUTPUT"
 
-      # THIS repository only, and the two permissions the steps below
-      # use: `contents: write` pushes the tag, `pull_requests: read` is
-      # what the release gate reads the merged PR's labels, title and commits with.
-      # The installation reaches the organisation; this token reaches one
+      # THIS repository only, and the permissions the steps below use:
+      # `contents: write` pushes the tag and the heading branch,
+      # `pull_requests: read` is what the release gate reads the merged
+      # PR's labels, title and commits with, and `pull_requests: write`
+      # (unless the caller said `changelog-heading: never`) opens and arms
+      # the heading's pull request. The issuer's grant must name it too:
+      # the grant is the ceiling, this input only narrows. The
+      # installation reaches the organisation; this token reaches one
       # repository.
       - uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
         id: token
@@ -336,7 +528,7 @@ jobs:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
           repositories: ${{ steps.repo.outputs.name }}
-          permissions: contents:write,pull_requests:read
+          permissions: ${{ inputs.changelog-heading == 'never' && 'contents:write,pull_requests:read' || 'contents:write,pull_requests:write' }}
 
       - name: Release security and fix pushes
         id: gate
@@ -410,20 +602,152 @@ jobs:
           # on an annotated tag and nothing else — GitHub attributes the
           # push to the App whose token pushed it.
           BOT: ${{ inputs.github-app }}
+          GH_TOKEN: ${{ steps.token.outputs.github-token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          HEADING_MODE: ${{ inputs.changelog-heading }}
+          CHANGELOG: ${{ inputs.changelog-path }}
+          WAIT_MINUTES: ${{ inputs.changelog-wait-minutes }}
         run: |
           set -euo pipefail
+          # >>> tag (hack/auto-release-cases.sh runs this block; keep both jobs identical)
+          summary() { echo "$*" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+          CHANGELOG=${CHANGELOG:-CHANGELOG.md}
+          HEADING_MODE=${HEADING_MODE:-auto}
+          WAIT_MINUTES=${WAIT_MINUTES:-20}
+          BASE=${BASE:-master}
+
           LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
           if [ -z "$LATEST" ]; then
-            echo "no ${PREFIX}* releases yet — a human cuts the first one" >> "$GITHUB_STEP_SUMMARY"
+            summary "no ${PREFIX}* releases yet — a human cuts the first one"
             exit 0
           fi
           if [ "$(git rev-parse "$LATEST^{commit}")" = "$(git rev-parse HEAD)" ]; then
-            echo "master == $LATEST — nothing to release" >> "$GITHUB_STEP_SUMMARY"
+            summary "master == $LATEST — nothing to release"
             exit 0
           fi
           NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
           git config user.name "${BOT}[bot]"
           git config user.email "${BOT}[bot]@users.noreply.github.com"
-          git tag -a "$NEXT" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
+
+          # has_heading FILE TAG: a `## TAG` heading, bare or followed by a date.
+          has_heading() { awk -v t="$2" '$1 == "##" && $2 == t { f = 1 } END { exit !f }' "$1"; }
+
+          # ── The CHANGELOG heading, so the tag never ships under `## Unreleased` ──
+          # TARGET is the commit the tag will name. It stays HEAD unless the heading
+          # has to be written, in which case it becomes the commit that wrote it.
+          TARGET=$(git rev-parse HEAD)
+          edit=""
+          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ]; then
+            # A release PR a person is preparing: do not race it.
+            waiting=$(gh pr list --repo "$REPO" --state open --limit 100 --json title \
+              --jq '[.[] | select(.title | test("^docs\\(changelog\\): heading for the v[0-9]+\\.[0-9]+\\.0 release"))] | length')
+            if [ "${waiting:-0}" != 0 ]; then
+              summary "a changelog-heading PR for a minor or major release is open — leaving $NEXT to it"
+              exit 0
+            fi
+
+            if has_heading "$CHANGELOG" "$NEXT"; then
+              summary "$CHANGELOG already has a heading for $NEXT — tagging as it stands"
+            else
+              first=$(grep -m1 '^## ' "$CHANGELOG" || true)
+              entries=$(awk '/^## /{ n++; next } n == 1 && NF && !/^#/ { c++ } END { print c + 0 }' "$CHANGELOG")
+              if [[ $first != "## Unreleased"* ]] && grep -q '^## Unreleased' "$CHANGELOG"; then
+                echo "::warning::$CHANGELOG has an Unreleased heading that is not the first — leaving it alone"
+                HEADING_MODE=never
+              elif [[ $first == "## Unreleased"* ]] && [ "$entries" -gt 0 ]; then
+                edit=rename
+              fi
+            fi
+          fi
+
+          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ] && [ -z "$edit" ] && ! has_heading "$CHANGELOG" "$NEXT"; then
+            # Nothing under Unreleased: a dependency-only patch. C5 exempts it when
+            # the repo has not been writing patch headings; write one only where it
+            # has (the newest patch tag has its heading) or the caller asked.
+            patch=$(git tag --list "${PREFIX}*" --sort=-version:refname \
+              | grep -E '^[^.]*[0-9]+\.[0-9]+\.[0-9]+$' | awk -F. '$3 + 0 > 0' | head -1 || true)
+            if [ "$HEADING_MODE" = always ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
+              edit=dependency
+            else
+              summary "no entries under Unreleased and no patch heading convention — $NEXT needs none (C5's automatic-patch case)"
+            fi
+          fi
+
+          if [ -n "$edit" ]; then
+            # The newest version heading says whether this repo dates its headings.
+            newest=$(awk '$1 == "##" && $2 ~ /^v[0-9]/ { print; exit }' "$CHANGELOG")
+            title="## $NEXT"
+            dated=' — [0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            if [[ $newest =~ $dated ]]; then
+              title="$title — $(date -u +%F)"
+            fi
+            tmp=$(mktemp)
+            if [ "$edit" = rename ]; then
+              awk -v h="$title" '!done && /^## Unreleased/ { print h; done = 1; next } { print }' "$CHANGELOG" > "$tmp"
+            else
+              awk -v h="$title" '
+                !done && /^## / && !/^## Unreleased/ { print h; print ""; print "- Dependency updates."; print ""; done = 1 }
+                { print }
+                END { exit !done }' "$CHANGELOG" > "$tmp" || { summary "$CHANGELOG has no version heading to place $NEXT above — tagging as it stands"; edit=""; }
+            fi
+            if [ -n "$edit" ]; then
+              cat "$tmp" > "$CHANGELOG"
+            fi
+            rm -f "$tmp"
+          fi
+
+          if [ -n "$edit" ]; then
+            # Master is protected: the heading goes in by pull request, and the tag
+            # waits for the merge so that it names the commit that carries it.
+            BRANCH="auto-release/changelog-$NEXT"
+            N=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
+            if [ -n "$N" ]; then
+              git checkout -q -- "$CHANGELOG"
+              summary "resuming #$N, the heading PR an earlier run opened for $NEXT"
+            else
+              git checkout -q -b "$BRANCH"
+              git add -- "$CHANGELOG"
+              git commit -q -m "docs(changelog): heading for the $NEXT release" \
+                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading."
+              git push -q --force origin "$BRANCH"
+              URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
+                --title "docs(changelog): heading for the $NEXT release" \
+                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.")
+              N=${URL##*/}
+              method=$(gh api "repos/$REPO" \
+                --jq 'if .allow_rebase_merge then "rebase" elif .allow_squash_merge then "squash" else "merge" end')
+              gh pr merge "$N" --repo "$REPO" --auto "--$method" \
+                || gh pr merge "$N" --repo "$REPO" "--$method" \
+                || { echo "::error::could not arm or perform the merge of #$N"; exit 1; }
+              summary "opened #$N for the $NEXT heading and armed its merge"
+            fi
+
+            deadline=$((SECONDS + WAIT_MINUTES * 60))
+            while :; do
+              state=$(gh pr view "$N" --repo "$REPO" --json state --jq .state)
+              [ "$state" != MERGED ] || break
+              if [ "$state" = CLOSED ]; then
+                echo "::error::#$N was closed without merging — no tag cut; the next run opens a fresh one"
+                exit 1
+              fi
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::#$N did not merge within ${WAIT_MINUTES} minutes (checks, or a review the ruleset wants) — no tag cut; the next run resumes it"
+                exit 1
+              fi
+              sleep "${POLL_SECONDS:-30}"
+            done
+            TARGET=$(gh pr view "$N" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)
+            git fetch -q origin "$BASE"
+            if ! git merge-base --is-ancestor "$TARGET" "origin/$BASE" \
+               || ! git show "$TARGET:$CHANGELOG" | has_heading /dev/stdin "$NEXT"; then
+              echo "::error::the merge commit $TARGET of #$N is not on $BASE with the $NEXT heading — no tag cut"
+              exit 1
+            fi
+            git push -q origin --delete "$BRANCH" 2>/dev/null || true
+          fi
+
+          git tag -a "$NEXT" "$TARGET" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
           git push origin "$NEXT"
-          echo "released $NEXT" >> "$GITHUB_STEP_SUMMARY"
+          summary "released $NEXT"
+          # <<< tag
