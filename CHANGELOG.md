@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `release-public.yaml` can push a web application's JavaScript source maps with `smctl` (truvity/ocictl, pinned) right after GoReleaser, in the same job: new inputs `sourcemaps-image` (the GoReleaser image whose maps to push; empty, the default, is off) and `sourcemaps-dir` (default `dist-sourcemaps`). The version and registry come from `dist/`, so maps exist only for a version whose image was published, from the same build, and a failed push fails the release. The artifact lands in `{registry}/{owner}/sourcemaps/{app}` tagged with the version. No new permission: the `packages: write` callers already grant covers the push. Callers that leave `sourcemaps-image` empty are unchanged.
+
 ## v3.19.0
 
 - `release-public.yaml`'s `charts` input accepts a **repository-root path** beside the plain names it always took. An entry containing a `/` (`charts/service-lib`) is a path from the repository root: `chart-root` does not apply to it, so a chart that lives somewhere other than `chart-root` is published by the same call, under the same tag, as the ones that do. It is packaged, pushed and named by the last element of its path. A plain entry behaves exactly as before. A path that is absolute, has an empty, `.` or `..` element, or whose name is not a lowercase chart name is refused before anything is built, and so are two entries with the same last element. `hack/chart-paths-cases.sh` runs the resolution as written in the workflow, and runs in `self-check`.
