@@ -74,13 +74,13 @@ jobs:
       # reason it takes a list: every action pin in this repository points
       # at truvity/ci-actions, and a guard that knew only the old name
       # would pass over all nineteen of them in silence.
-      - uses: truvity/ci-actions/tagged-pins@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+      - uses: truvity/ci-actions/tagged-pins@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
 
       # The rule this library asks of every public caller, asked of itself
       # first. This repository is public and runs hosted, so the expected
       # answer is "ok" -- which is the point. A guard nobody runs is a
       # guard nobody knows is broken.
-      - uses: truvity/ci-actions/public-runners@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+      - uses: truvity/ci-actions/public-runners@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         with:
           runners: ubuntu-latest
           visibility: ${{ github.event.repository.visibility }}
@@ -90,7 +90,7 @@ jobs:
       # `policy-conformance-strict` in check.yaml; this repository has no
       # ci.yaml caller, so it runs the action directly. No charts, no Go
       # module: several rules skip, the rest are judged.
-      - uses: truvity/ci-actions/policy-conformance@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+      - uses: truvity/ci-actions/policy-conformance@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         with:
           strict: "true"
 

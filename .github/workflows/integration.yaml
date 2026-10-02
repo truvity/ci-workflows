@@ -287,7 +287,7 @@ jobs:
     outputs:
       tier: ${{ steps.resolve.outputs.tier }}
     steps:
-      - uses: truvity/ci-actions/public-runners@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+      - uses: truvity/ci-actions/public-runners@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -364,7 +364,7 @@ jobs:
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+      - uses: truvity/ci-actions/setup-devbox@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -388,7 +388,7 @@ jobs:
       # Install, which DOES need the whole box.
       - name: "cluster (mode: kind, background)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+        uses: truvity/ci-actions/cluster@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         with:
           mode: kind
           background: "true"
@@ -468,7 +468,7 @@ jobs:
           registries: ${{ inputs.ecr-registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-actions/setup-remote-builders@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+      - uses: truvity/ci-actions/setup-remote-builders@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         if: env.LANE_IMAGES == 'true' && needs.tier.outputs.tier != 'kind'
         with:
           remote-builders: ${{ inputs.remote-builders }}
@@ -533,7 +533,7 @@ jobs:
       # installs land on real Services), not just the registry.
       - name: "cluster (mode: wait)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@43292aa2e0b159405baedbd43997c6899b39b0fb # v1.5.0
+        uses: truvity/ci-actions/cluster@3bc59e38c759738677ed02ea2faa216377559fa3 # v1.6.1
         with:
           mode: wait
 
