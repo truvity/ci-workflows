@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.19.0
+
 - `release-public.yaml`'s `charts` input accepts a **repository-root path** beside the plain names it always took. An entry containing a `/` (`charts/service-lib`) is a path from the repository root: `chart-root` does not apply to it, so a chart that lives somewhere other than `chart-root` is published by the same call, under the same tag, as the ones that do. It is packaged, pushed and named by the last element of its path. A plain entry behaves exactly as before. A path that is absolute, has an empty, `.` or `..` element, or whose name is not a lowercase chart name is refused before anything is built, and so are two entries with the same last element. `hack/chart-paths-cases.sh` runs the resolution as written in the workflow, and runs in `self-check`.
 - Every `truvity/ci-actions` pin moves from v1.6.1 to v1.7.0. No action asks for privilege any more: no root, no `sudo`, so the reusable workflows run unchanged on a runner under the Pod Security `restricted` profile. The inputs the workflows pass are unchanged.
 - `setup-devbox` starts with a `preflight` step that prints the uid, whether `no_new_privs` is set, what `/bin/sh` is, and whether `HOME`, `RUNNER_TEMP` and the work directory are writable, and fails early with one message naming what is missing.
