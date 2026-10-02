@@ -65,6 +65,11 @@ jobs:
       - name: auto-release cases
         run: ./hack/auto-release-cases.sh
 
+      # release-public's `charts` input: a plain name under `chart-root`, a
+      # path from the repository root, and every spelling it refuses.
+      - name: chart-paths cases
+        run: ./hack/chart-paths-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a

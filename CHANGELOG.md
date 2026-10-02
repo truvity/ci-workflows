@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- `release-public.yaml`'s `charts` input accepts a **repository-root path** beside the plain names it always took. An entry containing a `/` (`charts/service-lib`) is a path from the repository root: `chart-root` does not apply to it, so a chart that lives somewhere other than `chart-root` is published by the same call, under the same tag, as the ones that do. It is packaged, pushed and named by the last element of its path. A plain entry behaves exactly as before. A path that is absolute, has an empty, `.` or `..` element, or whose name is not a lowercase chart name is refused before anything is built, and so are two entries with the same last element. `hack/chart-paths-cases.sh` runs the resolution as written in the workflow, and runs in `self-check`.
+
 ## v3.18.1
 
 - Every `truvity/ci-actions` pin moves from v1.5.0 to v1.6.1. Its `setup-devbox` tolerates `no_new_privs`, so the reusable workflows run on non-root (Pod Security `restricted`) runners.
