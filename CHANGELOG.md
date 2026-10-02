@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- Every `truvity/ci-actions` pin moves from v1.7.0 to v1.8.0, which moves each action's logic into the `ci-actions` Go binary behind thin composites. The inputs and outputs the workflows use are unchanged. What a caller's runner needs changes: the first step of every action job fetches the checksum-verified release binary, so the runner needs `curl`, `tar` and `sha256sum` (or Go). `setup-devbox` installs devbox, when the runner does not bake it, into `$RUNNER_TEMP/bin` (on `PATH`) rather than `/usr/local/bin`, verified against the release checksums; a step that ran `/usr/local/bin/devbox` by absolute path must use `devbox` from `PATH`. `fleet-discover` now warns when `filter` is not a valid expression, and `caller-parity` treats a `kits.yaml` that is not valid YAML as an error.
+
 ## v3.20.0
 
 - `release-public.yaml` can push a web application's JavaScript source maps with `smctl` (truvity/ocictl, pinned) right after GoReleaser, in the same job: new inputs `sourcemaps-image` (the GoReleaser image whose maps to push; empty, the default, is off), `sourcemaps-dir` (default `dist-sourcemaps`) and `sourcemaps-app` (the `{app}` of the repository when the image is named differently from the application, e.g. image `web` for `url-shortener`; empty, the default, is the image's last path segment). The version and registry come from `dist/`, so maps exist only for a version whose image was published, from the same build, and a failed push fails the release. The artifact lands in `{registry}/{owner}/sourcemaps/{app}` tagged with the version. No new permission: the `packages: write` callers already grant covers the push. Callers that leave `sourcemaps-image` empty are unchanged.
