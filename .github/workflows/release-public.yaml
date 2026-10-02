@@ -37,6 +37,12 @@
 #
 #         charts: '["url-shortener", "charts/service-lib"]'
 #         chart-root: examples/url-shortener/charts
+#
+#   A web application's source maps are pushed after goreleaser, in the
+#   same job, with the same `packages: write`:
+#
+#         sourcemaps-image: web
+#         sourcemaps-dir: dist-sourcemaps
 name: release-public
 
 on:
@@ -154,6 +160,38 @@ on:
         required: false
         type: string
         default: '[]'
+      sourcemaps-image:
+        description: >-
+          Push a web application's JavaScript source maps as an OCI
+          artifact, with `smctl` (from truvity/ocictl), right after
+          GoReleaser and in the same job. The value is the GoReleaser image
+          to take the maps for: its repository, `registry/repository` or
+          last path segment, as `smctl push --image` reads it from
+          `dist/artifacts.json`. Empty (the default) turns the feature off.
+
+          Same job, after the images are pushed, is the whole point: the
+          version and the registry come from GoReleaser's dist/, so maps are
+          pushed only for a version whose image was actually published, from
+          the same build. A failed push fails the release. The artifact is
+          `application/vnd.ocictl.sourcemaps.v1`, tagged with the release
+          version, in `{registry}/{owner}/sourcemaps/{app}` (`{app}` is the
+          image's last path segment); it is pushed with GITHUB_TOKEN, so the
+          caller's `packages: write` is enough.
+
+          The configuration must leave the maps in `sourcemaps-dir` and out
+          of the image; see docs/sourcemaps.md in truvity/ocictl.
+        required: false
+        type: string
+        default: ""
+      sourcemaps-dir:
+        description: >-
+          The directory holding the `.map` files, searched recursively, as
+          written by the GoReleaser configuration. Only used with
+          `sourcemaps-image`. The push is refused if it holds no `.map`
+          file.
+        required: false
+        type: string
+        default: dist-sourcemaps
       ko-docker-repo:
         required: false
         type: string
@@ -387,6 +425,37 @@ jobs:
               --name "$chart" --version "$version"
             echo "::endgroup::"
           done
+
+      # Source maps, right after the images they belong to. Same shape as
+      # the helmctl step above: a pinned smctl from truvity/ocictl, run in
+      # this job. smctl reads dist/ (GoReleaser's own record of what it
+      # just published) for the version and the image's registry, so a
+      # release that did not publish has nothing to push maps for, and the
+      # maps are the ones built with that image. It authenticates to ghcr
+      # with GITHUB_TOKEN directly; no extra login. Not `|| true`: maps for
+      # a shipped image are part of the release.
+      - name: Push source maps
+        if: inputs.sourcemaps-image != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCEMAPS_IMAGE: ${{ inputs.sourcemaps-image }}
+          SOURCEMAPS_DIR: ${{ inputs.sourcemaps-dir }}
+          # renovate: datasource=github-releases depName=truvity/ocictl
+          SMCTL_VERSION: "0.7.1"
+        run: |
+          set -euo pipefail
+
+          arch="$(uname -m)"
+          case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+          mkdir -p "$RUNNER_TEMP/smctl"
+          gh release download "v${SMCTL_VERSION}" --repo truvity/ocictl \
+            --pattern "smctl_${SMCTL_VERSION}_linux_${arch}.tar.gz" \
+            --output - | tar -xz -C "$RUNNER_TEMP/smctl" smctl
+
+          "$RUNNER_TEMP/smctl/smctl" push \
+            --goreleaser-dist dist \
+            --image "$SOURCEMAPS_IMAGE" \
+            --maps "$SOURCEMAPS_DIR"
 
       # Last, so a flake that fails never keeps a chart from shipping.
       #
