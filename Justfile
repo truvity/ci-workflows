@@ -104,6 +104,10 @@ leak-canary:
 auto-release-cases:
     @./hack/auto-release-cases.sh
 
+# release-public's `charts` input: plain names, repository-root paths, refusals
+chart-paths-cases:
+    @./hack/chart-paths-cases.sh
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary auto-release-cases
+check: lint pins runners leak-canary auto-release-cases chart-paths-cases
     @echo "✓ All checks passed"

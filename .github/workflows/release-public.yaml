@@ -29,6 +29,14 @@
 #
 #         charts: '["url-shortener"]'
 #         chart-root: examples/url-shortener/charts
+#
+#   A chart that is shared by several others, or that belongs to the
+#   repository rather than to any one component, is named by its path from
+#   the repository root. An entry with a `/` is that path, `chart-root` does
+#   not apply to it, and the chart is published under its last element:
+#
+#         charts: '["url-shortener", "charts/service-lib"]'
+#         chart-root: examples/url-shortener/charts
 name: release-public
 
 on:
@@ -36,16 +44,26 @@ on:
     inputs:
       charts:
         description: >-
-          JSON array of chart directory names under `chart-root`
-          (`charts/` by default). Empty for binaries only (ocictl,
-          pulumi-zitadel). More than one is normal — zitadel-operator
-          ships its CRDs as a second chart.
+          JSON array of charts to publish. A plain entry (`url-shortener`) is
+          a chart directory name under `chart-root` (`charts/` by default),
+          as it always was. An entry containing a `/`
+          (`charts/service-lib`) is a path from the REPOSITORY ROOT:
+          `chart-root` does not apply to it, which is how a chart that
+          lives somewhere other than `chart-root` is published by the same
+          call, under the same tag, as the ones that do. Either way the chart
+          is packaged, pushed and named by the last element of its path, so
+          two entries with the same last element are refused, as is a path
+          that is absolute, contains `..`, `.` or an empty element, or whose
+          name is not a lowercase chart name. Empty for binaries only
+          (ocictl, pulumi-zitadel). More than one is normal —
+          zitadel-operator ships its CRDs as a second chart.
         required: false
         type: string
         default: '[]'
       chart-root:
         description: >-
-          The directory the `charts` names are relative to.
+          The directory the plain `charts` names are relative to. An entry
+          with a `/` is a repository-root path and ignores it.
 
           The default suits a repository whose charts are its own. A
           repository whose chart belongs to something INSIDE it — a worked
@@ -277,9 +295,57 @@ jobs:
           registry="${ref%%/*}"
           repo_prefix="${ref#*/}"
 
-          mapfile -t charts < <(python3 -c 'import json,os; print("\n".join(json.loads(os.environ["CHARTS"])))')
+          # >>> charts
+          # One line per chart, `<directory><TAB><name>`. A plain entry is
+          # under CHART_ROOT; an entry with a `/` is a path from the
+          # repository root. The name is the last element either way, and
+          # it is what helmctl packages, pushes and tags. Everything wrong
+          # is refused HERE, before anything is built or pushed, because a
+          # chart published under the wrong name cannot be taken back.
+          # A command substitution and not `mapfile < <(...)`: the latter
+          # discards the exit status, so a refusal would be a warning.
+          resolved="$(python3 - <<'PY'
+          import json, os, re, sys
 
-          for chart in "${charts[@]}"; do
+          def refuse(msg):
+              print("::error::charts: " + msg, file=sys.stderr)
+              sys.exit(1)
+
+          try:
+              entries = json.loads(os.environ["CHARTS"])
+          except ValueError as e:
+              refuse("not a JSON array: %s" % e)
+          if not isinstance(entries, list):
+              refuse("not a JSON array")
+
+          root = os.environ["CHART_ROOT"].rstrip("/")
+          name_re = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*$")
+          seen = {}
+          for entry in entries:
+              if not isinstance(entry, str) or not entry:
+                  refuse("%r is not a non-empty string" % (entry,))
+              if entry.startswith("/"):
+                  refuse("%r is absolute: a chart path is from the repository root" % entry)
+              parts = entry.split("/")
+              if any(p in ("", ".", "..") for p in parts):
+                  refuse("%r has an empty, `.` or `..` element: name the chart, not a way to it" % entry)
+              name = parts[-1]
+              if not name_re.match(name):
+                  refuse("%r: the chart name %r is not a lowercase chart name (letters, digits, `-`, `.`, `_`)" % (entry, name))
+              if name in seen:
+                  refuse("%r and %r are both published as %r: a chart is packaged, pushed and named by its last path element" % (seen[name], entry, name))
+              seen[name] = entry
+              directory = entry if "/" in entry else "%s/%s" % (root, entry)
+              print("%s\t%s" % (directory, name))
+          PY
+          )"
+          charts=()
+          if [ -n "$resolved" ]; then mapfile -t charts <<<"$resolved"; fi
+          # <<< charts
+
+          for entry in "${charts[@]}"; do
+            chart_dir="${entry%%$'\t'*}"
+            chart="${entry##*$'\t'}"
             echo "::group::${chart} ${version}"
             # helmctl's --app-version is optional: omitting it leaves the
             # chart's declared appVersion untouched. Reject anything we do
@@ -311,7 +377,7 @@ jobs:
               package_args+=(--require-image-digests)
             fi
             devbox run -- "$RUNNER_TEMP/helmctl/helmctl" package \
-              --chart "${CHART_ROOT}/${chart}" \
+              --chart "${chart_dir}" \
               "${package_args[@]}" \
               --output dist/
             "$RUNNER_TEMP/helmctl/helmctl" push \

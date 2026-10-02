@@ -20,6 +20,7 @@ cannot be edited after the push.
 - `lint` runs actionlint over every workflow
 - `pins` and `runners` hold this repository to its own rules: library pins name release tags, public repositories use hosted runners
 - `auto-release-cases` runs the release-decision cases of `auto-release`
+- `chart-paths-cases` runs the cases of `release-public`'s `charts` input (plain names, repository-root paths, refusals)
 - `leak-canary`
 
 The repository is also exercised by its own `self-check` and `integration` workflows.
