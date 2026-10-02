@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.21.0
+
 - Every `truvity/ci-actions` pin moves from v1.7.0 to v1.8.0, which moves each action's logic into the `ci-actions` Go binary behind thin composites. The inputs and outputs the workflows use are unchanged. What a caller's runner needs changes: the first step of every action job fetches the checksum-verified release binary, so the runner needs `curl`, `tar` and `sha256sum` (or Go). `setup-devbox` installs devbox, when the runner does not bake it, into `$RUNNER_TEMP/bin` (on `PATH`) rather than `/usr/local/bin`, verified against the release checksums; a step that ran `/usr/local/bin/devbox` by absolute path must use `devbox` from `PATH`. `fleet-discover` now warns when `filter` is not a valid expression, and `caller-parity` treats a `kits.yaml` that is not valid YAML as an error.
 
 ## v3.20.0
