@@ -8,6 +8,7 @@ those tags have no GitHub release; v3.14.0 on do.
 ## Unreleased
 
 - `release-public.yaml` can push a web application's JavaScript source maps with `smctl` (truvity/ocictl, pinned) right after GoReleaser, in the same job: new inputs `sourcemaps-image` (the GoReleaser image whose maps to push; empty, the default, is off) and `sourcemaps-dir` (default `dist-sourcemaps`). The version and registry come from `dist/`, so maps exist only for a version whose image was published, from the same build, and a failed push fails the release. The artifact lands in `{registry}/{owner}/sourcemaps/{app}` tagged with the version. No new permission: the `packages: write` callers already grant covers the push. Callers that leave `sourcemaps-image` empty are unchanged.
+- `release-public.yaml` packages charts with helmctl 0.8.0 (was 0.6.1). A chart whose `Chart.yaml` `dependencies:` are not all present in `charts/` (a `file://` library chart in the same repository, or an `oci://`/`https://` one) has them resolved with `helm dependency build` before packaging, honouring a committed `Chart.lock`. A chart that commits its dependency archives and `Chart.lock` packages exactly as before: no dependency step, no network, the same bytes. Under `require-image-digests: true` the dependencies' `images:` must carry digests too.
 
 ## v3.19.0
 
