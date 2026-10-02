@@ -43,6 +43,7 @@
 #
 #         sourcemaps-image: web
 #         sourcemaps-dir: dist-sourcemaps
+#         sourcemaps-app: url-shortener   # when the image is named `web`
 name: release-public
 
 on:
@@ -192,6 +193,18 @@ on:
         required: false
         type: string
         default: dist-sourcemaps
+      sourcemaps-app:
+        description: >-
+          The `{app}` of `{registry}/{owner}/sourcemaps/{app}`: the name the
+          source-map server is configured with for this application
+          (`apps[].name`), which is the first path segment of the URL it
+          serves maps under. Empty (the default) is the last path segment
+          of `sourcemaps-image`; set it when the image is named differently
+          from the application (an image `web` for the app `url-shortener`).
+          Only used with `sourcemaps-image`.
+        required: false
+        type: string
+        default: ""
       ko-docker-repo:
         required: false
         type: string
@@ -440,6 +453,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCEMAPS_IMAGE: ${{ inputs.sourcemaps-image }}
           SOURCEMAPS_DIR: ${{ inputs.sourcemaps-dir }}
+          SOURCEMAPS_APP: ${{ inputs.sourcemaps-app }}
           # renovate: datasource=github-releases depName=truvity/ocictl
           SMCTL_VERSION: "0.7.1"
         run: |
@@ -452,10 +466,11 @@ jobs:
             --pattern "smctl_${SMCTL_VERSION}_linux_${arch}.tar.gz" \
             --output - | tar -xz -C "$RUNNER_TEMP/smctl" smctl
 
-          "$RUNNER_TEMP/smctl/smctl" push \
-            --goreleaser-dist dist \
-            --image "$SOURCEMAPS_IMAGE" \
-            --maps "$SOURCEMAPS_DIR"
+          args=(--goreleaser-dist dist --image "$SOURCEMAPS_IMAGE" --maps "$SOURCEMAPS_DIR")
+          if [ -n "$SOURCEMAPS_APP" ]; then
+            args+=(--app "$SOURCEMAPS_APP")
+          fi
+          "$RUNNER_TEMP/smctl/smctl" push "${args[@]}"
 
       # Last, so a flake that fails never keeps a chart from shipping.
       #
