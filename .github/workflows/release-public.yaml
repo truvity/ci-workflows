@@ -314,7 +314,7 @@ jobs:
           CHART_IMAGES: ${{ inputs.chart-images }}
           REQUIRE_IMAGE_DIGESTS: ${{ inputs.require-image-digests }}
           # renovate: datasource=github-releases depName=truvity/ocictl
-          HELMCTL_VERSION: "0.6.1"
+          HELMCTL_VERSION: "0.8.0"
         run: |
           set -euo pipefail
 
