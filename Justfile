@@ -112,6 +112,10 @@ chart-paths-cases:
 release-pkl-cases:
     @./hack/release-pkl-cases.sh
 
+# pkl-fleet's target, consumer discovery, URI rewrite, resolve and pull-request steps
+pkl-fleet-cases:
+    @./hack/pkl-fleet-cases.sh
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary auto-release-cases chart-paths-cases release-pkl-cases
+check: lint pins runners leak-canary auto-release-cases chart-paths-cases release-pkl-cases pkl-fleet-cases
     @echo "✓ All checks passed"
