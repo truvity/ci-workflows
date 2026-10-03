@@ -109,6 +109,48 @@ on:
         required: false
         type: string
         default: ""
+      cache-recipe:
+        description: >-
+          The one recipe that restores and saves `cache-paths`, scoped to
+          its own job the way `lint-recipe` scopes the golangci-lint
+          cache. Empty (the default) turns the whole mechanism off, and
+          the workflow behaves exactly as before.
+
+          For a recipe that re-fetches the same immutable artifacts on
+          every run (pinned charts, downloaded schemas). Never cache
+          credentials or a tool's login state: restore only the
+          directory that holds the fetched artifacts.
+        required: false
+        type: string
+        default: ''
+      cache-paths:
+        description: >-
+          Newline-separated paths for actions/cache, as it takes them
+          (`~` expands to the runner's home). Used only with
+          `cache-recipe`.
+        required: false
+        type: string
+        default: ''
+      cache-key:
+        description: >-
+          Key prefix; the saved key is
+          `<cache-key>-<runner os>-<hash of cache-key-files>`. Used only
+          with `cache-recipe`.
+        required: false
+        type: string
+        default: ''
+      cache-key-files:
+        description: >-
+          Newline-separated globs whose content is hashed into the key
+          (hashFiles), so a change to what the recipe fetches starts a
+          new entry. A reusable workflow's caller cannot evaluate
+          hashFiles in `with:`, which is why the globs travel as an input.
+          When no entry matches the exact key, the newest one with the
+          same `<cache-key>-<runner os>-` prefix is restored and the
+          recipe tops it up.
+        required: false
+        type: string
+        default: ''
       fetch-depth:
         description: >-
           0 for repositories whose task runner compares against the base
@@ -471,6 +513,17 @@ jobs:
           key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
           restore-keys: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
 
+      # Opt-in, one recipe (cache-recipe). The key carries the hash of
+      # cache-key-files so a changed input starts a fresh entry, and the
+      # prefix is the fallback so a near-miss still restores most of it.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: recipe-cache
+        if: inputs.cache-recipe != '' && matrix.recipe == inputs.cache-recipe && inputs.cache-paths != ''
+        with:
+          path: ${{ inputs.cache-paths }}
+          key: ${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles(inputs.cache-key-files) }}
+          restore-keys: ${{ inputs.cache-key }}-${{ runner.os }}-
+
       # Through env, never spliced into the script: a ${{ }} expression is
       # pasted in before bash parses the line, so a value carrying a quote
       # or $( ) would execute.
@@ -557,3 +610,9 @@ jobs:
         with:
           path: ~/.cache/golangci-lint
           key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && inputs.cache-recipe != '' && matrix.recipe == inputs.cache-recipe && inputs.cache-paths != '' && steps.recipe-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ inputs.cache-paths }}
+          key: ${{ steps.recipe-cache.outputs.cache-primary-key }}

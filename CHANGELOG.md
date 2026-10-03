@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `check.yaml` gains an opt-in per-recipe cache: `cache-recipe` names the one recipe that restores and saves `cache-paths` (actions/cache, pinned), keyed `<cache-key>-<runner os>-<hash of cache-key-files>` with the `<cache-key>-<runner os>-` prefix as the restore fallback. All four default to empty, which leaves every caller unchanged. Meant for a recipe that re-fetches the same immutable artifacts each run; cache the fetched artifacts only, never credentials.
+
 ## v3.25.0
 
 - The token exchange in `auto-release.yaml`, `parity-fleet.yaml`, `pkl-fleet.yaml` and `renovate-fleet.yaml` is `truvity/ci-actions/token-exchange` (pinned at v1.9.0) instead of the `truvity/access-roster` root action, so no reusable workflow references access-roster as an action. Same inputs and outputs.
