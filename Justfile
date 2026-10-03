@@ -100,10 +100,6 @@ runners:
 leak-canary:
     @./hack/leak-canary.sh
 
-# auto-release's release-decision cases
-auto-release-cases:
-    @./hack/auto-release-cases.sh
-
 # release-public's `charts` input: plain names, repository-root paths, refusals
 chart-paths-cases:
     @./hack/chart-paths-cases.sh
@@ -117,5 +113,5 @@ pkl-fleet-cases:
     @./hack/pkl-fleet-cases.sh
 
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary auto-release-cases chart-paths-cases release-pkl-cases pkl-fleet-cases
+check: lint pins runners leak-canary chart-paths-cases release-pkl-cases pkl-fleet-cases
     @echo "✓ All checks passed"

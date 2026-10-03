@@ -299,68 +299,16 @@ jobs:
       # Rebase merges map every pushed commit to its PR, so the
       # association lookup holds across the estate's merge method.
       # Other pushes exit quietly here — the weekly schedule remains
-      # their lane. Both jobs' blocks are tested by hack/auto-release-cases.sh.
+      # their lane. The rules are the ci-actions `auto-release` action's, tested there.
       - name: Release security and fix pushes
         id: gate
         if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          # Context reaches the script through env, never inline
-          # interpolation into the shell text (CodeQL actions/code
-          # injection — alerts 26/27; repository and sha are benign
-          # here, but the hygiene is uniform on purpose).
-          REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          # >>> gate (hack/auto-release-cases.sh runs this block; keep both jobs identical)
-          release() { echo "$1 — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          batch() { echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$1 — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          conv='^[A-Za-z]+(\([^)]*\))?!?: '
-          fix='^fix(\([^)]*\))?!?: '
-          prs=$(gh api "repos/$REPO/commits/$SHA/pulls")
-          n=$(jq 'length' <<<"$prs")
-          if [ "$n" -gt 0 ]; then
-            # Security lane, unchanged: any associated PR labelled `security`.
-            if jq -e 'any(.[]; any(.labels[]; .name == "security"))' <<<"$prs" >/dev/null; then
-              release "security-labeled merge"
-            fi
-            # Fix lane. For each associated PR that renovate did not open
-            # (a Bot login containing "renovate", or the preset's
-            # `dependencies` label): the PR TITLE is the source of truth,
-            # since it is what a squash merge writes and what a reviewer
-            # read. A conventional title decides alone, so a `feat:` title
-            # over a fix commit batches. Only a title with no conventional
-            # prefix defers to the PR's commits, any one of which being a
-            # fix releases (rebase merges of several commits).
-            while IFS=$'\t' read -r num title; do
-              if [[ "$title" =~ $fix ]]; then
-                release "fix merge (#$num)"
-              elif [[ "$title" =~ $conv ]]; then
-                continue
-              fi
-              subjects=$(gh api "repos/$REPO/pulls/$num/commits" --paginate \
-                --jq '.[].commit.message | split("\n")[0]')
-              while IFS= read -r subject; do
-                if [[ "$subject" =~ $fix ]]; then
-                  release "fix commit in unconventionally titled merge (#$num)"
-                fi
-              done <<<"$subjects"
-            done < <(jq -r '.[]
-              | select(((.user.type == "Bot" and (.user.login | test("renovate"; "i")))
-                        or any(.labels[]; .name == "dependencies")) | not)
-              | [.number, .title] | @tsv' <<<"$prs")
-          else
-            # No PR (direct push): the head commit's subject, same rules.
-            head=$(gh api "repos/$REPO/commits/$SHA")
-            subject=$(jq -r '.commit.message | split("\n")[0]' <<<"$head")
-            if [[ "$subject" =~ $fix ]] \
-               && ! jq -e '(.author.type == "Bot" and (.author.login | test("renovate"; "i")))' <<<"$head" >/dev/null; then
-              release "fix commit pushed directly"
-            fi
-          fi
-          batch "push without a security label or a hand-written fix"
-          # <<< gate
+        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        with:
+          step: gate
+          token: ${{ steps.token.outputs.token }}
+          repository: ${{ github.repository }}
+          sha: ${{ github.sha }}
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -377,192 +325,18 @@ jobs:
 
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
-        env:
-          PREFIX: ${{ inputs.tag-prefix }}
-          BOT: ${{ steps.token.outputs.app-slug }}
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          REPO: ${{ github.repository }}
-          BASE: ${{ github.event.repository.default_branch }}
-          HEADING_MODE: ${{ inputs.changelog-heading }}
-          CHANGELOG: ${{ inputs.changelog-path }}
-          WAIT_MINUTES: ${{ inputs.changelog-wait-minutes }}
-          VERSION_BUMP_COMMAND: ${{ inputs.version-bump-command }}
-        run: |
-          set -euo pipefail
-          # >>> tag (hack/auto-release-cases.sh runs this block; keep both jobs identical)
-          summary() { echo "$*" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
-          CHANGELOG=${CHANGELOG:-CHANGELOG.md}
-          HEADING_MODE=${HEADING_MODE:-auto}
-          WAIT_MINUTES=${WAIT_MINUTES:-20}
-          BASE=${BASE:-master}
-          VERSION_BUMP_COMMAND=${VERSION_BUMP_COMMAND:-}
-
-          # A bump lands in the heading's pull request, so it cannot land with
-          # no pull request at all.
-          if [ -n "$VERSION_BUMP_COMMAND" ] && [ "$HEADING_MODE" = never ]; then
-            echo "::error::version-bump-command needs the heading pull request to carry the bump, so it cannot be combined with changelog-heading: never"
-            exit 1
-          fi
-
-          LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
-          if [ -z "$LATEST" ]; then
-            summary "no ${PREFIX}* releases yet — a human cuts the first one"
-            exit 0
-          fi
-          if [ "$(git rev-parse "$LATEST^{commit}")" = "$(git rev-parse HEAD)" ]; then
-            summary "master == $LATEST — nothing to release"
-            exit 0
-          fi
-          NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
-          git config user.name "${BOT}[bot]"
-          git config user.email "${BOT}[bot]@users.noreply.github.com"
-
-          # has_heading FILE TAG: a `## TAG` heading, bare or followed by a date.
-          has_heading() { awk -v t="$2" '$1 == "##" && $2 == t { f = 1 } END { exit !f }' "$1"; }
-
-          # ── The CHANGELOG heading, so the tag never ships under `## Unreleased` ──
-          # TARGET is the commit the tag will name. It stays HEAD unless the heading
-          # has to be written, in which case it becomes the commit that wrote it.
-          TARGET=$(git rev-parse HEAD)
-          edit=""
-          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ]; then
-            # A release PR a person is preparing: do not race it.
-            waiting=$(gh pr list --repo "$REPO" --state open --limit 100 --json title \
-              --jq '[.[] | select(.title | test("^docs\\(changelog\\): heading for the v[0-9]+\\.[0-9]+\\.0 release"))] | length')
-            if [ "${waiting:-0}" != 0 ]; then
-              summary "a changelog-heading PR for a minor or major release is open — leaving $NEXT to it"
-              exit 0
-            fi
-
-            if has_heading "$CHANGELOG" "$NEXT"; then
-              summary "$CHANGELOG already has a heading for $NEXT — tagging as it stands"
-            else
-              first=$(grep -m1 '^## ' "$CHANGELOG" || true)
-              entries=$(awk '/^## /{ n++; next } n == 1 && NF && !/^#/ { c++ } END { print c + 0 }' "$CHANGELOG")
-              if [[ $first != "## Unreleased"* ]] && grep -q '^## Unreleased' "$CHANGELOG"; then
-                echo "::warning::$CHANGELOG has an Unreleased heading that is not the first — leaving it alone"
-                HEADING_MODE=never
-              elif [[ $first == "## Unreleased"* ]] && [ "$entries" -gt 0 ]; then
-                edit=rename
-              fi
-            fi
-          fi
-
-          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ] && [ -z "$edit" ] && ! has_heading "$CHANGELOG" "$NEXT"; then
-            # Nothing under Unreleased: a dependency-only patch. C5 exempts it when
-            # the repo has not been writing patch headings; write one only where it
-            # has (the newest patch tag has its heading) or the caller asked.
-            patch=$(git tag --list "${PREFIX}*" --sort=-version:refname \
-              | grep -E '^[^.]*[0-9]+\.[0-9]+\.[0-9]+$' | awk -F. '$3 + 0 > 0' | head -1 || true)
-            if [ "$HEADING_MODE" = always ] || [ -n "$VERSION_BUMP_COMMAND" ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
-              edit=dependency
-            else
-              summary "no entries under Unreleased and no patch heading convention — $NEXT needs none (C5's automatic-patch case)"
-            fi
-          fi
-
-          if [ -n "$edit" ]; then
-            # The newest version heading says whether this repo dates its headings.
-            newest=$(awk '$1 == "##" && $2 ~ /^v[0-9]/ { print; exit }' "$CHANGELOG")
-            title="## $NEXT"
-            dated=' — [0-9]{4}-[0-9]{2}-[0-9]{2}$'
-            if [[ $newest =~ $dated ]]; then
-              title="$title — $(date -u +%F)"
-            fi
-            tmp=$(mktemp)
-            if [ "$edit" = rename ]; then
-              awk -v h="$title" '!done && /^## Unreleased/ { print h; done = 1; next } { print }' "$CHANGELOG" > "$tmp"
-            else
-              awk -v h="$title" '
-                !done && /^## / && !/^## Unreleased/ { print h; print ""; print "- Dependency updates."; print ""; done = 1 }
-                { print }
-                END { exit !done }' "$CHANGELOG" > "$tmp" || { summary "$CHANGELOG has no version heading to place $NEXT above — tagging as it stands"; edit=""; }
-            fi
-            if [ -n "$edit" ]; then
-              cat "$tmp" > "$CHANGELOG"
-            fi
-            rm -f "$tmp"
-          fi
-
-          # With a bump configured, a tag no pull request prepared would name a
-          # commit whose files still declare the old version. A heading already
-          # there means a person prepared the release (bump included), so it is
-          # tagged as it stands; anything else that leaves no pull request to
-          # carry the bump is a configuration the run cannot honour.
-          if [ -n "$VERSION_BUMP_COMMAND" ] && [ -z "$edit" ]; then
-            if [ -f "$CHANGELOG" ] && has_heading "$CHANGELOG" "$NEXT"; then
-              summary "version-bump-command skipped: $CHANGELOG already has the $NEXT heading, so a person prepared this release and the bump is theirs"
-            else
-              echo "::error::version-bump-command is set but no heading pull request can carry the bump ($CHANGELOG missing, misplaced, or without a version heading to place $NEXT above) — no tag cut"
-              exit 1
-            fi
-          fi
-
-          if [ -n "$edit" ]; then
-            # Master is protected: the heading goes in by pull request, and the tag
-            # waits for the merge so that it names the commit that carries it.
-            BRANCH="auto-release/changelog-$NEXT"
-            N=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
-            if [ -n "$N" ]; then
-              git checkout -q -- "$CHANGELOG"
-              summary "resuming #$N, the heading PR an earlier run opened for $NEXT"
-            else
-              git checkout -q -b "$BRANCH"
-              git add -- "$CHANGELOG"
-              if [ -n "$VERSION_BUMP_COMMAND" ]; then
-                # The caller's bump, in the caller's devbox, after the heading is
-                # staged: whatever it changes beyond that is its own work. It rides
-                # in this one commit, so the tagged merge commit carries both.
-                VERSION=${NEXT#"$PREFIX"} TAG=$NEXT devbox run -- bash -e -o pipefail -c "$VERSION_BUMP_COMMAND"
-                if [ -z "$(git diff --name-only; git ls-files --others --exclude-standard)" ]; then
-                  echo "::error::version-bump-command changed nothing — a bump that bumps nothing is a misconfiguration; no PR opened, no tag cut"
-                  exit 1
-                fi
-                git add -A
-              fi
-              git commit -q -m "docs(changelog): heading for the $NEXT release" \
-                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading.${VERSION_BUMP_COMMAND:+ It also carries the version bump of the version-bump-command input.}"
-              git push -q --force origin "$BRANCH"
-              URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
-                --title "docs(changelog): heading for the $NEXT release" \
-                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.${VERSION_BUMP_COMMAND:+ The version-bump-command input ran in the same commit, so the tagged commit declares the version it is tagged as.}")
-              N=${URL##*/}
-              method=$(gh api "repos/$REPO" \
-                --jq 'if .allow_rebase_merge then "rebase" elif .allow_squash_merge then "squash" else "merge" end')
-              gh pr merge "$N" --repo "$REPO" --auto "--$method" \
-                || gh pr merge "$N" --repo "$REPO" "--$method" \
-                || { echo "::error::could not arm or perform the merge of #$N"; exit 1; }
-              summary "opened #$N for the $NEXT heading and armed its merge"
-            fi
-
-            deadline=$((SECONDS + WAIT_MINUTES * 60))
-            while :; do
-              state=$(gh pr view "$N" --repo "$REPO" --json state --jq .state)
-              [ "$state" != MERGED ] || break
-              if [ "$state" = CLOSED ]; then
-                echo "::error::#$N was closed without merging — no tag cut; the next run opens a fresh one"
-                exit 1
-              fi
-              if [ "$SECONDS" -ge "$deadline" ]; then
-                echo "::error::#$N did not merge within ${WAIT_MINUTES} minutes (checks, or a review the ruleset wants) — no tag cut; the next run resumes it"
-                exit 1
-              fi
-              sleep "${POLL_SECONDS:-30}"
-            done
-            TARGET=$(gh pr view "$N" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)
-            git fetch -q origin "$BASE"
-            if ! git merge-base --is-ancestor "$TARGET" "origin/$BASE" \
-               || ! git show "$TARGET:$CHANGELOG" | has_heading /dev/stdin "$NEXT"; then
-              echo "::error::the merge commit $TARGET of #$N is not on $BASE with the $NEXT heading — no tag cut"
-              exit 1
-            fi
-            git push -q origin --delete "$BRANCH" 2>/dev/null || true
-          fi
-
-          git tag -a "$NEXT" "$TARGET" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
-          git push origin "$NEXT"
-          summary "released $NEXT"
-          # <<< tag
+        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        with:
+          step: tag
+          token: ${{ steps.token.outputs.token }}
+          repository: ${{ github.repository }}
+          tag-prefix: ${{ inputs.tag-prefix }}
+          bot: ${{ steps.token.outputs.app-slug }}
+          base: ${{ github.event.repository.default_branch }}
+          changelog-heading: ${{ inputs.changelog-heading }}
+          changelog-path: ${{ inputs.changelog-path }}
+          changelog-wait-minutes: ${{ inputs.changelog-wait-minutes }}
+          version-bump-command: ${{ inputs.version-bump-command }}
 
   # ── token-source: access-roster ──────────────────────────────────────
   # The same steps, minting differently. See the note at the top of the
@@ -605,60 +379,12 @@ jobs:
       - name: Release security and fix pushes
         id: gate
         if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.github-token }}
-          REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          # >>> gate (hack/auto-release-cases.sh runs this block; keep both jobs identical)
-          release() { echo "$1 — releasing outside the weekly batch" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          batch() { echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$1 — Monday's batch carries it" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          conv='^[A-Za-z]+(\([^)]*\))?!?: '
-          fix='^fix(\([^)]*\))?!?: '
-          prs=$(gh api "repos/$REPO/commits/$SHA/pulls")
-          n=$(jq 'length' <<<"$prs")
-          if [ "$n" -gt 0 ]; then
-            # Security lane, unchanged: any associated PR labelled `security`.
-            if jq -e 'any(.[]; any(.labels[]; .name == "security"))' <<<"$prs" >/dev/null; then
-              release "security-labeled merge"
-            fi
-            # Fix lane. For each associated PR that renovate did not open
-            # (a Bot login containing "renovate", or the preset's
-            # `dependencies` label): the PR TITLE is the source of truth,
-            # since it is what a squash merge writes and what a reviewer
-            # read. A conventional title decides alone, so a `feat:` title
-            # over a fix commit batches. Only a title with no conventional
-            # prefix defers to the PR's commits, any one of which being a
-            # fix releases (rebase merges of several commits).
-            while IFS=$'\t' read -r num title; do
-              if [[ "$title" =~ $fix ]]; then
-                release "fix merge (#$num)"
-              elif [[ "$title" =~ $conv ]]; then
-                continue
-              fi
-              subjects=$(gh api "repos/$REPO/pulls/$num/commits" --paginate \
-                --jq '.[].commit.message | split("\n")[0]')
-              while IFS= read -r subject; do
-                if [[ "$subject" =~ $fix ]]; then
-                  release "fix commit in unconventionally titled merge (#$num)"
-                fi
-              done <<<"$subjects"
-            done < <(jq -r '.[]
-              | select(((.user.type == "Bot" and (.user.login | test("renovate"; "i")))
-                        or any(.labels[]; .name == "dependencies")) | not)
-              | [.number, .title] | @tsv' <<<"$prs")
-          else
-            # No PR (direct push): the head commit's subject, same rules.
-            head=$(gh api "repos/$REPO/commits/$SHA")
-            subject=$(jq -r '.commit.message | split("\n")[0]' <<<"$head")
-            if [[ "$subject" =~ $fix ]] \
-               && ! jq -e '(.author.type == "Bot" and (.author.login | test("renovate"; "i")))' <<<"$head" >/dev/null; then
-              release "fix commit pushed directly"
-            fi
-          fi
-          batch "push without a security label or a hand-written fix"
-          # <<< gate
+        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        with:
+          step: gate
+          token: ${{ steps.token.outputs.github-token }}
+          repository: ${{ github.repository }}
+          sha: ${{ github.sha }}
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -674,193 +400,15 @@ jobs:
 
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
-        env:
-          PREFIX: ${{ inputs.tag-prefix }}
-          # The catalogue id, which is the App's name at the issuer; the
-          # App's login on GitHub may carry a suffix. It names the tagger
-          # on an annotated tag and nothing else — GitHub attributes the
-          # push to the App whose token pushed it.
-          BOT: ${{ inputs.github-app }}
-          GH_TOKEN: ${{ steps.token.outputs.github-token }}
-          REPO: ${{ github.repository }}
-          BASE: ${{ github.event.repository.default_branch }}
-          HEADING_MODE: ${{ inputs.changelog-heading }}
-          CHANGELOG: ${{ inputs.changelog-path }}
-          WAIT_MINUTES: ${{ inputs.changelog-wait-minutes }}
-          VERSION_BUMP_COMMAND: ${{ inputs.version-bump-command }}
-        run: |
-          set -euo pipefail
-          # >>> tag (hack/auto-release-cases.sh runs this block; keep both jobs identical)
-          summary() { echo "$*" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
-          CHANGELOG=${CHANGELOG:-CHANGELOG.md}
-          HEADING_MODE=${HEADING_MODE:-auto}
-          WAIT_MINUTES=${WAIT_MINUTES:-20}
-          BASE=${BASE:-master}
-          VERSION_BUMP_COMMAND=${VERSION_BUMP_COMMAND:-}
-
-          # A bump lands in the heading's pull request, so it cannot land with
-          # no pull request at all.
-          if [ -n "$VERSION_BUMP_COMMAND" ] && [ "$HEADING_MODE" = never ]; then
-            echo "::error::version-bump-command needs the heading pull request to carry the bump, so it cannot be combined with changelog-heading: never"
-            exit 1
-          fi
-
-          LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
-          if [ -z "$LATEST" ]; then
-            summary "no ${PREFIX}* releases yet — a human cuts the first one"
-            exit 0
-          fi
-          if [ "$(git rev-parse "$LATEST^{commit}")" = "$(git rev-parse HEAD)" ]; then
-            summary "master == $LATEST — nothing to release"
-            exit 0
-          fi
-          NEXT=$(echo "$LATEST" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}')
-          git config user.name "${BOT}[bot]"
-          git config user.email "${BOT}[bot]@users.noreply.github.com"
-
-          # has_heading FILE TAG: a `## TAG` heading, bare or followed by a date.
-          has_heading() { awk -v t="$2" '$1 == "##" && $2 == t { f = 1 } END { exit !f }' "$1"; }
-
-          # ── The CHANGELOG heading, so the tag never ships under `## Unreleased` ──
-          # TARGET is the commit the tag will name. It stays HEAD unless the heading
-          # has to be written, in which case it becomes the commit that wrote it.
-          TARGET=$(git rev-parse HEAD)
-          edit=""
-          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ]; then
-            # A release PR a person is preparing: do not race it.
-            waiting=$(gh pr list --repo "$REPO" --state open --limit 100 --json title \
-              --jq '[.[] | select(.title | test("^docs\\(changelog\\): heading for the v[0-9]+\\.[0-9]+\\.0 release"))] | length')
-            if [ "${waiting:-0}" != 0 ]; then
-              summary "a changelog-heading PR for a minor or major release is open — leaving $NEXT to it"
-              exit 0
-            fi
-
-            if has_heading "$CHANGELOG" "$NEXT"; then
-              summary "$CHANGELOG already has a heading for $NEXT — tagging as it stands"
-            else
-              first=$(grep -m1 '^## ' "$CHANGELOG" || true)
-              entries=$(awk '/^## /{ n++; next } n == 1 && NF && !/^#/ { c++ } END { print c + 0 }' "$CHANGELOG")
-              if [[ $first != "## Unreleased"* ]] && grep -q '^## Unreleased' "$CHANGELOG"; then
-                echo "::warning::$CHANGELOG has an Unreleased heading that is not the first — leaving it alone"
-                HEADING_MODE=never
-              elif [[ $first == "## Unreleased"* ]] && [ "$entries" -gt 0 ]; then
-                edit=rename
-              fi
-            fi
-          fi
-
-          if [ "$HEADING_MODE" != never ] && [ -f "$CHANGELOG" ] && [ -z "$edit" ] && ! has_heading "$CHANGELOG" "$NEXT"; then
-            # Nothing under Unreleased: a dependency-only patch. C5 exempts it when
-            # the repo has not been writing patch headings; write one only where it
-            # has (the newest patch tag has its heading) or the caller asked.
-            patch=$(git tag --list "${PREFIX}*" --sort=-version:refname \
-              | grep -E '^[^.]*[0-9]+\.[0-9]+\.[0-9]+$' | awk -F. '$3 + 0 > 0' | head -1 || true)
-            if [ "$HEADING_MODE" = always ] || [ -n "$VERSION_BUMP_COMMAND" ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
-              edit=dependency
-            else
-              summary "no entries under Unreleased and no patch heading convention — $NEXT needs none (C5's automatic-patch case)"
-            fi
-          fi
-
-          if [ -n "$edit" ]; then
-            # The newest version heading says whether this repo dates its headings.
-            newest=$(awk '$1 == "##" && $2 ~ /^v[0-9]/ { print; exit }' "$CHANGELOG")
-            title="## $NEXT"
-            dated=' — [0-9]{4}-[0-9]{2}-[0-9]{2}$'
-            if [[ $newest =~ $dated ]]; then
-              title="$title — $(date -u +%F)"
-            fi
-            tmp=$(mktemp)
-            if [ "$edit" = rename ]; then
-              awk -v h="$title" '!done && /^## Unreleased/ { print h; done = 1; next } { print }' "$CHANGELOG" > "$tmp"
-            else
-              awk -v h="$title" '
-                !done && /^## / && !/^## Unreleased/ { print h; print ""; print "- Dependency updates."; print ""; done = 1 }
-                { print }
-                END { exit !done }' "$CHANGELOG" > "$tmp" || { summary "$CHANGELOG has no version heading to place $NEXT above — tagging as it stands"; edit=""; }
-            fi
-            if [ -n "$edit" ]; then
-              cat "$tmp" > "$CHANGELOG"
-            fi
-            rm -f "$tmp"
-          fi
-
-          # With a bump configured, a tag no pull request prepared would name a
-          # commit whose files still declare the old version. A heading already
-          # there means a person prepared the release (bump included), so it is
-          # tagged as it stands; anything else that leaves no pull request to
-          # carry the bump is a configuration the run cannot honour.
-          if [ -n "$VERSION_BUMP_COMMAND" ] && [ -z "$edit" ]; then
-            if [ -f "$CHANGELOG" ] && has_heading "$CHANGELOG" "$NEXT"; then
-              summary "version-bump-command skipped: $CHANGELOG already has the $NEXT heading, so a person prepared this release and the bump is theirs"
-            else
-              echo "::error::version-bump-command is set but no heading pull request can carry the bump ($CHANGELOG missing, misplaced, or without a version heading to place $NEXT above) — no tag cut"
-              exit 1
-            fi
-          fi
-
-          if [ -n "$edit" ]; then
-            # Master is protected: the heading goes in by pull request, and the tag
-            # waits for the merge so that it names the commit that carries it.
-            BRANCH="auto-release/changelog-$NEXT"
-            N=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
-            if [ -n "$N" ]; then
-              git checkout -q -- "$CHANGELOG"
-              summary "resuming #$N, the heading PR an earlier run opened for $NEXT"
-            else
-              git checkout -q -b "$BRANCH"
-              git add -- "$CHANGELOG"
-              if [ -n "$VERSION_BUMP_COMMAND" ]; then
-                # The caller's bump, in the caller's devbox, after the heading is
-                # staged: whatever it changes beyond that is its own work. It rides
-                # in this one commit, so the tagged merge commit carries both.
-                VERSION=${NEXT#"$PREFIX"} TAG=$NEXT devbox run -- bash -e -o pipefail -c "$VERSION_BUMP_COMMAND"
-                if [ -z "$(git diff --name-only; git ls-files --others --exclude-standard)" ]; then
-                  echo "::error::version-bump-command changed nothing — a bump that bumps nothing is a misconfiguration; no PR opened, no tag cut"
-                  exit 1
-                fi
-                git add -A
-              fi
-              git commit -q -m "docs(changelog): heading for the $NEXT release" \
-                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading.${VERSION_BUMP_COMMAND:+ It also carries the version bump of the version-bump-command input.}"
-              git push -q --force origin "$BRANCH"
-              URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
-                --title "docs(changelog): heading for the $NEXT release" \
-                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.${VERSION_BUMP_COMMAND:+ The version-bump-command input ran in the same commit, so the tagged commit declares the version it is tagged as.}")
-              N=${URL##*/}
-              method=$(gh api "repos/$REPO" \
-                --jq 'if .allow_rebase_merge then "rebase" elif .allow_squash_merge then "squash" else "merge" end')
-              gh pr merge "$N" --repo "$REPO" --auto "--$method" \
-                || gh pr merge "$N" --repo "$REPO" "--$method" \
-                || { echo "::error::could not arm or perform the merge of #$N"; exit 1; }
-              summary "opened #$N for the $NEXT heading and armed its merge"
-            fi
-
-            deadline=$((SECONDS + WAIT_MINUTES * 60))
-            while :; do
-              state=$(gh pr view "$N" --repo "$REPO" --json state --jq .state)
-              [ "$state" != MERGED ] || break
-              if [ "$state" = CLOSED ]; then
-                echo "::error::#$N was closed without merging — no tag cut; the next run opens a fresh one"
-                exit 1
-              fi
-              if [ "$SECONDS" -ge "$deadline" ]; then
-                echo "::error::#$N did not merge within ${WAIT_MINUTES} minutes (checks, or a review the ruleset wants) — no tag cut; the next run resumes it"
-                exit 1
-              fi
-              sleep "${POLL_SECONDS:-30}"
-            done
-            TARGET=$(gh pr view "$N" --repo "$REPO" --json mergeCommit --jq .mergeCommit.oid)
-            git fetch -q origin "$BASE"
-            if ! git merge-base --is-ancestor "$TARGET" "origin/$BASE" \
-               || ! git show "$TARGET:$CHANGELOG" | has_heading /dev/stdin "$NEXT"; then
-              echo "::error::the merge commit $TARGET of #$N is not on $BASE with the $NEXT heading — no tag cut"
-              exit 1
-            fi
-            git push -q origin --delete "$BRANCH" 2>/dev/null || true
-          fi
-
-          git tag -a "$NEXT" "$TARGET" -m "$NEXT — automatic release: master moved past $LATEST (renovate automerge)"
-          git push origin "$NEXT"
-          summary "released $NEXT"
-          # <<< tag
+        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        with:
+          step: tag
+          token: ${{ steps.token.outputs.github-token }}
+          repository: ${{ github.repository }}
+          tag-prefix: ${{ inputs.tag-prefix }}
+          bot: ${{ inputs.github-app }}
+          base: ${{ github.event.repository.default_branch }}
+          changelog-heading: ${{ inputs.changelog-heading }}
+          changelog-path: ${{ inputs.changelog-path }}
+          changelog-wait-minutes: ${{ inputs.changelog-wait-minutes }}
+          version-bump-command: ${{ inputs.version-bump-command }}
