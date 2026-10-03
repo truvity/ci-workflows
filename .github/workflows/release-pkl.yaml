@@ -316,8 +316,8 @@ jobs:
           MANIFEST: ${{ runner.temp }}/assets.txt
           SMOKE_IMPORT: ${{ inputs.smoke-import }}
           SMOKE_DIR: ${{ runner.temp }}/release-smoke
-          SMOKE_ATTEMPTS: "5"
-          SMOKE_SLEEP: "10"
+          SMOKE_ATTEMPTS: "8"
+          SMOKE_SLEEPS: "10 15 20 30 45 60 60 60"
         run: |
           # >>> smoke (hack/release-pkl-cases.sh runs this block)
           set -euo pipefail
@@ -340,16 +340,28 @@ jobs:
           [ "$i" -gt 0 ] || fail "no package metadata (<name>@$VERSION) among the assets to resolve"
 
           # The release was just published: allow the CDN a moment.
+          # Exponential-style backoff with increasing delays (seconds between attempts).
+          # Default: 8 attempts with sleeps of 10, 15, 20, 30, 45, 60, 60, 60 seconds
+          # (approximately 5 minutes total). Can be overridden via SMOKE_SLEEPS.
+          if [ -z "${SMOKE_SLEEPS+set}" ]; then
+            SMOKE_SLEEPS="10 15 20 30 45 60 60 60"
+          fi
+          declare -a sleeps=($SMOKE_SLEEPS)
           retry() {
-            local n=1
+            local attempt=0
             until "$@"; do
-              [ "$n" -lt "$SMOKE_ATTEMPTS" ] || return 1
-              n=$((n + 1)); sleep "$SMOKE_SLEEP"
+              ((attempt++))
+              if [ "$attempt" -ge "$SMOKE_ATTEMPTS" ]; then
+                return 1
+              fi
+              if [ "$attempt" -le "${#sleeps[@]}" ]; then
+                sleep "${sleeps[$((attempt-1))]}"
+              fi
             done
           }
           cache=(--cache-dir "$SMOKE_DIR/cache")
           retry "${pkl[@]}" project resolve "${cache[@]}" "$SMOKE_DIR/project" \
-            || fail "the $i published packages do not resolve from github.com — the release is up but unusable"
+            || fail "the $i published packages do not resolve from github.com — the release is up but the CDN may not have fully propagated; re-running the failed job is safe"
           echo "resolved $i packages from $base"
 
           if [ -n "$SMOKE_IMPORT" ]; then
@@ -367,7 +379,7 @@ jobs:
             [ "$n" -gt 0 ] || fail "smoke-import holds no entries"
             printf '%simported = List(%s).length\n' "$imports" "$(seq -s, -f 'm%g' 0 $((n - 1)))" > "$SMOKE_DIR/smoke.pkl"
             retry "${pkl[@]}" eval "${cache[@]}" "$SMOKE_DIR/smoke.pkl" \
-              || fail "the smoke module does not evaluate against the published packages"
+              || fail "the smoke module does not evaluate against the published packages — the release is up but the CDN may not have fully propagated; re-running the failed job is safe"
             echo "evaluated the smoke module"
           fi
           # <<< smoke

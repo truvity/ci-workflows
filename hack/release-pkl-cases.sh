@@ -206,10 +206,10 @@ publish_refused "an asset the build does not produce" "does not produce"
 
 # ── smoke ────────────────────────────────────────────────────────────────
 log="$work/pkl.log"
-run_smoke() { # <smoke-import> 
+run_smoke() { # <smoke-import>
   : > "$log"
   PKL_CMD="$work/bin/pkl" PKL_LOG="$log" REPO=o/r TAG=v0.1.0 VERSION=0.1.0 MANIFEST="$work/manifest" \
-    SMOKE_IMPORT="$1" SMOKE_DIR="$work/smoke" SMOKE_ATTEMPTS=3 SMOKE_SLEEP=0 bash "$work/smoke.sh" >"$work/out" 2>"$work/err"
+    SMOKE_IMPORT="$1" SMOKE_DIR="$work/smoke" SMOKE_ATTEMPTS=3 SMOKE_SLEEPS="" bash "$work/smoke.sh" >"$work/out" 2>"$work/err"
 }
 base=package://github.com/o/r/releases/download/v0.1.0
 run_smoke "" && pass "resolve only" || nope "resolve only: $(cat "$work/out")"
