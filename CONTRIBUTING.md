@@ -22,6 +22,7 @@ cannot be edited after the push.
 - `auto-release-cases` runs the release-decision cases of `auto-release`
 - `chart-paths-cases` runs the cases of `release-public`'s `charts` input (plain names, repository-root paths, refusals)
 - `release-pkl-cases` runs the blocks of `release-pkl` (tag, version and changelog refusals, the asset check, re-run behaviour against a stubbed `gh`, the smoke test against a stubbed Pkl)
+- `pkl-fleet-cases` runs the blocks of `pkl-fleet` (target version, consumer discovery, the dependency-URI rewrite in every form with its refusals, the resolve and generate step, the pull-request step against a local remote and a stubbed API)
 - `leak-canary`
 
 The repository is also exercised by its own `self-check` and `integration` workflows.
