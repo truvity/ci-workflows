@@ -7,6 +7,10 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `release-public.yaml`: the "Package and push charts" step (a 109-line embedded Python resolver and helmctl loop) is the `truvity/ci-actions/publish-charts` action. Same `charts`, `chart-root`, `chart-registry`, `chart-app-version`, `chart-images` and `require-image-digests` inputs, same refusal messages, same helmctl calls; `python3` is no longer needed on the runner for it.
+
+- `parity-fleet`, `renovate-fleet`, `pkl-fleet` and `auto-release`: the inline token-input check (four copies) is the `truvity/ci-actions/token-inputs` action, and the inline enrolment-list read (four copies, `yq` and `jq`) is `truvity/ci-actions/enrolment-list`, both pinned at ci-actions v1.10.0. Same messages, same order, same exit status, same `names` output. Only a plain dotted `list` path is read now (no `yq` expression syntax), and `yq` and `jq` are no longer needed on the runner for it.
+
 - `release-public.yaml`: the "Publish Nix flakes" step (a 149-line Python generator and nix loop) is the `truvity/ci-actions/publish-nix-flakes` action. The generated `flake.nix` is byte-identical, as are the uploaded asset names and the deterministic packing; `python3` is no longer needed on the runner for it.
 
 - `parity-fleet`, `renovate-fleet`, `pkl-fleet` and `auto-release`: the inline token-input check (four copies) is the `truvity/ci-actions/token-inputs` action, and the inline enrolment-list read (four copies, `yq` and `jq`) is `truvity/ci-actions/enrolment-list`, both pinned at ci-actions v1.10.0. Same messages, same order, same exit status, same `names` output. Only a plain dotted `list` path is read now (no `yq` expression syntax), and `yq` and `jq` are no longer needed on the runner for it.
