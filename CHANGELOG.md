@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `release-private.yaml`: the ARC builder registration step is the `truvity/ci-actions/setup-remote-builders` action (pinned at v1.8.0, as `integration.yaml` already does) instead of an inline copy of its shell. Same input (`remote-builders`), same builder name (`ci`), same `BUILDX_BUILDER` export; the only visible difference is the wording of the error for an empty `remote-builders`.
+
 ## v3.24.1
 
 - `release-pkl.yaml`: the smoke test now retries with exponential backoff, sleeping 10, 15, 20, 30, 45, 60, 60, 60 seconds (approximately 5 minutes total) instead of a constant 10 seconds 5 times, to account for CDN propagation delays when release assets are just published.
