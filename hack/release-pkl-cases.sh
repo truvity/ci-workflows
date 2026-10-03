@@ -17,12 +17,18 @@ block() {
   awk -v n="$1" '$0 ~ "# >>> " n " "{on=1} on{print} $0 ~ "# <<< " n{on=0}' "$wf" | sed 's/^          //' > "$work/$1.sh"
   [ -s "$work/$1.sh" ] || { echo "no $1 block found"; exit 1; }
 }
-for b in checks assets publish smoke; do block "$b"; done
+for b in checks assets publish smoke notify; do block "$b"; done
 
 mkdir "$work/bin"
 cat > "$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 # A release store in $STATE: `exists`, `assets/`, and a `calls` log.
+if [ "$1" = api ]; then
+  # The notify dispatch: logged with the token it was sent with; $GH_API_FAIL refuses it.
+  echo "api $GH_TOKEN $*" >> "$STATE/api_calls"
+  [ -z "${GH_API_FAIL:-}" ] || { echo "HTTP 403: Resource not accessible by integration" >&2; exit 1; }
+  exit 0
+fi
 [ "$1" = release ] || { echo "stub gh: unexpected $*" >&2; exit 2; }
 cmd="$2"; shift 2
 echo "$cmd $*" >> "$STATE/calls"
@@ -231,6 +237,30 @@ PKL_FAIL="project resolve" run_smoke "" && nope "failed resolve passed" || { gre
 PKL_FAIL="eval" run_smoke "a.one#/One.pkl" && nope "failed eval passed" || { grep -q "does not evaluate" "$work/out" && pass "a failed evaluation fails the job" || nope "failed eval: $(cat "$work/out")"; }
 PKL_FLAKY=2 run_smoke "" && pass "a resolve that fails twice is retried" || nope "retry: $(cat "$work/out")"
 PKL_FLAKY=9 run_smoke "" && nope "endless failure passed" || pass "retries are bounded"
+
+# ── notify ───────────────────────────────────────────────────────────────
+run_notify() { # <token> <workflow>; env GH_API_FAIL may be set
+  rm -rf "$state"; mkdir -p "$state"; : > "$state/api_calls"; : > "$work/summary"
+  STATE="$state" PATH="$work/bin:$PATH" GH_TOKEN="$1" NOTIFY_REPOSITORY=o/caller NOTIFY_WORKFLOW="$2" \
+    NOTIFY_REF=master VERSION=0.1.0 GITHUB_STEP_SUMMARY="$work/summary" bash "$work/notify.sh" >"$work/out" 2>"$work/err"
+}
+run_notify tok pkl.yaml && pass "notify: dispatch accepted" || nope "notify: job step failed: $(cat "$work/out")"
+grep -q '^api tok api --method POST repos/o/caller/actions/workflows/pkl.yaml/dispatches -f ref=master -f inputs\[version\]=0.1.0$' "$state/api_calls" \
+  && [ "$(wc -l < "$state/api_calls")" = 1 ] \
+  && pass "  one POST to the workflow's dispatches, with the minted token, ref and version" || nope "  api calls: $(cat "$state/api_calls")"
+grep -q 'Dispatched pkl.yaml in o/caller on master for 0.1.0' "$work/summary" && pass "  the summary says it was dispatched" || nope "  summary: $(cat "$work/summary")"
+GH_API_FAIL=1 run_notify tok pkl.yaml && pass "notify: a refused dispatch does not fail the step" || nope "notify: a refused dispatch failed the step"
+grep -q '^::warning::Dispatching pkl.yaml in o/caller failed (HTTP 403' "$work/out" \
+  && grep -q "gh workflow run 'pkl.yaml' --repo 'o/caller' --ref 'master' -f version='0.1.0'" "$work/summary" \
+  && pass "  warns, and the summary says what to dispatch by hand" || nope "  out: $(cat "$work/out") summary: $(cat "$work/summary")"
+run_notify "" pkl.yaml && pass "notify: no token (a refused exchange) does not fail the step" || nope "notify: no token failed the step"
+[ ! -s "$state/api_calls" ] && grep -q '^::warning::No token' "$work/out" && grep -q 'gh workflow run' "$work/summary" \
+  && pass "  nothing sent, warns, by-hand line in the summary" || nope "  api: $(cat "$state/api_calls") out: $(cat "$work/out")"
+run_notify tok "" && pass "notify: no workflow named does not fail the step" || nope "notify: no workflow failed the step"
+[ ! -s "$state/api_calls" ] && grep -q 'without notify-workflow' "$work/out" && pass "  nothing sent, warns" || nope "  out: $(cat "$work/out")"
+# Not configured: the job is skipped by its `if`, so nothing here may depend on a notify input.
+grep -q "if: inputs.notify-repository != ''" "$wf" && pass "notify: the job is skipped when notify-repository is empty" || nope "notify: the job has no empty-input skip"
+awk '/^  notify:/{on=1} on' "$wf" | grep -q 'contents:' && nope "notify: the job holds a contents permission" || pass "notify: the job holds no contents permission"
 
 [ "$fail" = 0 ] && echo "release-pkl cases passed"
 exit "$fail"

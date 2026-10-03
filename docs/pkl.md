@@ -90,10 +90,16 @@ rewritten: only `PklProject` and `PklProject.deps.json` are.
 
 ### Calling it
 
-Poll rather than dispatch. A `repository_dispatch` from the library's release
-workflow into the caller would need a token, held by the library's repository,
-that can write to the caller. A schedule needs nothing from the library, an
-idle run is a few API reads, and the latency is the period.
+Poll, and optionally be told. A schedule needs nothing from the library, an
+idle run is a few API reads, and the latency is the period; but GitHub may
+skip scheduled runs, so the library's release can also start the caller at
+once: `release-pkl.yaml` takes `notify-repository` and `notify-workflow` and,
+after its smoke test, dispatches the caller's `workflow_dispatch` with
+`version` set to the release. That needs no token held in the library's
+repository: the release job's OIDC token is exchanged at access-roster for an
+installation token narrowed to the caller with `actions: write` (see the
+header of `release-pkl.yaml`). The schedule stays as the safety net, and a
+failed dispatch only warns.
 
 ```yaml
 # .github/workflows/pkl.yaml in the caller repository

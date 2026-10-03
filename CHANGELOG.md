@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `release-pkl.yaml` can start the consumer fleet at once instead of waiting for its schedule. With `notify-repository` (for example the caller that runs `pkl-fleet`) and `notify-workflow` (for example `pkl.yaml`, which must declare `workflow_dispatch` with a `version` input) set, a new last job, `notify`, runs only after the smoke test has passed: it exchanges the job's GitHub OIDC token at access-roster (`access-roster-issuer`, `github-app`, the pinned `truvity/access-roster` action) for an installation token narrowed to the notify repository with `actions: write`, and dispatches the workflow on `notify-ref` (default `master`) with `version` set to the released version. The assets are already published by then, so a missing grant, a refused exchange or a failed dispatch is a warning and a job-summary line naming the `gh workflow run` to run by hand, never a red run. With the notify inputs empty (the default) the job is skipped and nothing changes. **Callers must now also grant `id-token: write` on their `release` job**, notifying or not: the `notify` job asks for it (and for nothing else, so the caller's build recipes in the `release` job still hold only `contents: write`), and GitHub checks a reusable workflow's permissions when the run starts, even for a skipped job. `hack/release-pkl-cases.sh` covers the dispatch (token, ref and inputs), the skipped case and that a refusal only warns.
+
 ## v3.24.1
 
 - `release-pkl.yaml`: the smoke test now retries with exponential backoff, sleeping 10, 15, 20, 30, 45, 60, 60, 60 seconds (approximately 5 minutes total) instead of a constant 10 seconds 5 times, to account for CDN propagation delays when release assets are just published.

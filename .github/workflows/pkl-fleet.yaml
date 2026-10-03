@@ -58,11 +58,12 @@
 # that is not a published release is refused.
 #
 # TRIGGER. Nothing here runs by itself: the caller decides. A schedule that
-# polls is the simplest fit for the credential model, because a run needs no
-# credential from the library's repository (a `repository_dispatch` into the
-# caller would need a token able to write to the caller, held by the
-# library's release workflow). Hourly is a latency of an hour, and an idle
-# run is a few API reads. `workflow_dispatch` for a bump on demand.
+# polls needs no credential from the library's repository and an idle run is
+# a few API reads, but GitHub may skip scheduled runs, so it is the safety
+# net. `workflow_dispatch` is the bump on demand, and the one the library's
+# release uses: release-pkl.yaml's `notify-repository` / `notify-workflow`
+# dispatch it with `version` after a release, with a token the library's
+# release job exchanges at access-roster, not one it holds.
 #
 #   on:
 #     schedule:

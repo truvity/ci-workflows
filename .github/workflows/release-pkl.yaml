@@ -21,6 +21,7 @@
 #     release:
 #       permissions:
 #         contents: write
+#         id-token: write # see PERMISSIONS: needed even without `notify-*`
 #       uses: truvity/ci-workflows/.github/workflows/release-pkl.yaml@<sha> # vX.Y.Z
 #       with:
 #         version-command: sed -n 's/^version = "\(.*\)"$/\1/p' packages/Release.pkl
@@ -66,9 +67,41 @@
 # release and the tag (nobody can have pinned a version that never resolved)
 # or fix forward with the next version.
 #
-# The marked blocks (`>>> checks`, `>>> assets`, `>>> publish`, `>>> smoke`)
-# are run by hack/release-pkl-cases.sh as written, against stubbed `gh` and
-# Pkl.
+# NOTIFYING THE FLEET (optional). A consumer fleet that polls (pkl-fleet on a
+# schedule) is only as quick as GitHub keeps its schedule, which it may skip.
+# Give `notify-repository` and `notify-workflow` and, once the smoke test has
+# passed, a last job dispatches that workflow (`workflow_dispatch`, on
+# `notify-ref`, default master) with `version` set to the released version,
+# so the pin bumps start now. The token is minted at access-roster from the
+# release job's GitHub OIDC token (`access-roster-issuer`, `github-app`),
+# narrowed to the notify repository with `actions: write` and nothing else;
+# the issuer's grant must name exactly that. The dispatch is a courtesy, not a
+# step of the release: the assets are already published, so a refusal, a
+# missing grant or a failed dispatch is a warning and a line in the job
+# summary that says what to run by hand, and never turns the run red. Empty
+# notify inputs (the default) mean the job is skipped and nothing else
+# changes.
+#
+# PERMISSIONS. `release` (which runs the caller's recipes) holds
+# `contents: write` only. The `notify` job holds `id-token: write` only, so
+# the caller's build code can never mint an identity token. GitHub checks a
+# reusable workflow's permissions when the run starts, whether or not a job
+# is skipped, and `permissions` cannot depend on an input: the caller must
+# therefore grant `id-token: write` on its job, notifying or not.
+#
+#       permissions:
+#         contents: write
+#         id-token: write
+#       with:
+#         ...
+#         notify-repository: truvity/ci-caller
+#         notify-workflow: pkl.yaml
+#         access-roster-issuer: https://access.example
+#         github-app: renovate-public
+#
+# The marked blocks (`>>> checks`, `>>> assets`, `>>> publish`, `>>> smoke`,
+# `>>> notify`) are run by hack/release-pkl-cases.sh as written, against
+# stubbed `gh` and Pkl.
 name: release-pkl
 
 on:
@@ -126,10 +159,49 @@ on:
         required: false
         type: number
         default: 20
+      notify-repository:
+        description: >-
+          `owner/name` of the repository whose workflow is dispatched after a
+          successful release (for example the caller that runs pkl-fleet).
+          Empty (the default): no notification, and the job is skipped.
+        required: false
+        type: string
+        default: ""
+      notify-workflow:
+        description: >-
+          The workflow file in `notify-repository` to dispatch, for example
+          `pkl.yaml`. It must declare `workflow_dispatch` with a `version`
+          input. Required with `notify-repository`.
+        required: false
+        type: string
+        default: ""
+      notify-ref:
+        description: The ref of `notify-repository` the workflow is dispatched on.
+        required: false
+        type: string
+        default: master
+      access-roster-issuer:
+        description: >-
+          The access-roster issuer URL the notify token is exchanged at.
+          Required with `notify-repository`.
+        required: false
+        type: string
+        default: ""
+      github-app:
+        description: >-
+          The App's catalogue id at the issuer whose installation token
+          dispatches the workflow; the issuer's grant for this job decides
+          whether it gets `actions: write` on `notify-repository`. Required
+          with `notify-repository`.
+        required: false
+        type: string
+        default: ""
 
 # A reusable workflow can only NARROW what the caller granted, never widen
 # it, so this is a floor and the caller must grant `contents: write`. It is
-# the only permission: the release and its assets are all this writes.
+# the only permission of the `release` job: the release and its assets are all
+# that job writes. The `notify` job asks for `id-token: write` alone, and the
+# caller must grant that too (see PERMISSIONS above).
 permissions:
   contents: write
 
@@ -150,6 +222,8 @@ jobs:
     needs: runners
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    outputs:
+      version: ${{ steps.checks.outputs.version }}
     # Queue, never cancel: cancelling mid-upload is how a release is left
     # with some of its assets. One group per ref, so two tags run side by
     # side and a re-run of one waits for the first.
@@ -383,3 +457,68 @@ jobs:
             echo "evaluated the smoke module"
           fi
           # <<< smoke
+
+  # After the release is published AND resolves from github.com (a failed
+  # smoke test fails `release`, and this job with it is skipped). Everything
+  # here is best effort: the assets are out, so no step may fail the run.
+  # No checkout and no devbox: it runs nothing of the caller's.
+  notify:
+    needs: release
+    if: inputs.notify-repository != ''
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: Name the notify repository
+        id: target
+        env:
+          NOTIFY_REPOSITORY: ${{ inputs.notify-repository }}
+        run: |
+          case "$NOTIFY_REPOSITORY" in
+            */*) echo "name=${NOTIFY_REPOSITORY#*/}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::warning::notify-repository '$NOTIFY_REPOSITORY' is not owner/name" ;;
+          esac
+
+      # `continue-on-error`: a refused exchange (no grant yet, issuer down)
+      # must not fail the run. The next step sees the empty token.
+      - uses: truvity/access-roster@ee6588973567a514663b5ad559141c2313621fc3 # v1.39.1
+        id: roster-token
+        if: steps.target.outputs.name != '' && inputs.access-roster-issuer != '' && inputs.github-app != ''
+        continue-on-error: true
+        with:
+          issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          repositories: ${{ steps.target.outputs.name }}
+          permissions: actions:write
+
+      - name: Dispatch the notify workflow
+        env:
+          GH_TOKEN: ${{ steps.roster-token.outputs.github-token }}
+          NOTIFY_REPOSITORY: ${{ inputs.notify-repository }}
+          NOTIFY_WORKFLOW: ${{ inputs.notify-workflow }}
+          NOTIFY_REF: ${{ inputs.notify-ref }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          # >>> notify (hack/release-pkl-cases.sh runs this block)
+          set -uo pipefail
+          # Never fails the job: the release is already published.
+          warn() { echo "::warning::$1"; echo "- $1" >> "$GITHUB_STEP_SUMMARY"; }
+          by_hand="Dispatch it by hand: gh workflow run '$NOTIFY_WORKFLOW' --repo '$NOTIFY_REPOSITORY' --ref '$NOTIFY_REF' -f version='$VERSION'"
+          if [ -z "$NOTIFY_WORKFLOW" ]; then
+            warn "notify-repository is set without notify-workflow, so nothing was dispatched for $VERSION."
+            exit 0
+          fi
+          if [ -z "${GH_TOKEN:-}" ]; then
+            warn "No token to dispatch $NOTIFY_WORKFLOW in $NOTIFY_REPOSITORY (access-roster-issuer and github-app set? the issuer's grant for this job?). The release itself is published. $by_hand"
+            exit 0
+          fi
+          if out=$(gh api --method POST "repos/$NOTIFY_REPOSITORY/actions/workflows/$NOTIFY_WORKFLOW/dispatches" \
+              -f ref="$NOTIFY_REF" -f "inputs[version]=$VERSION" 2>&1); then
+            echo "- Dispatched $NOTIFY_WORKFLOW in $NOTIFY_REPOSITORY on $NOTIFY_REF for $VERSION." >> "$GITHUB_STEP_SUMMARY"
+            echo "dispatched $NOTIFY_WORKFLOW in $NOTIFY_REPOSITORY for $VERSION"
+          else
+            warn "Dispatching $NOTIFY_WORKFLOW in $NOTIFY_REPOSITORY failed ($(printf '%s' "$out" | tr '\n' ' ')). The release itself is published. $by_hand"
+          fi
+          exit 0
+          # <<< notify
