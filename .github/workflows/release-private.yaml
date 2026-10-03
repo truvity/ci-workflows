@@ -353,43 +353,13 @@ jobs:
         if: runner.environment != 'self-hosted'
 
       # ARC: the CI plane's warm BuildKit builders as the buildx builder
-      # (native builds on a hot layer cache; no QEMU). Inlined rather
-      # than `uses:`-ing truvity/ci-actions setup-remote-builders because a
-      # reusable workflow can only reference an action by a commit that
-      # already exists; the action is the same step for callers that run
-      # their release inline. Keep the two in step.
-      - name: Register the remote builders
+      # (native builds on a hot layer cache; no QEMU). The logic is the
+      # ci-actions binary's `remote-builders` command, the same one
+      # integration.yaml uses.
+      - uses: truvity/ci-actions/setup-remote-builders@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
         if: runner.environment == 'self-hosted'
-        env:
-          NODES: ${{ inputs.remote-builders }}
-        run: |
-          set -euo pipefail
-          [ -n "${NODES// /}" ] || { echo "::error::remote-builders is empty on an ARC runner — pass the org variable"; exit 1; }
-          run() { if [ -f devbox.json ]; then devbox run -- "$@"; else "$@"; fi; }
-          if plugin="$(run sh -c 'command -v docker-buildx' 2>/dev/null)" && [ -n "$plugin" ]; then
-            mkdir -p ~/.docker/cli-plugins
-            ln -sf "$plugin" ~/.docker/cli-plugins/docker-buildx
-          fi
-          run docker buildx rm ci 2>/dev/null || true
-          first=1
-          for entry in $NODES; do
-            platforms="${entry%%=*}"; endpoint="${entry#*=}"
-            if [ "$first" = 1 ]; then
-              run docker buildx create --name ci --driver remote "$endpoint" --platform "$platforms"
-              first=0
-            else
-              run docker buildx create --append --name ci --driver remote "$endpoint" --platform "$platforms"
-            fi
-          done
-          run docker buildx use ci
-          run docker buildx inspect --bootstrap ci | tee "$RUNNER_TEMP/buildx-ci.txt"
-          for entry in $NODES; do
-            platforms="${entry%%=*}"
-          for p in ${platforms//,/ }; do
-              grep -q "$p" "$RUNNER_TEMP/buildx-ci.txt" || { echo "::error::builder ci does not offer $p"; exit 1; }
-            done
-          done
-          echo "BUILDX_BUILDER=ci" >> "$GITHUB_ENV"
+        with:
+          remote-builders: ${{ inputs.remote-builders }}
 
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
