@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.23.0
+
 - `auto-release.yaml` takes an optional `version-bump-command` for a repository that declares its version in files. It is a shell command run in the caller's checkout, inside devbox (set up with the pinned `setup-devbox` only when the input is set), with `VERSION` (`X.Y.Z`) and `TAG` (`vX.Y.Z`) in its environment. It runs after the CHANGELOG heading is written and before the commit, so the heading pull request carries the bump and the tag names the merge commit that has both; a bump that changes nothing fails the run. A resumed open heading PR is not bumped again, and a heading that already exists (a person prepared that release) is tagged as it stands. With a bump set, a dependency-only patch also gets its heading pull request, and `changelog-heading: never` is refused. The header carries an example caller for a Pkl repository. An empty input (the default) is today's behaviour exactly; `hack/auto-release-cases.sh` covers the bump, the empty bump, the resume and the refusals.
 
 ## v3.22.0
