@@ -119,6 +119,36 @@
 # App's `pull_requests: write` (the access-roster grant must name it).
 # `changelog-heading: never` opts out and restores the old behaviour.
 #
+# THE VERSION BUMP. A repository that declares its version in files (a Pkl
+# package, a manifest) cannot be tagged from master as it stands: the
+# tag would name a commit whose files declare the previous version.
+# `version-bump-command` closes that: a shell command run in the caller's
+# checkout, inside devbox (set up only when the input is set), with
+# `VERSION` (X.Y.Z, no prefix) and `TAG` (vX.Y.Z) in its environment. It
+# runs after the heading is written and before the commit, so the heading
+# PR carries the bump and the tag names the merge commit that has both.
+#
+#   - it must change something, or the run fails: a bump that bumps
+#     nothing is a misconfiguration;
+#   - a resumed open heading PR is trusted as it stands, not re-bumped;
+#   - a heading that already exists was written by a person, whose own
+#     release PR carried the bump, so the tag is cut as it stands. (If
+#     they forgot, the repo's release workflow refuses a tag that is not
+#     the declared version, loudly);
+#   - with a bump set, a dependency-only patch gets its heading PR too
+#     (the bump needs a PR to ride in), whatever the heading convention;
+#   - `changelog-heading: never` is refused: the bump cannot land without
+#     a pull request.
+#
+# A Pkl repository whose version is `version = "X.Y.Z"` in
+# packages/Release.pkl and whose PklProject.deps.json files `just resolve`
+# refreshes:
+#
+#   with:
+#     version-bump-command: >-
+#       sed -i "s/^version = \".*\"/version = \"$VERSION\"/" packages/Release.pkl
+#       && just resolve
+#
 # Two estate-side prerequisites per adopting repo, or the tag push is
 # rejected / the secrets arrive empty:
 #   - the repo's v* tag ruleset carries the App that cuts the tag as a
@@ -196,6 +226,22 @@ on:
         required: false
         type: string
         default: "20"
+      version-bump-command:
+        description: >-
+          For a repository that declares its version in files: a shell
+          command run in the caller's checkout, inside devbox, with
+          `VERSION` (X.Y.Z, no prefix) and `TAG` (the tag, e.g. vX.Y.Z)
+          in its environment. It runs after the CHANGELOG heading is
+          written and before the commit, and every file it changes goes
+          into the same heading commit and pull request, so the tagged
+          merge commit carries both. It must change something, or the run
+          fails. It is skipped when the pull request is resumed or the
+          heading is already there (a person prepared that release), and
+          it cannot be combined with `changelog-heading: never`. Empty
+          (default): nothing runs and devbox is not set up.
+        required: false
+        type: string
+        default: ""
     secrets:
       CI_AUTOMATION_PRIVATE_KEY:
         description: The App's private key. Required when token-source is `app-key`.
@@ -337,6 +383,13 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.token.outputs.token }}
 
+      # Only when the caller declares a version-bump-command: the bump runs in
+      # the caller's devbox. No input, no extra setup.
+      - uses: truvity/ci-actions/setup-devbox@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        if: steps.gate.outputs.skip != 'true' && inputs.version-bump-command != ''
+        with:
+          github-token: ${{ github.token }}
+
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
         env:
@@ -348,6 +401,7 @@ jobs:
           HEADING_MODE: ${{ inputs.changelog-heading }}
           CHANGELOG: ${{ inputs.changelog-path }}
           WAIT_MINUTES: ${{ inputs.changelog-wait-minutes }}
+          VERSION_BUMP_COMMAND: ${{ inputs.version-bump-command }}
         run: |
           set -euo pipefail
           # >>> tag (hack/auto-release-cases.sh runs this block; keep both jobs identical)
@@ -356,6 +410,14 @@ jobs:
           HEADING_MODE=${HEADING_MODE:-auto}
           WAIT_MINUTES=${WAIT_MINUTES:-20}
           BASE=${BASE:-master}
+          VERSION_BUMP_COMMAND=${VERSION_BUMP_COMMAND:-}
+
+          # A bump lands in the heading's pull request, so it cannot land with
+          # no pull request at all.
+          if [ -n "$VERSION_BUMP_COMMAND" ] && [ "$HEADING_MODE" = never ]; then
+            echo "::error::version-bump-command needs the heading pull request to carry the bump, so it cannot be combined with changelog-heading: never"
+            exit 1
+          fi
 
           LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
           if [ -z "$LATEST" ]; then
@@ -407,7 +469,7 @@ jobs:
             # has (the newest patch tag has its heading) or the caller asked.
             patch=$(git tag --list "${PREFIX}*" --sort=-version:refname \
               | grep -E '^[^.]*[0-9]+\.[0-9]+\.[0-9]+$' | awk -F. '$3 + 0 > 0' | head -1 || true)
-            if [ "$HEADING_MODE" = always ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
+            if [ "$HEADING_MODE" = always ] || [ -n "$VERSION_BUMP_COMMAND" ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
               edit=dependency
             else
               summary "no entries under Unreleased and no patch heading convention — $NEXT needs none (C5's automatic-patch case)"
@@ -437,6 +499,20 @@ jobs:
             rm -f "$tmp"
           fi
 
+          # With a bump configured, a tag no pull request prepared would name a
+          # commit whose files still declare the old version. A heading already
+          # there means a person prepared the release (bump included), so it is
+          # tagged as it stands; anything else that leaves no pull request to
+          # carry the bump is a configuration the run cannot honour.
+          if [ -n "$VERSION_BUMP_COMMAND" ] && [ -z "$edit" ]; then
+            if [ -f "$CHANGELOG" ] && has_heading "$CHANGELOG" "$NEXT"; then
+              summary "version-bump-command skipped: $CHANGELOG already has the $NEXT heading, so a person prepared this release and the bump is theirs"
+            else
+              echo "::error::version-bump-command is set but no heading pull request can carry the bump ($CHANGELOG missing, misplaced, or without a version heading to place $NEXT above) — no tag cut"
+              exit 1
+            fi
+          fi
+
           if [ -n "$edit" ]; then
             # Master is protected: the heading goes in by pull request, and the tag
             # waits for the merge so that it names the commit that carries it.
@@ -448,12 +524,23 @@ jobs:
             else
               git checkout -q -b "$BRANCH"
               git add -- "$CHANGELOG"
+              if [ -n "$VERSION_BUMP_COMMAND" ]; then
+                # The caller's bump, in the caller's devbox, after the heading is
+                # staged: whatever it changes beyond that is its own work. It rides
+                # in this one commit, so the tagged merge commit carries both.
+                VERSION=${NEXT#"$PREFIX"} TAG=$NEXT devbox run -- bash -e -o pipefail -c "$VERSION_BUMP_COMMAND"
+                if [ -z "$(git diff --name-only; git ls-files --others --exclude-standard)" ]; then
+                  echo "::error::version-bump-command changed nothing — a bump that bumps nothing is a misconfiguration; no PR opened, no tag cut"
+                  exit 1
+                fi
+                git add -A
+              fi
               git commit -q -m "docs(changelog): heading for the $NEXT release" \
-                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading."
+                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading.${VERSION_BUMP_COMMAND:+ It also carries the version bump of the version-bump-command input.}"
               git push -q --force origin "$BRANCH"
               URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
                 --title "docs(changelog): heading for the $NEXT release" \
-                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.")
+                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.${VERSION_BUMP_COMMAND:+ The version-bump-command input ran in the same commit, so the tagged commit declares the version it is tagged as.}")
               N=${URL##*/}
               method=$(gh api "repos/$REPO" \
                 --jq 'if .allow_rebase_merge then "rebase" elif .allow_squash_merge then "squash" else "merge" end')
@@ -593,6 +680,13 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.token.outputs.github-token }}
 
+      # Only when the caller declares a version-bump-command: the bump runs in
+      # the caller's devbox. No input, no extra setup.
+      - uses: truvity/ci-actions/setup-devbox@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        if: steps.gate.outputs.skip != 'true' && inputs.version-bump-command != ''
+        with:
+          github-token: ${{ github.token }}
+
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
         env:
@@ -608,6 +702,7 @@ jobs:
           HEADING_MODE: ${{ inputs.changelog-heading }}
           CHANGELOG: ${{ inputs.changelog-path }}
           WAIT_MINUTES: ${{ inputs.changelog-wait-minutes }}
+          VERSION_BUMP_COMMAND: ${{ inputs.version-bump-command }}
         run: |
           set -euo pipefail
           # >>> tag (hack/auto-release-cases.sh runs this block; keep both jobs identical)
@@ -616,6 +711,14 @@ jobs:
           HEADING_MODE=${HEADING_MODE:-auto}
           WAIT_MINUTES=${WAIT_MINUTES:-20}
           BASE=${BASE:-master}
+          VERSION_BUMP_COMMAND=${VERSION_BUMP_COMMAND:-}
+
+          # A bump lands in the heading's pull request, so it cannot land with
+          # no pull request at all.
+          if [ -n "$VERSION_BUMP_COMMAND" ] && [ "$HEADING_MODE" = never ]; then
+            echo "::error::version-bump-command needs the heading pull request to carry the bump, so it cannot be combined with changelog-heading: never"
+            exit 1
+          fi
 
           LATEST=$(git tag --list "${PREFIX}*" --sort=-version:refname | head -1)
           if [ -z "$LATEST" ]; then
@@ -667,7 +770,7 @@ jobs:
             # has (the newest patch tag has its heading) or the caller asked.
             patch=$(git tag --list "${PREFIX}*" --sort=-version:refname \
               | grep -E '^[^.]*[0-9]+\.[0-9]+\.[0-9]+$' | awk -F. '$3 + 0 > 0' | head -1 || true)
-            if [ "$HEADING_MODE" = always ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
+            if [ "$HEADING_MODE" = always ] || [ -n "$VERSION_BUMP_COMMAND" ] || { [ -n "$patch" ] && has_heading "$CHANGELOG" "$patch"; }; then
               edit=dependency
             else
               summary "no entries under Unreleased and no patch heading convention — $NEXT needs none (C5's automatic-patch case)"
@@ -697,6 +800,20 @@ jobs:
             rm -f "$tmp"
           fi
 
+          # With a bump configured, a tag no pull request prepared would name a
+          # commit whose files still declare the old version. A heading already
+          # there means a person prepared the release (bump included), so it is
+          # tagged as it stands; anything else that leaves no pull request to
+          # carry the bump is a configuration the run cannot honour.
+          if [ -n "$VERSION_BUMP_COMMAND" ] && [ -z "$edit" ]; then
+            if [ -f "$CHANGELOG" ] && has_heading "$CHANGELOG" "$NEXT"; then
+              summary "version-bump-command skipped: $CHANGELOG already has the $NEXT heading, so a person prepared this release and the bump is theirs"
+            else
+              echo "::error::version-bump-command is set but no heading pull request can carry the bump ($CHANGELOG missing, misplaced, or without a version heading to place $NEXT above) — no tag cut"
+              exit 1
+            fi
+          fi
+
           if [ -n "$edit" ]; then
             # Master is protected: the heading goes in by pull request, and the tag
             # waits for the merge so that it names the commit that carries it.
@@ -708,12 +825,23 @@ jobs:
             else
               git checkout -q -b "$BRANCH"
               git add -- "$CHANGELOG"
+              if [ -n "$VERSION_BUMP_COMMAND" ]; then
+                # The caller's bump, in the caller's devbox, after the heading is
+                # staged: whatever it changes beyond that is its own work. It rides
+                # in this one commit, so the tagged merge commit carries both.
+                VERSION=${NEXT#"$PREFIX"} TAG=$NEXT devbox run -- bash -e -o pipefail -c "$VERSION_BUMP_COMMAND"
+                if [ -z "$(git diff --name-only; git ls-files --others --exclude-standard)" ]; then
+                  echo "::error::version-bump-command changed nothing — a bump that bumps nothing is a misconfiguration; no PR opened, no tag cut"
+                  exit 1
+                fi
+                git add -A
+              fi
               git commit -q -m "docs(changelog): heading for the $NEXT release" \
-                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading."
+                -m "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading.${VERSION_BUMP_COMMAND:+ It also carries the version bump of the version-bump-command input.}"
               git push -q --force origin "$BRANCH"
               URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
                 --title "docs(changelog): heading for the $NEXT release" \
-                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.")
+                --body "The shared auto-release workflow is about to cut $NEXT. This gives the CHANGELOG its heading first, and the tag follows the merge, so a release never ships under \`## Unreleased\`.${VERSION_BUMP_COMMAND:+ The version-bump-command input ran in the same commit, so the tagged commit declares the version it is tagged as.}")
               N=${URL##*/}
               method=$(gh api "repos/$REPO" \
                 --jq 'if .allow_rebase_merge then "rebase" elif .allow_squash_merge then "squash" else "merge" end')

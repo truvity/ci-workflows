@@ -130,7 +130,15 @@ case "$1 $2" in
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
 esac
 STUB
-chmod +x "$work/bin2/gh" "$work/bin2/merge-now"
+cat > "$work/bin2/devbox" <<'STUB'
+#!/usr/bin/env bash
+# `devbox run -- <cmd...>`: the command itself, with the environment as is.
+echo "devbox $*" >> "$S/devbox_calls"
+[ "$1" = run ] && [ "$2" = -- ] || { echo "unexpected devbox call: $*" >&2; exit 1; }
+shift 2
+exec "$@"
+STUB
+chmod +x "$work/bin2/gh" "$work/bin2/merge-now" "$work/bin2/devbox"
 
 # fixture <changelog> <tag>... : a bare origin and a clone whose master has
 # moved one commit past the tags. The changelog is the one at HEAD.
@@ -286,6 +294,89 @@ echo CLOSED > "$S/state"
 rc=0; run_tag || rc=$?
 ok "heading PR closed unmerged -> run fails red, no tag" test "$rc" != 0
 ok "  no v1.2.1" no_tag v1.2.1
+
+# ── version-bump-command ────────────────────────────────────────────────
+no_devbox() { [ ! -e "$S/devbox_calls" ]; }
+tagged() { o show "$1^{commit}:$2"; }
+BUMP='printf "%s\n" "$VERSION" > ver; printf "%s\n" "$TAG" > tagname'
+
+fixture "$UNREL" v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND="$BUMP" || rc=$?
+ok "bump set -> run succeeds, tag on master" test "$rc" = 0
+ok "  tag is on master" tag_on_master v1.2.1
+ok "  VERSION is X.Y.Z without the prefix" bash -c '[ "$(git --git-dir="$0" show v1.2.1^{commit}:ver)" = 1.2.1 ]' "$ORIGIN"
+ok "  TAG is the tag" bash -c '[ "$(git --git-dir="$0" show v1.2.1^{commit}:tagname)" = v1.2.1 ]' "$ORIGIN"
+ok "  the heading is in the same tagged commit" bash -c 'git --git-dir="$0" show v1.2.1^{commit}:CHANGELOG.md | grep -qx "## v1.2.1"' "$ORIGIN"
+ok "  one heading commit carries both files" bash -c 'g="git --git-dir=$0"; [ "$($g rev-list --count v1.2.0..v1.2.1)" = 2 ] && [ "$($g diff --name-only v1.2.1~1 v1.2.1 | sort | paste -sd,)" = CHANGELOG.md,tagname,ver ]' "$ORIGIN"
+ok "  ran once, inside devbox" bash -c '[ "$(wc -l < "$0")" = 1 ]' "$S/devbox_calls"
+ok "  one PR" bash -c '[ "$(grep -c "^pr create" "$0")" = 1 ]' "$S/calls"
+
+fixture "$UNREL" v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND=true || rc=$?
+ok "a bump that changes nothing -> fails loudly" test "$rc" != 0
+ok "  says so" grep -q 'changed nothing' "$work/log"
+ok "  no PR was opened" no_pr
+ok "  no tag" no_tag v1.2.1
+ok "  nothing pushed to the heading branch" bash -c '[ -z "$(git --git-dir="$0" for-each-ref refs/heads/auto-release/)" ]' "$ORIGIN"
+
+fixture "$UNREL" v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND='false' || rc=$?
+ok "a bump that fails -> fails, no PR, no tag" test "$rc" != 0
+ok "  no PR was opened" no_pr
+ok "  no tag" no_tag v1.2.1
+
+fixture "$UNREL" v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND= || rc=$?
+ok "empty bump -> unchanged behaviour, heading PR as before" test "$rc" = 0
+ok "  devbox never called" no_devbox
+ok "  the heading commit holds the changelog only" bash -c 'g="git --git-dir=$0"; [ "$($g diff --name-only v1.2.1~1 v1.2.1)" = CHANGELOG.md ]' "$ORIGIN"
+ok "  the commit message is the unchanged one" bash -c '[ "$(git --git-dir="$0" log -1 --format=%b v1.2.1^{commit} | head -1)" = "Written by the shared auto-release workflow so that the tag names the commit that carries its own heading." ]' "$ORIGIN"
+
+fixture "$UNREL" v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND="$BUMP" HEADING_MODE=never || rc=$?
+ok "bump with changelog-heading: never -> refused" test "$rc" != 0
+ok "  the error names the combination" grep -q 'cannot be combined with changelog-heading: never' "$work/log"
+ok "  no PR was opened" no_pr
+ok "  no tag" no_tag v1.2.1
+ok "  devbox never called" no_devbox
+
+# Resume: the open PR is trusted, the bump does not run again.
+fixture "$UNREL" v1.2.0
+touch "$S/never"
+rc=0; run_tag VERSION_BUMP_COMMAND='echo bumped >> bump.log' || rc=$?
+ok "bump, heading PR never merges -> red" test "$rc" != 0
+rm -f "$S/never"; "$work/bin2/merge-now"
+( cd "$work/w" && git checkout -q master )
+rc=0; run_tag VERSION_BUMP_COMMAND='echo bumped >> bump.log' || rc=$?
+ok "resumed open PR -> tagged, not re-bumped" test "$rc" = 0
+ok "  devbox ran once across both runs" bash -c '[ "$(wc -l < "$0")" = 1 ]' "$S/devbox_calls"
+ok "  one PR only" bash -c '[ "$(grep -c "^pr create" "$0")" = 1 ]' "$S/calls"
+ok "  the tagged commit has the bump exactly once" bash -c '[ "$(git --git-dir="$0" show v1.2.1^{commit}:bump.log)" = bumped ]' "$ORIGIN"
+
+# A heading a person wrote: the bump is theirs, nothing runs.
+fixture $'# Changelog\n\n## Unreleased\n\n- Entry.\n\n## v1.2.1\n\n- By hand.\n\n## v1.2.0\n\n- First.' v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND="$BUMP" || rc=$?
+ok "heading already there -> bump skipped, tagged as it stands" test "$rc" = 0
+ok "  devbox never called" no_devbox
+ok "  no PR was opened" no_pr
+ok "  tag is on master" tag_on_master v1.2.1
+ok "  said so in the summary" grep -q 'version-bump-command skipped' "$work/sum"
+
+# Dependency-only patch: the bump needs a PR, so one is opened regardless of convention.
+fixture "$NOPATCH" v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND="$BUMP" || rc=$?
+ok "bump with an empty Unreleased and no heading convention -> heading PR carries the bump" test "$rc" = 0
+ok "  heading and bump are in the tagged commit" bash -c 'g="git --git-dir=$0"; $g show v1.2.1^{commit}:CHANGELOG.md | grep -qx -- "- Dependency updates." && [ "$($g show v1.2.1^{commit}:ver)" = 1.2.1 ]' "$ORIGIN"
+
+# A misplaced Unreleased leaves no PR to carry the bump: refuse, do not tag stale files.
+fixture $'# Changelog\n\n## v1.2.0\n\n- First.\n\n## Unreleased\n\n- Misplaced.' v1.2.0
+rc=0; run_tag VERSION_BUMP_COMMAND="$BUMP" || rc=$?
+ok "bump with no PR possible -> refused, no tag" test "$rc" != 0
+ok "  no tag" no_tag v1.2.1
+
+# The workflow wires the bump to devbox only when the input is set, in both jobs.
+ok "setup-devbox only with the input, in both jobs" bash -c '[ "$(grep -c "inputs.version-bump-command != ..$" "$0")" = 2 ]' "$wf"
+ok "the bump reaches the shell through env only" bash -c 'grep -c "VERSION_BUMP_COMMAND: \${{ inputs.version-bump-command }}" "$0" | grep -qx 2' "$wf"
 
 # The workflow wires the opt-out to the permission it asks the issuer for.
 ok "changelog-heading: never keeps pull_requests:read" \
