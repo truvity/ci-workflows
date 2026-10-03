@@ -346,7 +346,7 @@ jobs:
           if [ -z "${SMOKE_SLEEPS+set}" ]; then
             SMOKE_SLEEPS="10 15 20 30 45 60 60 60"
           fi
-          declare -a sleeps=($SMOKE_SLEEPS)
+          read -ra sleeps <<<"$SMOKE_SLEEPS"
           retry() {
             local attempt=0
             until "$@"; do
