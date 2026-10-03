@@ -321,7 +321,7 @@ jobs:
       # refUpdateRule, answers for the VIEWER, so a token weaker than the
       # matrix jobs' could find no required check where they would, and
       # skip the whole estate.
-      - uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -372,7 +372,7 @@ jobs:
           repositories: ${{ steps.repo.outputs.name }}
 
       # Every permission the grant allows: renovate's own list.
-      - uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -419,7 +419,7 @@ jobs:
       - name: Exchange a token for reading private Go modules
         id: module-roster-token
         if: inputs.token-source == 'access-roster' && inputs.go-modules-github-app != ''
-        uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
+        uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.go-modules-github-app }}
@@ -495,7 +495,7 @@ jobs:
       - name: Exchange the approver token
         id: approver-roster
         if: inputs.token-source == 'access-roster' && inputs.approver-github-app != ''
-        uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
+        uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.approver-github-app }}
