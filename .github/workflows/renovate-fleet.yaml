@@ -229,63 +229,29 @@ jobs:
       - name: Read the enrolment list
         id: enrolled
         if: inputs.list != ''
-        env:
-          FILE: ${{ inputs.repositories-file }}
-          LIST: ${{ inputs.list }}
-        run: |
-          set -euo pipefail
-          [ -f "$FILE" ] || { echo "::error::$FILE not found in the caller repository"; exit 1; }
-          # yq ships on GitHub-hosted runners; this job always runs on one.
-          names=$(yq -o=json -I=0 ".${LIST} // []" "$FILE")
-          if [ "$(jq 'length' <<<"$names")" -eq 0 ]; then
-            echo "::error::$FILE has no entries under $LIST"
-            exit 1
-          fi
-          echo "names=$names" >> "$GITHUB_OUTPUT"
-          echo "$LIST: $(jq -r 'join(", ")' <<<"$names")"
+        uses: truvity/ci-actions/enrolment-list@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        with:
+          file: ${{ inputs.repositories-file }}
+          list: ${{ inputs.list }}
 
       # Once, here: every other job needs this one.
       - name: Check the token inputs
-        env:
-          SOURCE: ${{ inputs.token-source }}
-          ISSUER: ${{ inputs.access-roster-issuer }}
-          APP: ${{ inputs.github-app }}
-          CLIENT_ID: ${{ inputs.client-id }}
-          HAS_KEY: ${{ secrets.RENOVATE_APP_PRIVATE_KEY != '' }}
-          APPROVER_CLIENT_ID: ${{ inputs.approver-client-id }}
-          HAS_APPROVER_KEY: ${{ secrets.APPROVER_APP_PRIVATE_KEY != '' }}
-          GO_MODULES_CLIENT_ID: ${{ inputs.go-modules-client-id }}
-          HAS_GO_MODULES_KEY: ${{ secrets.GO_MODULES_APP_PRIVATE_KEY != '' }}
-          APPROVER_APP: ${{ inputs.approver-github-app }}
-          GO_MODULES_APP: ${{ inputs.go-modules-github-app }}
-        run: |
-          set -euo pipefail
-          fail=0
-          case "$SOURCE" in
-            app-key)
-              [ -n "$CLIENT_ID" ] || { echo "::error::token-source app-key needs client-id"; fail=1; }
-              [ "$HAS_KEY" = true ] || { echo "::error::token-source app-key needs the RENOVATE_APP_PRIVATE_KEY secret"; fail=1; }
-              if [ -n "$APPROVER_CLIENT_ID" ] && [ "$HAS_APPROVER_KEY" != true ]; then
-                echo "::error::approver-client-id is set but APPROVER_APP_PRIVATE_KEY is not"; fail=1
-              fi
-              if [ -n "$GO_MODULES_CLIENT_ID" ] && [ "$HAS_GO_MODULES_KEY" != true ]; then
-                echo "::error::go-modules-client-id is set but GO_MODULES_APP_PRIVATE_KEY is not"; fail=1
-              fi
-              if [ -n "$APP$APPROVER_APP$GO_MODULES_APP" ]; then
-                echo "::warning::the *-github-app inputs are read only with token-source access-roster"
-              fi
-              ;;
-            access-roster)
-              [ -n "$ISSUER" ] || { echo "::error::token-source access-roster needs access-roster-issuer"; fail=1; }
-              [ -n "$APP" ] || { echo "::error::token-source access-roster needs github-app"; fail=1; }
-              if [ -n "$APPROVER_CLIENT_ID$GO_MODULES_CLIENT_ID" ]; then
-                echo "::warning::the *-client-id inputs are read only with token-source app-key"
-              fi
-              ;;
-            *)
-              echo "::error::token-source must be app-key or access-roster (got '$SOURCE')"; fail=1 ;;
-          esac
-          exit "$fail"
+        uses: truvity/ci-actions/token-inputs@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        with:
+          source: ${{ inputs.token-source }}
+          access-roster-issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          id: ${{ inputs.client-id }}
+          id-name: client-id
+          secret-name: RENOVATE_APP_PRIVATE_KEY
+          has-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY != '' }}
+          extra-keys: |
+            approver-client-id|APPROVER_APP_PRIVATE_KEY|${{ secrets.APPROVER_APP_PRIVATE_KEY != '' }}|${{ inputs.approver-client-id }}
+            go-modules-client-id|GO_MODULES_APP_PRIVATE_KEY|${{ secrets.GO_MODULES_APP_PRIVATE_KEY != '' }}|${{ inputs.go-modules-client-id }}
+          warn-app-key-if: ${{ format('{0}{1}{2}', inputs.github-app, inputs.approver-github-app, inputs.go-modules-github-app) }}
+          warn-app-key: the *-github-app inputs are read only with token-source access-roster
+          warn-access-roster-if: ${{ format('{0}{1}', inputs.approver-client-id, inputs.go-modules-client-id) }}
+          warn-access-roster: the *-client-id inputs are read only with token-source app-key
 
       # What an issuer's `github` matchers compare, as GitHub put it in
       # this job's identity token. The token is minted for a throwaway

@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `parity-fleet`, `renovate-fleet`, `pkl-fleet` and `auto-release`: the inline token-input check (four copies) is the `truvity/ci-actions/token-inputs` action, and the inline enrolment-list read (four copies, `yq` and `jq`) is `truvity/ci-actions/enrolment-list`, both pinned at ci-actions v1.10.0. Same messages, same order, same exit status, same `names` output. Only a plain dotted `list` path is read now (no `yq` expression syntax), and `yq` and `jq` are no longer needed on the runner for it.
+
 ## v3.25.0
 
 - The token exchange in `auto-release.yaml`, `parity-fleet.yaml`, `pkl-fleet.yaml` and `renovate-fleet.yaml` is `truvity/ci-actions/token-exchange` (pinned at v1.9.0) instead of the `truvity/access-roster` root action, so no reusable workflow references access-roster as an action. Same inputs and outputs.

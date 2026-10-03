@@ -259,44 +259,21 @@ jobs:
       - name: Read the enrolment list
         id: enrolled
         if: inputs.list != ''
-        env:
-          FILE: ${{ inputs.repositories-file }}
-          LIST: ${{ inputs.list }}
-        run: |
-          set -euo pipefail
-          [ -f "$FILE" ] || { echo "::error::$FILE not found in the caller repository"; exit 1; }
-          # yq ships on GitHub-hosted runners; this job always runs on one.
-          names=$(yq -o=json -I=0 ".${LIST} // []" "$FILE")
-          if [ "$(jq 'length' <<<"$names")" -eq 0 ]; then
-            echo "::error::$FILE has no entries under $LIST"
-            exit 1
-          fi
-          echo "names=$names" >> "$GITHUB_OUTPUT"
-          echo "$LIST: $(jq -r 'join(", ")' <<<"$names")"
+        uses: truvity/ci-actions/enrolment-list@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        with:
+          file: ${{ inputs.repositories-file }}
+          list: ${{ inputs.list }}
 
       - name: Check the token inputs
-        env:
-          SOURCE: ${{ inputs.token-source }}
-          ISSUER: ${{ inputs.access-roster-issuer }}
-          APP: ${{ inputs.github-app }}
-          CLIENT_ID: ${{ inputs.client-id }}
-          HAS_KEY: ${{ secrets.RENOVATE_APP_PRIVATE_KEY != '' }}
-        run: |
-          set -euo pipefail
-          fail=0
-          case "$SOURCE" in
-            app-key)
-              [ -n "$CLIENT_ID" ] || { echo "::error::token-source app-key needs client-id"; fail=1; }
-              [ "$HAS_KEY" = true ] || { echo "::error::token-source app-key needs the RENOVATE_APP_PRIVATE_KEY secret"; fail=1; }
-              ;;
-            access-roster)
-              [ -n "$ISSUER" ] || { echo "::error::token-source access-roster needs access-roster-issuer"; fail=1; }
-              [ -n "$APP" ] || { echo "::error::token-source access-roster needs github-app"; fail=1; }
-              ;;
-            *)
-              echo "::error::token-source must be app-key or access-roster (got '$SOURCE')"; fail=1 ;;
-          esac
-          exit "$fail"
+        uses: truvity/ci-actions/token-inputs@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        with:
+          source: ${{ inputs.token-source }}
+          access-roster-issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          id: ${{ inputs.client-id }}
+          id-name: client-id
+          secret-name: RENOVATE_APP_PRIVATE_KEY
+          has-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY != '' }}
 
       # The target version, from the source's releases. The job's own token
       # is enough: the source is public.
