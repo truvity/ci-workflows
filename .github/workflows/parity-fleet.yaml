@@ -299,7 +299,7 @@ jobs:
       # and the required-check rule's fallback (GraphQL's refUpdateRule)
       # answers for the viewer, so a weaker token than the matrix jobs'
       # could miss a required check they have.
-      - uses: truvity/ci-actions/token-exchange@30eef3fd427dc74723b6326c6dac7576e2f57894 # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -378,7 +378,7 @@ jobs:
       # Every enrolled repository, because one table covers the estate —
       # but reading is all this job does, so `contents:read` is all it
       # asks the issuer for.
-      - uses: truvity/ci-actions/token-exchange@30eef3fd427dc74723b6326c6dac7576e2f57894 # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -447,7 +447,7 @@ jobs:
 
       # Push one branch, open and auto-merge one PR: contents and
       # pull_requests, on this repository.
-      - uses: truvity/ci-actions/token-exchange@30eef3fd427dc74723b6326c6dac7576e2f57894 # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@104704d51a8a343fe2ac5138a4786b325ca56374 # PR 43 head, bump to the released tag
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
