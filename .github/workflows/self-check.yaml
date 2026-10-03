@@ -60,11 +60,6 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
-      # release-public's `charts` input: a plain name under `chart-root`, a
-      # path from the repository root, and every spelling it refuses.
-      - name: chart-paths cases
-        run: ./hack/chart-paths-cases.sh
-
       # release-pkl's checks, publish step and smoke test, run as written
       # against a stubbed `gh` and Pkl: refusals, re-runs, the asset names.
       - name: release-pkl cases

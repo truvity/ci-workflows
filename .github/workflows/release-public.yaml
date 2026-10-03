@@ -318,126 +318,16 @@ jobs:
       # registry login step.
       - name: Package and push charts
         if: inputs.charts != '[]'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CHARTS: ${{ inputs.charts }}
-          CHART_ROOT: ${{ inputs.chart-root }}
-          REGISTRY: ${{ inputs.chart-registry }}
-          APP_VERSION_MODE: ${{ inputs.chart-app-version }}
-          CHART_IMAGES: ${{ inputs.chart-images }}
-          REQUIRE_IMAGE_DIGESTS: ${{ inputs.require-image-digests }}
-          # renovate: datasource=github-releases depName=truvity/ocictl
-          HELMCTL_VERSION: "0.8.0"
-        run: |
-          set -euo pipefail
-
-          version="${GITHUB_REF_NAME#v}"
-
-          arch="$(uname -m)"
-          case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
-          mkdir -p "$RUNNER_TEMP/helmctl"
-          gh release download "v${HELMCTL_VERSION}" --repo truvity/ocictl \
-            --pattern "helmctl_${HELMCTL_VERSION}_linux_${arch}.tar.gz" \
-            --output - | tar -xz -C "$RUNNER_TEMP/helmctl" helmctl
-
-          # chart-registry arrives as one oci:// URL; helmctl push takes
-          # the registry host and the full chart path separately.
-          ref="${REGISTRY#oci://}"
-          registry="${ref%%/*}"
-          repo_prefix="${ref#*/}"
-
-          # >>> charts
-          # One line per chart, `<directory><TAB><name>`. A plain entry is
-          # under CHART_ROOT; an entry with a `/` is a path from the
-          # repository root. The name is the last element either way, and
-          # it is what helmctl packages, pushes and tags. Everything wrong
-          # is refused HERE, before anything is built or pushed, because a
-          # chart published under the wrong name cannot be taken back.
-          # A command substitution and not `mapfile < <(...)`: the latter
-          # discards the exit status, so a refusal would be a warning.
-          resolved="$(python3 - <<'PY'
-          import json, os, re, sys
-
-          def refuse(msg):
-              print("::error::charts: " + msg, file=sys.stderr)
-              sys.exit(1)
-
-          try:
-              entries = json.loads(os.environ["CHARTS"])
-          except ValueError as e:
-              refuse("not a JSON array: %s" % e)
-          if not isinstance(entries, list):
-              refuse("not a JSON array")
-
-          root = os.environ["CHART_ROOT"].rstrip("/")
-          name_re = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*$")
-          seen = {}
-          for entry in entries:
-              if not isinstance(entry, str) or not entry:
-                  refuse("%r is not a non-empty string" % (entry,))
-              if entry.startswith("/"):
-                  refuse("%r is absolute: a chart path is from the repository root" % entry)
-              parts = entry.split("/")
-              if any(p in ("", ".", "..") for p in parts):
-                  refuse("%r has an empty, `.` or `..` element: name the chart, not a way to it" % entry)
-              name = parts[-1]
-              if not name_re.match(name):
-                  refuse("%r: the chart name %r is not a lowercase chart name (letters, digits, `-`, `.`, `_`)" % (entry, name))
-              if name in seen:
-                  refuse("%r and %r are both published as %r: a chart is packaged, pushed and named by its last path element" % (seen[name], entry, name))
-              seen[name] = entry
-              directory = entry if "/" in entry else "%s/%s" % (root, entry)
-              print("%s\t%s" % (directory, name))
-          PY
-          )"
-          charts=()
-          if [ -n "$resolved" ]; then mapfile -t charts <<<"$resolved"; fi
-          # <<< charts
-
-          for entry in "${charts[@]}"; do
-            chart_dir="${entry%%$'\t'*}"
-            chart="${entry##*$'\t'}"
-            echo "::group::${chart} ${version}"
-            # helmctl's --app-version is optional: omitting it leaves the
-            # chart's declared appVersion untouched. Reject anything we do
-            # not recognise rather than falling back to "release" — a typo
-            # would otherwise reproduce exactly the silent mis-stamp this
-            # option exists to prevent.
-            case "$APP_VERSION_MODE" in
-              release) app_version_args=(--app-version "$version") ;;
-              chart)   app_version_args=() ;;
-              *) echo "::error::chart-app-version must be 'release' or 'chart', got '${APP_VERSION_MODE}'"; exit 1 ;;
-            esac
-            # A manifest carries the version, the appVersion and the
-            # values to bake in, so it REPLACES the two version flags
-            # rather than sitting beside them. A chart with no manifest is
-            # packaged exactly as it was before this input existed.
-            if [ "$CHART_IMAGES" = "goreleaser" ]; then
-              # The digests of what GoReleaser pushed MINUTES AGO, in this
-              # same job. helmctl reads its dist/ and writes the manifest;
-              # the chart is packaged from that rather than from the tag,
-              # so its image values cannot be empty.
-              manifest="$RUNNER_TEMP/${chart}-manifest.yaml"
-              "$RUNNER_TEMP/helmctl/helmctl" goreleaser-manifest \
-                --goreleaser-dist dist --output "$manifest"
-              package_args=(--manifest "$manifest")
-            else
-              package_args=(--version "$version" "${app_version_args[@]}")
-            fi
-            if [ "$REQUIRE_IMAGE_DIGESTS" = "true" ]; then
-              package_args+=(--require-image-digests)
-            fi
-            devbox run -- "$RUNNER_TEMP/helmctl/helmctl" package \
-              --chart "${chart_dir}" \
-              "${package_args[@]}" \
-              --output dist/
-            "$RUNNER_TEMP/helmctl/helmctl" push \
-              --tgz "dist/${chart}-${version}.tgz" \
-              --registry "$registry" \
-              --repository "${repo_prefix}/${chart}" \
-              --name "$chart" --version "$version"
-            echo "::endgroup::"
-          done
+        uses: truvity/ci-actions/publish-charts@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        with:
+          charts: ${{ inputs.charts }}
+          chart-root: ${{ inputs.chart-root }}
+          registry: ${{ inputs.chart-registry }}
+          app-version-mode: ${{ inputs.chart-app-version }}
+          images: ${{ inputs.chart-images }}
+          require-image-digests: ${{ inputs.require-image-digests }}
+          helmctl-version: 0.8.0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Source maps, right after the images they belong to. Same shape as
       # the helmctl step above: a pinned smctl from truvity/ocictl, run in
