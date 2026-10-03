@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.22.0
+
 - New `release-pkl.yaml`: releases a repository's Pkl packages as GitHub Release assets, on a tag. It reads the declared version with the caller's `version-command` (empty: the tag is the version) and refuses unless the tag is `v` plus it and the CHANGELOG has a `## vX.Y.Z` heading; runs the caller's `just` recipe (`package-recipe`, default `package`); checks that every file under `output-dir` (default `.out`) is named for `@<version>` and has a matching `.sha256`; creates the release with the CHANGELOG section as notes and uploads every asset under its exact name, `@` included; then resolves the packages from github.com with `pkl-command` (and imports the modules named by `smoke-import`) against a fresh cache. A re-run completes a release that is missing assets and refuses one that holds an asset the build does not produce or one with different bytes. The caller grants `contents: write`. `hack/release-pkl-cases.sh` runs the checks, the publish step and the smoke test as written, against a stubbed `gh` and Pkl, and runs in `self-check` and `just check`.
 
 ## v3.21.0
