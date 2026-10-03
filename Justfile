@@ -108,6 +108,10 @@ auto-release-cases:
 chart-paths-cases:
     @./hack/chart-paths-cases.sh
 
+# release-pkl's version, tag, changelog and asset checks, re-run behaviour and smoke test
+release-pkl-cases:
+    @./hack/release-pkl-cases.sh
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary auto-release-cases chart-paths-cases
+check: lint pins runners leak-canary auto-release-cases chart-paths-cases release-pkl-cases
     @echo "✓ All checks passed"

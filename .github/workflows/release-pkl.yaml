@@ -1,0 +1,373 @@
+# Tag-triggered release of a repository's Pkl packages as GitHub Release
+# assets, for the PUBLIC estate.
+#
+# A Pkl package is not an OCI artifact: `package://github.com/<owner>/<repo>/
+# releases/download/v<ver>/<name>@<ver>` resolves by an HTTPS GET of that
+# path (the metadata) and then of the `.zip` beside it, so the release's
+# assets ARE the registry, and their names (the `@` included) are part of the
+# URI. This workflow builds them with the caller's own recipe, publishes them
+# under their exact names, and then resolves them from github.com the way a
+# consumer will.
+#
+# The caller carries the recipe and the version; this workflow carries the
+# order of operations and the refusals.
+#
+#   on:
+#     push:
+#       tags: ['v*']
+#   permissions:
+#     contents: read
+#   jobs:
+#     release:
+#       permissions:
+#         contents: write
+#       uses: truvity/ci-workflows/.github/workflows/release-pkl.yaml@<sha> # vX.Y.Z
+#       with:
+#         version-command: sed -n 's/^version = "\(.*\)"$/\1/p' packages/Release.pkl
+#         pkl-command: bin/pkl
+#         smoke-import: contracts.vocab#/Vocab.pkl
+#
+# THE ASSETS. The recipe (`package-recipe`, default `package`) writes them
+# under `output-dir` (default `.out`), in that directory or any depth below
+# it: `pkl project package --output-path '.out/%{name}@%{version}'` puts the
+# four files of a package in a directory of their own. Every file under
+# `output-dir` is uploaded, by its BASENAME, so two files with one basename
+# are refused. Each asset that is not a `.sha256` needs a `<asset>.sha256`
+# beside it holding that asset's checksum, and every name carries
+# `@<version>`.
+#
+# THE VERSION. `version-command` is a shell command, run inside the caller's
+# devbox, whose last line of stdout is the version the repository declares
+# (`0.1.0`, no `v`). A command rather than a file path because the declared
+# version lives in a Pkl module, a manifest, a Justfile variable: no file
+# format is common to them, and every one is a one-line `sed`, `jq`, `just`
+# or `pkl eval`. The tag must be `v` plus exactly that. Left empty (the
+# default) nothing is declared and the tag is the only source: the version is
+# the tag without its `v`; it must still look like a version, and the names
+# of the assets must still carry it.
+#
+# RE-RUNS are safe, because a tag push is the only way in and a failed run is
+# re-run, not retried by hand:
+#   - no release for the tag: create it and upload everything;
+#   - a release with SOME of the assets: upload the missing ones and go on.
+#     The assets a package is made of are reproducible, so an asset that is
+#     already there is compared to the local one by checksum;
+#   - a release with an asset the build does not produce, or one of the same
+#     name with different bytes: REFUSE. A published asset is what consumers
+#     have pinned a checksum of; replacing it (`--clobber`) would break them
+#     silently, and a half-different release is a decision for a person, who
+#     deletes the release and re-runs, or cuts the next version.
+# The smoke test runs every time, so a re-run after a failed smoke test
+# re-checks the release as published.
+#
+# The release is published, not drafted: a package URI resolves only from a
+# published release, and the smoke test must resolve the real URIs. If the
+# smoke test fails the release stays up and the job is red; delete the
+# release and the tag (nobody can have pinned a version that never resolved)
+# or fix forward with the next version.
+#
+# The marked blocks (`>>> checks`, `>>> assets`, `>>> publish`, `>>> smoke`)
+# are run by hack/release-pkl-cases.sh as written, against stubbed `gh` and
+# Pkl.
+name: release-pkl
+
+on:
+  workflow_call:
+    inputs:
+      package-recipe:
+        description: The `just` recipe that builds the packages into `output-dir`.
+        required: false
+        type: string
+        default: package
+      output-dir:
+        description: >-
+          Where the recipe writes the assets, relative to the repository
+          root. Every file below it is released.
+        required: false
+        type: string
+        default: .out
+      version-command:
+        description: >-
+          A shell command, run in the caller's devbox from the repository
+          root, whose last stdout line is the declared version without the
+          `v`. The tag must equal `v` plus it. Empty (the default): nothing
+          is declared and the version is the tag without its `v`.
+        required: false
+        type: string
+        default: ""
+      pkl-command:
+        description: >-
+          The Pkl executable for the smoke test, run in the caller's devbox
+          (`pkl`, or `bin/pkl` where the repository pins its own).
+        required: false
+        type: string
+        default: pkl
+      smoke-import:
+        description: >-
+          Newline-separated `<package name>#/<module path>` entries, for
+          example `contracts.vocab#/Vocab.pkl`. After the packages are
+          resolved from github.com, each is imported by its published URI
+          and evaluated. Empty (the default): the resolve alone, which
+          already fetches every package's metadata and zip and checks the
+          checksum the metadata records.
+        required: false
+        type: string
+        default: ""
+      changelog-path:
+        description: The changelog file, relative to the repository root.
+        required: false
+        type: string
+        default: CHANGELOG.md
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      timeout-minutes:
+        required: false
+        type: number
+        default: 20
+
+# A reusable workflow can only NARROW what the caller granted, never widen
+# it, so this is a floor and the caller must grant `contents: write`. It is
+# the only permission: the release and its assets are all this writes.
+permissions:
+  contents: write
+
+jobs:
+  # A public repository runs on GitHub-hosted runners, always; see the same
+  # job in release-public.yaml for why this hard-codes its own runner.
+  runners:
+    name: runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: truvity/ci-actions/public-runners@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        with:
+          runners: ${{ inputs.runner }}
+          visibility: ${{ github.event.repository.visibility }}
+
+  release:
+    needs: runners
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # Queue, never cancel: cancelling mid-upload is how a release is left
+    # with some of its assets. One group per ref, so two tags run side by
+    # side and a re-run of one waits for the first.
+    concurrency:
+      group: release-pkl-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: truvity/ci-actions/setup-devbox@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # What the repository says its version is. Empty `version-command`
+      # declares nothing. Only the last line counts, so a tool that prints a
+      # banner does not become part of the version; the next step judges the
+      # value.
+      - name: Read the declared version
+        id: declared
+        env:
+          VERSION_COMMAND: ${{ inputs.version-command }}
+        run: |
+          set -euo pipefail
+          declared=""
+          if [ -n "$VERSION_COMMAND" ]; then
+            declared="$(devbox run -- bash -c "$VERSION_COMMAND" | tail -n 1 | tr -d '[:space:]')"
+            [ -n "$declared" ] || { echo "::error::version-command printed nothing"; exit 1; }
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse a tag that is not the declared version, or has no changelog heading
+        id: checks
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
+          DECLARED: ${{ steps.declared.outputs.version }}
+          CHANGELOG: ${{ inputs.changelog-path }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          # >>> checks (hack/release-pkl-cases.sh runs this block)
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [ "$REF_TYPE" = tag ] || fail "release-pkl runs on a tag push, not on a $REF_TYPE"
+          case "$TAG" in v*) ;; *) fail "tag '$TAG' does not start with v" ;; esac
+          version="${DECLARED:-${TAG#v}}"
+          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || fail "'$version' is not a version (X.Y.Z, optionally -prerelease)"
+          [ "$TAG" = "v$version" ] \
+            || fail "tag '$TAG' is not v plus the declared version '$version' — nothing released"
+          [ -f "$CHANGELOG" ] || fail "$CHANGELOG not found"
+          # The heading convention auto-release uses: `## vX.Y.Z`, then anything.
+          awk -v t="$TAG" '$1 == "##" && $2 == t { f = 1 } END { exit !f }' "$CHANGELOG" \
+            || fail "$CHANGELOG has no '## $TAG' heading — nothing released"
+          # The release's notes are that section, up to the next `## `.
+          awk -v t="$TAG" '$1 == "##" { on = ($2 == t); next } on' "$CHANGELOG" > "$NOTES_FILE"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "$TAG is $version, with a changelog heading"
+          # <<< checks
+
+      - name: Build the packages
+        env:
+          RECIPE: ${{ inputs.package-recipe }}
+        run: devbox run -- just "$RECIPE"
+
+      - name: Check the assets
+        id: assets
+        env:
+          OUTPUT_DIR: ${{ inputs.output-dir }}
+          VERSION: ${{ steps.checks.outputs.version }}
+          MANIFEST: ${{ runner.temp }}/assets.txt
+        run: |
+          # >>> assets (hack/release-pkl-cases.sh runs this block)
+          set -euo pipefail
+          fail=0
+          bad() { echo "::error::$1"; fail=1; }
+          [ -d "$OUTPUT_DIR" ] || { echo "::error::$OUTPUT_DIR does not exist — did the recipe write elsewhere?"; exit 1; }
+          find "$OUTPUT_DIR" -type f | LC_ALL=C sort > "$MANIFEST"
+          [ -s "$MANIFEST" ] || { echo "::error::$OUTPUT_DIR holds no files"; exit 1; }
+          sum() { sha256sum "$1" | cut -d' ' -f1; }
+          dups=$(sed 's|.*/||' "$MANIFEST" | sort | uniq -d)
+          [ -z "$dups" ] || bad "two files would be uploaded under one name: $(tr '\n' ' ' <<<"$dups")"
+          while IFS= read -r f; do
+            name="${f##*/}"
+            case "$name" in *"@$VERSION"*) ;; *) bad "$name does not carry @$VERSION" ;; esac
+            if [[ $name == *.sha256 ]]; then
+              [ -f "${f%.sha256}" ] || bad "$name has no asset beside it to be the checksum of"
+              continue
+            fi
+            if [ ! -f "$f.sha256" ]; then bad "$name has no $name.sha256"; continue; fi
+            [ "$(awk '{ print $1 }' "$f.sha256")" = "$(sum "$f")" ] \
+              || bad "$name.sha256 is not the checksum of $name"
+          done < "$MANIFEST"
+          [ "$fail" = 0 ] || exit 1
+          echo "$(wc -l < "$MANIFEST") assets, each checksummed, each named for @$VERSION"
+          # <<< assets
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.checks.outputs.version }}
+          MANIFEST: ${{ runner.temp }}/assets.txt
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+          WORK: ${{ runner.temp }}/release-remote
+        run: |
+          # >>> publish (hack/release-pkl-cases.sh runs this block)
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          mapfile -t files < "$MANIFEST"
+          declare -A local_path=()
+          for f in "${files[@]}"; do local_path["${f##*/}"]="$f"; done
+          sum() { sha256sum "$1" | cut -d' ' -f1; }
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "release $TAG exists — checking what it holds"
+            mapfile -t remote < <(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+            rm -rf "$WORK"; mkdir -p "$WORK"
+            for name in "${remote[@]}"; do
+              [ -n "${local_path[$name]:-}" ] \
+                || fail "release $TAG holds '$name', which this build does not produce — refusing; delete the release to start over, or cut the next version"
+              gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir "$WORK"
+              [ "$(sum "$WORK/$name")" = "$(sum "${local_path[$name]}")" ] \
+                || fail "release $TAG holds '$name' with different bytes than this build — refusing to replace a published asset; delete the release to start over, or cut the next version"
+            done
+          else
+            args=(--repo "$REPO" --verify-tag --title "$TAG" --notes-file "$NOTES_FILE" --generate-notes)
+            [[ $VERSION == *-* ]] && args+=(--prerelease)
+            gh release create "$TAG" "${args[@]}"
+            remote=()
+          fi
+
+          declare -A have=()
+          for name in "${remote[@]}"; do have["$name"]=1; done
+          missing=()
+          for f in "${files[@]}"; do
+            [ -n "${have[${f##*/}]:-}" ] || missing+=("$f")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "uploading ${#missing[@]} of ${#files[@]} assets"
+            gh release upload "$TAG" --repo "$REPO" "${missing[@]}"
+          else
+            echo "all ${#files[@]} assets are already there"
+          fi
+
+          # The release must now hold exactly the build's assets.
+          got=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | LC_ALL=C sort)
+          want=$(printf '%s\n' "${!local_path[@]}" | LC_ALL=C sort)
+          [ "$got" = "$want" ] || fail "release $TAG does not hold exactly the build's assets after upload"
+          # <<< publish
+
+      # The release is up; resolve it from github.com the way a consumer
+      # will. A fresh cache, so nothing is answered locally. The URIs come
+      # from the assets: every one named `<name>@<version>` with no suffix
+      # is a package's metadata.
+      - name: Smoke test the published packages
+        env:
+          PKL_CMD: devbox run -- ${{ inputs.pkl-command }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.checks.outputs.version }}
+          MANIFEST: ${{ runner.temp }}/assets.txt
+          SMOKE_IMPORT: ${{ inputs.smoke-import }}
+          SMOKE_DIR: ${{ runner.temp }}/release-smoke
+          SMOKE_ATTEMPTS: "5"
+          SMOKE_SLEEP: "10"
+        run: |
+          # >>> smoke (hack/release-pkl-cases.sh runs this block)
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          read -ra pkl <<<"$PKL_CMD"
+          base="package://github.com/$REPO/releases/download/$TAG"
+          rm -rf "$SMOKE_DIR"; mkdir -p "$SMOKE_DIR/project"
+          declare -A uri=()
+          i=0
+          { echo 'amends "pkl:Project"'; echo; echo 'dependencies {'
+            while IFS= read -r f; do
+              name="${f##*/}"
+              [[ $name == *"@$VERSION" ]] || continue
+              uri["${name%@*}"]="$base/$name"
+              echo "  [\"p$i\"] { uri = \"$base/$name\" }"
+              i=$((i + 1))
+            done < "$MANIFEST"
+            echo '}'
+          } > "$SMOKE_DIR/project/PklProject"
+          [ "$i" -gt 0 ] || fail "no package metadata (<name>@$VERSION) among the assets to resolve"
+
+          # The release was just published: allow the CDN a moment.
+          retry() {
+            local n=1
+            until "$@"; do
+              [ "$n" -lt "$SMOKE_ATTEMPTS" ] || return 1
+              n=$((n + 1)); sleep "$SMOKE_SLEEP"
+            done
+          }
+          cache=(--cache-dir "$SMOKE_DIR/cache")
+          retry "${pkl[@]}" project resolve "${cache[@]}" "$SMOKE_DIR/project" \
+            || fail "the $i published packages do not resolve from github.com — the release is up but unusable"
+          echo "resolved $i packages from $base"
+
+          if [ -n "$SMOKE_IMPORT" ]; then
+            # Validated first, written after: a refusal inside a redirected
+            # group would put its message in the module instead of the log.
+            n=0; imports=""
+            while IFS= read -r entry; do
+              [ -n "$entry" ] || continue
+              name="${entry%%#*}"
+              [[ $entry == *'#/'* ]] || fail "smoke-import entry '$entry' is not <package name>#/<module path>"
+              [ -n "${uri[$name]:-}" ] || fail "smoke-import entry '$entry' names no package of this release"
+              imports+="local m$n = import(\"${uri[$name]}#/${entry#*#/}\")"$'\n'
+              n=$((n + 1))
+            done <<<"$SMOKE_IMPORT"
+            [ "$n" -gt 0 ] || fail "smoke-import holds no entries"
+            printf '%simported = List(%s).length\n' "$imports" "$(seq -s, -f 'm%g' 0 $((n - 1)))" > "$SMOKE_DIR/smoke.pkl"
+            retry "${pkl[@]}" eval "${cache[@]}" "$SMOKE_DIR/smoke.pkl" \
+              || fail "the smoke module does not evaluate against the published packages"
+            echo "evaluated the smoke module"
+          fi
+          # <<< smoke
