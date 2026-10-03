@@ -258,34 +258,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check the token inputs
-        env:
-          SOURCE: ${{ inputs.token-source }}
-          APP_ID: ${{ inputs.app-id }}
-          HAS_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY != '' }}
-          ISSUER: ${{ inputs.access-roster-issuer }}
-          APP: ${{ inputs.github-app }}
-        run: |
-          set -euo pipefail
-          fail=0
-          case "$SOURCE" in
-            app-key)
-              [ -n "$APP_ID" ] || { echo "::error::token-source app-key needs app-id"; fail=1; }
-              [ "$HAS_KEY" = true ] || { echo "::error::token-source app-key needs the CI_AUTOMATION_PRIVATE_KEY secret"; fail=1; }
-              if [ -n "$ISSUER$APP" ]; then
-                echo "::warning::access-roster-issuer and github-app are read only with token-source access-roster"
-              fi
-              ;;
-            access-roster)
-              [ -n "$ISSUER" ] || { echo "::error::token-source access-roster needs access-roster-issuer"; fail=1; }
-              [ -n "$APP" ] || { echo "::error::token-source access-roster needs github-app"; fail=1; }
-              if [ -n "$APP_ID" ]; then
-                echo "::warning::app-id is read only with token-source app-key"
-              fi
-              ;;
-            *)
-              echo "::error::token-source must be app-key or access-roster (got '$SOURCE')"; fail=1 ;;
-          esac
-          exit "$fail"
+        uses: truvity/ci-actions/token-inputs@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        with:
+          source: ${{ inputs.token-source }}
+          access-roster-issuer: ${{ inputs.access-roster-issuer }}
+          github-app: ${{ inputs.github-app }}
+          id: ${{ inputs.app-id }}
+          id-name: app-id
+          secret-name: CI_AUTOMATION_PRIVATE_KEY
+          has-key: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY != '' }}
+          warn-app-key-if: ${{ format('{0}{1}', inputs.access-roster-issuer, inputs.github-app) }}
+          warn-app-key: access-roster-issuer and github-app are read only with token-source access-roster
+          warn-access-roster-if: ${{ inputs.app-id }}
+          warn-access-roster: app-id is read only with token-source app-key
 
   # ── token-source: app-key ────────────────────────────────────────────
   tag:
