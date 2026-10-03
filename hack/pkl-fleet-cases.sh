@@ -359,5 +359,13 @@ mk_clone; change; pr_fakes
 fake POST /graphql '{"errors":[{"message":"Auto merge is not allowed for this repository"}]}'
 run_publish && grep -q '::warning::.*could not be armed' "$work/out" && pass "an auto-merge the repository refuses is a warning, not a failure" || nope "  refusal: $(cat "$work/out")"
 
+# ── wiring ───────────────────────────────────────────────────────────────
+# setup-devbox reads the consumer's own tool config: it must never be handed
+# the App token, only the job's read-only one.
+n=$(grep -c 'ci-actions/setup-devbox@' "$wf" || true)
+ok=$(awk '/ci-actions\/setup-devbox@/{on=1} on && /github-token:/{print; on=0}' "$wf" | grep -c 'github-token: \${{ github.token }}$' || true)
+if [ "$n" -ge 1 ] && [ "$n" = "$ok" ]; then pass "setup-devbox gets only github.token ($n use)"
+else nope "setup-devbox wiring: $n uses, $ok with github.token"; fi
+
 [ "$fail" = 0 ] && echo "pkl-fleet cases passed"
 exit "$fail"

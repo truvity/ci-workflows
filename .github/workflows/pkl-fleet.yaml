@@ -521,7 +521,10 @@ jobs:
       - uses: truvity/ci-actions/setup-devbox@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
         with:
           proto: "false"
-          github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          # The job's own read-only token (API rate limits), never the App's:
+          # setup-devbox reads the consumer's tool config, and a token that
+          # can push to the consumer has no business there.
+          github-token: ${{ github.token }}
 
       - name: Rewrite the dependency URIs
         id: rewrite
