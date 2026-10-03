@@ -7,6 +7,9 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.25.0
+
+- The token exchange in `auto-release.yaml`, `parity-fleet.yaml`, `pkl-fleet.yaml` and `renovate-fleet.yaml` is `truvity/ci-actions/token-exchange` (pinned at v1.9.0) instead of the `truvity/access-roster` root action, so no reusable workflow references access-roster as an action. Same inputs and outputs.
 - `release-private.yaml`: the ARC builder registration step is the `truvity/ci-actions/setup-remote-builders` action (pinned at v1.8.0, as `integration.yaml` already does) instead of an inline copy of its shell. Same input (`remote-builders`), same builder name (`ci`), same `BUILDX_BUILDER` export; the only visible difference is the wording of the error for an empty `remote-builders`.
 
 ## v3.24.1
