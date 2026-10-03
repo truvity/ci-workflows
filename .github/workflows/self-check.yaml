@@ -70,6 +70,11 @@ jobs:
       - name: chart-paths cases
         run: ./hack/chart-paths-cases.sh
 
+      # release-pkl's checks, publish step and smoke test, run as written
+      # against a stubbed `gh` and Pkl: refusals, re-runs, the asset names.
+      - name: release-pkl cases
+        run: ./hack/release-pkl-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a
