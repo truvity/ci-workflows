@@ -609,7 +609,7 @@ jobs:
       # the grant is the ceiling, this input only narrows. The
       # installation reaches the organisation; this token reaches one
       # repository.
-      - uses: truvity/ci-actions/token-exchange@8496df58ee91c0753211f184dc72d6b24c1a1ecd # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@30eef3fd427dc74723b6326c6dac7576e2f57894 # PR 43 head, bump to the released tag
         id: token
         with:
           issuer: ${{ inputs.access-roster-issuer }}

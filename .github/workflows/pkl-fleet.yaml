@@ -343,7 +343,7 @@ jobs:
 
       # Not narrowed: discovery lists every repository the App can see, and
       # the required-check rule's fallback answers for the viewer.
-      - uses: truvity/ci-actions/token-exchange@8496df58ee91c0753211f184dc72d6b24c1a1ecd # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@30eef3fd427dc74723b6326c6dac7576e2f57894 # PR 43 head, bump to the released tag
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -465,7 +465,7 @@ jobs:
 
       # Push one branch, open and auto-merge one pull request: contents and
       # pull_requests, on this repository. A dry run only reads.
-      - uses: truvity/ci-actions/token-exchange@8496df58ee91c0753211f184dc72d6b24c1a1ecd # PR 43 head, bump to the released tag
+      - uses: truvity/ci-actions/token-exchange@30eef3fd427dc74723b6326c6dac7576e2f57894 # PR 43 head, bump to the released tag
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
