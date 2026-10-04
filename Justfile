@@ -100,7 +100,7 @@ runners:
 leak-canary:
     @./hack/leak-canary.sh
 
-# pkl-fleet's target version and consumer discovery
+# pkl-fleet's wiring: setup-devbox gets only github.token
 pkl-fleet-cases:
     @./hack/pkl-fleet-cases.sh
 

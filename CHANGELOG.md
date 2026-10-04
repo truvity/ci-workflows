@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `pkl-fleet.yaml`: the discover job's "Resolve the target version" and "Find the consumers that need a bump" (about 80 lines of curl and jq) are the `truvity/ci-actions/pkl-fleet` action (`step: target|consumers`), the last shell blocks of the workflow. Same inputs, outputs (`version`, `repositories`, `count`), log lines, annotations and API calls; `hack/pkl-fleet-cases.sh` keeps only the setup-devbox wiring assertion, the cases are Go tests in ci-actions.
+
 - `pkl-fleet.yaml`: the dependency-URI rewrite, the resolve-and-regenerate step and the pull-request step (about 235 lines of shell, curl and jq) are the `truvity/ci-actions/pkl-fleet` action (`step: rewrite|resolve|publish`), and the commit-author lookup is `truvity/ci-actions/fleet-step`. Same inputs and outputs (`changed`, `breaking`, `from`, `url`), same refusals, API calls and pull-request text; their cases moved from `hack/pkl-fleet-cases.sh` to Go tests in ci-actions, which keeps only the target-version and consumer-discovery cases.
 
 - `parity-fleet.yaml` and `renovate-fleet.yaml`: the small shell steps (print the job's OIDC claims in both discover jobs, the commit-author lookup, the default branch and parity settings read, the renovate approval, the available-majors table; about 150 lines of curl and jq) are the `truvity/ci-actions/fleet-step` action, one `step` each. Same step names, ids, outputs (`git-email`, `base`, `module-dirs`, `mode`), log lines, annotations and summary.
