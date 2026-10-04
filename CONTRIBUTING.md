@@ -19,7 +19,7 @@ cannot be edited after the push.
 
 - `lint` runs actionlint over every workflow
 - `pins` and `runners` hold this repository to its own rules: library pins name release tags, public repositories use hosted runners
-- `pkl-fleet-cases` runs the blocks of `pkl-fleet` that are still shell (target version, consumer discovery) against a stubbed curl
+- `pkl-fleet-cases` checks that `pkl-fleet`'s setup-devbox is handed only the job's own token
 - `leak-canary`
 
 The repository is also exercised by its own `self-check` and `integration` workflows.

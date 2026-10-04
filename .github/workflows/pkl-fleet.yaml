@@ -93,10 +93,8 @@
 # or, with a key: `client-id` and the RENOVATE_APP_PRIVATE_KEY secret replace
 # `token-source`, `access-roster-issuer` and `github-app`.
 #
-# The marked blocks (`>>> target`, `>>> consumers`) are run by
-# hack/pkl-fleet-cases.sh as written, against a stubbed `curl`. The rewrite,
-# resolve and pull-request steps are the ci-actions `pkl-fleet` action's,
-# tested there.
+# The steps' rules (target version, consumer discovery, rewrite, resolve,
+# pull request) are the ci-actions `pkl-fleet` action's, tested there.
 name: pkl-fleet
 
 on:
@@ -280,36 +278,13 @@ jobs:
       # is enough: the source is public.
       - name: Resolve the target version
         id: target
-        env:
-          VERSION: ${{ inputs.version }}
-          SOURCE: ${{ inputs.source }}
-          API: ${{ github.api_url }}
-          TOKEN: ${{ github.token }}
-        run: |
-          # >>> target (hack/pkl-fleet-cases.sh runs this block)
-          set -euo pipefail
-          fail() { echo "::error::$1"; exit 1; }
-          api() {
-            curl -fsS --max-time 60 \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
-          }
-          [[ $SOURCE =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "source '$SOURCE' is not owner/name"
-          version="${VERSION#v}"
-          if [ -z "$version" ]; then
-            tag=$(api "$API/repos/$SOURCE/releases/latest" | jq -r '.tag_name // empty') \
-              || fail "could not read the latest release of $SOURCE"
-            [ -n "$tag" ] || fail "$SOURCE has no release"
-            version="${tag#v}"
-          fi
-          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
-            || fail "'$version' is not a version (X.Y.Z, optionally -prerelease)"
-          api "$API/repos/$SOURCE/releases/tags/v$version" >/dev/null \
-            || fail "$SOURCE has no published release v$version — nothing to move to"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "moving consumers of $SOURCE to v$version"
-          # <<< target
+        uses: truvity/ci-actions/pkl-fleet@d6beff8461642ddb082e218875fe9a8759dbacc2 # v1.13.0
+        with:
+          step: target
+          version: ${{ inputs.version }}
+          source: ${{ inputs.source }}
+          api-url: ${{ github.api_url }}
+          token: ${{ github.token }}
 
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: key-token
@@ -345,67 +320,14 @@ jobs:
       - name: Find the consumers that need a bump
         id: consumers
         if: steps.discover.outputs.count != '0'
-        env:
-          REPOS: ${{ steps.discover.outputs.repositories }}
-          SOURCE: ${{ inputs.source }}
-          VERSION: ${{ steps.target.outputs.version }}
-          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
-          API: ${{ github.api_url }}
-        run: |
-          # >>> consumers (hack/pkl-fleet-cases.sh runs this block)
-          set -euo pipefail
-          api() {
-            curl -fsS --max-time 60 \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: ${ACCEPT:-application/vnd.github+json}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
-          }
-          src_re=${SOURCE//./\\.}
-          find_re="(project)?package://github\.com/${src_re}/releases/download/[^\"' #]*"
-          out='[]'
-          while IFS= read -r repo; do
-            [ -n "$repo" ] || continue
-            if ! base=$(api "$API/repos/$repo" | jq -r '.default_branch') || [ -z "$base" ] || [ "$base" = null ]; then
-              echo "::error::$repo: could not read the repository"; continue
-            fi
-            if ! tree=$(api "$API/repos/$repo/git/trees/$base?recursive=1"); then
-              echo "::error::$repo: could not read the tree of $base"; continue
-            fi
-            if [ "$(jq -r '.truncated' <<<"$tree")" = true ]; then
-              echo "::warning::$repo: the tree of $base is truncated; a PklProject may be missed"
-            fi
-            mapfile -t projects < <(jq -r '.tree[] | select(.type == "blob") | .path | select(test("(^|/)PklProject$"))' <<<"$tree")
-            if [ "${#projects[@]}" -eq 0 ]; then
-              echo "$repo: no PklProject"; continue
-            fi
-            uses=0; stale=0; unread=0
-            for p in "${projects[@]}"; do
-              enc=$(jq -rn --arg p "$p" '$p | split("/") | map(@uri) | join("/")')
-              if ! body=$(ACCEPT=application/vnd.github.raw+json api "$API/repos/$repo/contents/$enc?ref=$base"); then
-                echo "::error::$repo: could not read $p"; unread=1; break
-              fi
-              while IFS= read -r uri; do
-                [ -n "$uri" ] || continue
-                uses=$((uses + 1))
-                [[ $uri == */v$VERSION/* ]] || stale=$((stale + 1))
-              done < <(grep -oE "$find_re" <<<"$body" || true)
-            done
-            [ "$unread" = 0 ] || continue
-            if [ "$uses" -eq 0 ]; then
-              echo "$repo: PklProject files do not depend on $SOURCE"; continue
-            fi
-            if [ "$stale" -eq 0 ]; then
-              echo "$repo: already at v$VERSION"; continue
-            fi
-            if ! jq -e '.tree[] | select(.path == "devbox.json")' <<<"$tree" >/dev/null; then
-              echo "::error::$repo: depends on $SOURCE but has no devbox.json to run its recipes in"; continue
-            fi
-            echo "$repo: $stale of $uses dependency URIs to move"
-            out=$(jq -c --arg r "$repo" '. + [$r]' <<<"$out")
-          done < <(jq -r '.[]' <<<"$REPOS")
-          echo "repositories=$out" >> "$GITHUB_OUTPUT"
-          echo "count=$(jq 'length' <<<"$out")" >> "$GITHUB_OUTPUT"
-          # <<< consumers
+        uses: truvity/ci-actions/pkl-fleet@d6beff8461642ddb082e218875fe9a8759dbacc2 # v1.13.0
+        with:
+          step: consumers
+          repositories: ${{ steps.discover.outputs.repositories }}
+          source: ${{ inputs.source }}
+          version: ${{ steps.target.outputs.version }}
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          api-url: ${{ github.api_url }}
 
   bump:
     needs: discover

@@ -60,8 +60,7 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
-      # pkl-fleet's target version and consumer discovery, run as written
-      # against a stubbed curl.
+      # pkl-fleet's wiring: setup-devbox is handed only the job's own token.
       - name: pkl-fleet cases
         run: ./hack/pkl-fleet-cases.sh
 
