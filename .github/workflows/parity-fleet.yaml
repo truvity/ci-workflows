@@ -250,19 +250,9 @@ jobs:
       # its claims are printed.
       - name: Print this job's OIDC claims
         if: inputs.debug-oidc-claims
-        run: |
-          set -euo pipefail
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "::warning::no id-token permission in this job; nothing to print"
-            exit 0
-          fi
-          jwt=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=debug-oidc-claims" | jq -r '.value')
-          echo "::add-mask::$jwt"
-          payload=$(cut -d. -f2 <<<"$jwt" | tr '_-' '/+')
-          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
-          base64 -d <<<"$payload" \
-            | jq '{repository, ref, ref_type, event_name, workflow_ref, job_workflow_ref, sha}'
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: oidc-claims
 
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: key-token
@@ -425,76 +415,23 @@ jobs:
 
       - name: Resolve the commit author
         id: author
-        env:
-          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
-          USER_LOGIN: ${{ inputs.git-user }}
-          EMAIL: ${{ inputs.git-email }}
-          API: ${{ github.api_url }}
-        run: |
-          set -euo pipefail
-          # The commit author: the App's bot noreply address, looked up
-          # when the caller does not give it.
-          if [ -z "$EMAIL" ]; then
-            id=$(curl -fsS --max-time 60 -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "$API/users/$(jq -rn --arg u "$USER_LOGIN" '$u | @uri')" | jq -r '.id')
-            EMAIL="$id+$USER_LOGIN@users.noreply.github.com"
-          fi
-          echo "git-email=$EMAIL" >> "$GITHUB_OUTPUT"
-          echo "commits as $USER_LOGIN <$EMAIL>"
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: commit-author
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          user-login: ${{ inputs.git-user }}
+          email: ${{ inputs.git-email }}
+          api-url: ${{ github.api_url }}
 
       - name: Read the default branch and parity settings
         id: repo
-        env:
-          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
-          REPO: ${{ matrix.repository }}
-          API: ${{ github.api_url }}
-          RUN_MODE: ${{ inputs.mode }}
-        run: |
-          set -euo pipefail
-          api() {
-            curl -fsS --max-time 60 \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
-          }
-          base=$(api "$API/repos/$REPO" | jq -r '.default_branch')
-
-          # Optional per-repository settings, read off the default branch:
-          # `.devbox-parity.json`. Absent, unreadable or not an object, it
-          # is `{}` and every setting keeps its run-wide default — the
-          # file is opt-in and a repository without one behaves exactly as
-          # before. Schema: docs/fleet.md.
-          settings=$(api "$API/repos/$REPO/contents/.devbox-parity.json?ref=$base" 2>/dev/null \
-            | jq -r '.content // empty' | base64 -d 2>/dev/null || true)
-          jq -e 'type == "object"' >/dev/null 2>&1 <<<"${settings:-}" || settings='{}'
-
-          # Further go.mod directories.
-          dirs=$(jq -c '."module-dirs" // []' <<<"$settings")
-
-          # The mode THIS repository needs, whatever the run was
-          # dispatched with. A repository whose hooks refuse a full
-          # `devbox update` — one whose generated files a human has to
-          # regenerate — declares `align` and is aligned by the same run
-          # as everyone else instead of keeping a caller of its own.
-          # Absent, the run's `mode` input decides, as it always did;
-          # `full` is a run-wide decision and is not accepted here.
-          mode=$(jq -r '.mode // empty' <<<"$settings")
-          case "$mode" in
-            auto | align) echo "$REPO: mode $mode from .devbox-parity.json" ;;
-            "") mode="$RUN_MODE" ;;
-            *)
-              echo "::warning::$REPO: .devbox-parity.json mode '$mode' is not auto or align — using this run's mode $RUN_MODE"
-              mode="$RUN_MODE"
-              ;;
-          esac
-
-          {
-            echo "base=$base"
-            echo "module-dirs=$dirs"
-            echo "mode=$mode"
-          } >> "$GITHUB_OUTPUT"
-          echo "$REPO: default branch $base, module-dirs $dirs, mode $mode"
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: parity-settings
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          repository: ${{ matrix.repository }}
+          api-url: ${{ github.api_url }}
+          run-mode: ${{ inputs.mode }}
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

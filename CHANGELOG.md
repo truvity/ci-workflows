@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `parity-fleet.yaml` and `renovate-fleet.yaml`: the small shell steps (print the job's OIDC claims in both discover jobs, the commit-author lookup, the default branch and parity settings read, the renovate approval, the available-majors table; about 150 lines of curl and jq) are the `truvity/ci-actions/fleet-step` action, one `step` each. Same step names, ids, outputs (`git-email`, `base`, `module-dirs`, `mode`), log lines, annotations and summary.
+
 - `release-pkl.yaml`: the five shell steps (declared version, tag and changelog checks, asset checks, publish, smoke test; about 190 lines) are the `truvity/ci-actions/release-pkl` action, one `step` each. Same inputs, same outputs (`version`), same refusal texts and behaviour; `hack/release-pkl-cases.sh` is removed, its cases are Go tests in ci-actions.
 
 - `release-private.yaml`: the "Require green checks on the tagged commit" step (102 lines of curl and jq, with an embedded self-test) is the `truvity/ci-actions/require-green-checks` action. Same rule, same log lines and `::error::` text, same exit status; it reads the API itself, so neither `curl` nor `jq` is needed on the runner for it.
