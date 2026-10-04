@@ -60,10 +60,8 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
-      # pkl-fleet's target, consumer discovery, URI rewrite (every form,
-      # several projects, a no-op, the refusals), resolve step and pull
-      # request step, run as written against stubbed curl, devbox, just, Pkl
-      # and a local git remote.
+      # pkl-fleet's target version and consumer discovery, run as written
+      # against a stubbed curl.
       - name: pkl-fleet cases
         run: ./hack/pkl-fleet-cases.sh
 

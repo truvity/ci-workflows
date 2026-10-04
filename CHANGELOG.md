@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `pkl-fleet.yaml`: the dependency-URI rewrite, the resolve-and-regenerate step and the pull-request step (about 235 lines of shell, curl and jq) are the `truvity/ci-actions/pkl-fleet` action (`step: rewrite|resolve|publish`), and the commit-author lookup is `truvity/ci-actions/fleet-step`. Same inputs and outputs (`changed`, `breaking`, `from`, `url`), same refusals, API calls and pull-request text; their cases moved from `hack/pkl-fleet-cases.sh` to Go tests in ci-actions, which keeps only the target-version and consumer-discovery cases.
+
 - `parity-fleet.yaml` and `renovate-fleet.yaml`: the small shell steps (print the job's OIDC claims in both discover jobs, the commit-author lookup, the default branch and parity settings read, the renovate approval, the available-majors table; about 150 lines of curl and jq) are the `truvity/ci-actions/fleet-step` action, one `step` each. Same step names, ids, outputs (`git-email`, `base`, `module-dirs`, `mode`), log lines, annotations and summary.
 
 - `release-pkl.yaml`: the five shell steps (declared version, tag and changelog checks, asset checks, publish, smoke test; about 190 lines) are the `truvity/ci-actions/release-pkl` action, one `step` each. Same inputs, same outputs (`version`), same refusal texts and behaviour; `hack/release-pkl-cases.sh` is removed, its cases are Go tests in ci-actions.
