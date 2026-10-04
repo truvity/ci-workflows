@@ -134,8 +134,10 @@ on:
       cache-key:
         description: >-
           Key prefix; the saved key is
-          `<cache-key>-<runner os>-<hash of cache-key-files>`. Used only
-          with `cache-recipe`.
+          `<cache-key>-<runner os>-<ISO week>-<hash of cache-key-files>`.
+          The ISO week (`YYYY-Www`, UTC) bounds staleness: a new week
+          starts cold, so an artifact re-published under the same name is
+          served stale for at most 7 days. Used only with `cache-recipe`.
         required: false
         type: string
         default: ''
@@ -145,9 +147,9 @@ on:
           (hashFiles), so a change to what the recipe fetches starts a
           new entry. A reusable workflow's caller cannot evaluate
           hashFiles in `with:`, which is why the globs travel as an input.
-          When no entry matches the exact key, the newest one with the
-          same `<cache-key>-<runner os>-` prefix is restored and the
-          recipe tops it up.
+          When no entry matches the exact key, the newest one from the
+          same week (`<cache-key>-<runner os>-<ISO week>-`) is restored
+          and the recipe tops it up; never one from an earlier week.
         required: false
         type: string
         default: ''
@@ -516,13 +518,21 @@ jobs:
       # Opt-in, one recipe (cache-recipe). The key carries the hash of
       # cache-key-files so a changed input starts a fresh entry, and the
       # prefix is the fallback so a near-miss still restores most of it.
+      #
+      # The ISO week is in the key so staleness is bounded: expressions
+      # have no date function, hence the step.
+      - name: Cache week
+        id: cache-week
+        if: inputs.cache-recipe != '' && matrix.recipe == inputs.cache-recipe && inputs.cache-paths != ''
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: recipe-cache
         if: inputs.cache-recipe != '' && matrix.recipe == inputs.cache-recipe && inputs.cache-paths != ''
         with:
           path: ${{ inputs.cache-paths }}
-          key: ${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles(inputs.cache-key-files) }}
-          restore-keys: ${{ inputs.cache-key }}-${{ runner.os }}-
+          key: ${{ inputs.cache-key }}-${{ runner.os }}-${{ steps.cache-week.outputs.week }}-${{ hashFiles(inputs.cache-key-files) }}
+          restore-keys: ${{ inputs.cache-key }}-${{ runner.os }}-${{ steps.cache-week.outputs.week }}-
 
       # Through env, never spliced into the script: a ${{ }} expression is
       # pasted in before bash parses the line, so a value carrying a quote

@@ -7,7 +7,7 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
-- `check.yaml` gains an opt-in per-recipe cache: `cache-recipe` names the one recipe that restores and saves `cache-paths` (actions/cache, pinned), keyed `<cache-key>-<runner os>-<hash of cache-key-files>` with the `<cache-key>-<runner os>-` prefix as the restore fallback. All four default to empty, which leaves every caller unchanged. Meant for a recipe that re-fetches the same immutable artifacts each run; cache the fetched artifacts only, never credentials.
+- `check.yaml` gains an opt-in per-recipe cache: `cache-recipe` names the one recipe that restores and saves `cache-paths` (actions/cache, pinned), keyed `<cache-key>-<runner os>-<ISO week>-<hash of cache-key-files>`, with the same-week prefix as the only restore fallback, so a new week starts cold and an artifact re-published under the same name is served stale for at most 7 days (a small step computes the week with `date -u +%G-W%V`). All four default to empty, which leaves every caller unchanged. Meant for a recipe that re-fetches the same immutable artifacts each run; cache the fetched artifacts only, never credentials.
 
 ## v3.25.0
 
