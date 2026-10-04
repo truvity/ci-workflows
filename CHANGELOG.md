@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `release-pkl.yaml`: the five shell steps (declared version, tag and changelog checks, asset checks, publish, smoke test; about 190 lines) are the `truvity/ci-actions/release-pkl` action, one `step` each. Same inputs, same outputs (`version`), same refusal texts and behaviour; `hack/release-pkl-cases.sh` is removed, its cases are Go tests in ci-actions.
+
 - `release-private.yaml`: the "Require green checks on the tagged commit" step (102 lines of curl and jq, with an embedded self-test) is the `truvity/ci-actions/require-green-checks` action. Same rule, same log lines and `::error::` text, same exit status; it reads the API itself, so neither `curl` nor `jq` is needed on the runner for it.
 
 - `parity-fleet`, `renovate-fleet`, `pkl-fleet` and `auto-release`: the inline token-input check (four copies) is the `truvity/ci-actions/token-inputs` action, and the inline enrolment-list read (four copies, `yq` and `jq`) is `truvity/ci-actions/enrolment-list`, both pinned at ci-actions v1.10.0. Same messages, same order, same exit status, same `names` output. Only a plain dotted `list` path is read now (no `yq` expression syntax), and `yq` and `jq` are no longer needed on the runner for it.
