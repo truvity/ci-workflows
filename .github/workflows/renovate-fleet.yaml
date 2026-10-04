@@ -259,19 +259,9 @@ jobs:
       # its claims are printed.
       - name: Print this job's OIDC claims
         if: inputs.debug-oidc-claims
-        run: |
-          set -euo pipefail
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "::warning::no id-token permission in this job; nothing to print"
-            exit 0
-          fi
-          jwt=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=debug-oidc-claims" | jq -r '.value')
-          echo "::add-mask::$jwt"
-          payload=$(cut -d. -f2 <<<"$jwt" | tr '_-' '/+')
-          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
-          base64 -d <<<"$payload" \
-            | jq '{repository, ref, ref_type, event_name, workflow_ref, job_workflow_ref, sha}'
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: oidc-claims
 
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: key-token
@@ -470,47 +460,12 @@ jobs:
 
       - name: Approve non-major renovate PRs that need a review
         if: steps.approver-key.outputs.token != '' || steps.approver-roster.outputs.github-token != ''
-        env:
-          TOKEN: ${{ steps.approver-key.outputs.token || steps.approver-roster.outputs.github-token }}
-          REPO: ${{ matrix.repository }}
-          API: ${{ github.api_url }}
-        run: |
-          set -euo pipefail
-          api() {
-            curl -fsS --max-time 60 \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
-          }
-          owner=${REPO%/*}; name=${REPO#*/}
-          approved=0
-          prs=$(api "$API/repos/$REPO/pulls?state=open&per_page=100" \
-            | jq -c '[.[] | select(.user.type == "Bot" and (.user.login | test("renovate"))) | {number, labels: [.labels[].name]}]')
-          for row in $(jq -c '.[]' <<<"$prs"); do
-            number=$(jq -r '.number' <<<"$row")
-            if jq -e '.labels | index("major")' <<<"$row" >/dev/null; then
-              echo "#$number: major — left for a human"
-              continue
-            fi
-            decision=$(jq -n --arg o "$owner" --arg r "$name" --argjson n "$number" \
-              '{query: "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewDecision}}}", variables: {o:$o, r:$r, n:$n}}' \
-              | api -X POST "$API/graphql" -d @- | jq -r '.data.repository.pullRequest.reviewDecision // "NONE"')
-            if [ "$decision" != "REVIEW_REQUIRED" ]; then
-              echo "#$number: review $decision — nothing to add"
-              continue
-            fi
-            if api "$API/repos/$REPO/pulls/$number/reviews" \
-              | jq -e '[.[] | select(.state == "APPROVED" and (.user.login | endswith("[bot]")))] | length > 0' >/dev/null; then
-              echo "#$number: already approved by a bot"
-              continue
-            fi
-            api -X POST "$API/repos/$REPO/pulls/$number/reviews" \
-              -d '{"event":"APPROVE","body":"Non-major dependency update from renovate. Approved by the fleet job so auto-merge can proceed; GitHub still holds the merge until every required check passes."}' \
-              >/dev/null
-            echo "#$number: approved"
-            approved=$((approved + 1))
-          done
-          echo "approved $approved renovate PR(s)" >> "$GITHUB_STEP_SUMMARY"
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: approve-renovate
+          token: ${{ steps.approver-key.outputs.token || steps.approver-roster.outputs.github-token }}
+          repository: ${{ matrix.repository }}
+          api-url: ${{ github.api_url }}
 
   # The decision table: which major versions exist, for which package, in
   # which repositories — built from every job's report, whether or not the
@@ -527,40 +482,6 @@ jobs:
           path: reports
 
       - name: Available majors across the estate
-        run: |
-          set -euo pipefail
-          shopt -s nullglob globstar
-          files=(reports/**/*.json)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "no reports — every repository job failed before renovate wrote one" | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          rows=$(jq -s '
-            [ .[] | .repositories | to_entries[] | .key as $repo
-              | .value.packageFiles | to_entries[] | .key as $manager
-              | .value[] | .deps[]?
-              | . as $dep
-              | (.updates // [])[] | select(.updateType == "major")
-              | { package: ($dep.depName // $dep.packageName), manager: $manager, repo: $repo,
-                  current: ($dep.currentVersion // $dep.currentValue // "?"),
-                  major: (.newVersion // .newValue // "?") } ]
-            | group_by(.package)
-            | map({ package: .[0].package, manager: .[0].manager,
-                    newest: (map(.major) | max_by(ltrimstr("v") | [scan("[0-9]+") | tonumber])),
-                    repos: (map("\(.repo | split("/")[1]) \(.current)") | unique) })
-            | sort_by(-(.repos | length), .package)' "${files[@]}")
-          {
-            echo "## Available majors"
-            echo
-            if [ "$(jq 'length' <<<"$rows")" -eq 0 ]; then
-              echo "None: every enrolled repository is on the newest major of everything it uses."
-            else
-              echo "Decide these once, in the estate policy. Each row is one package; the right column is where it is used and at which version."
-              echo
-              echo "| package | manager | newest major | repositories (current) |"
-              echo "|---|---|---|---|"
-              jq -r '.[] | "| `\(.package)` | \(.manager) | \(.newest) | \(.repos | join(", ")) |"' <<<"$rows"
-            fi
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-          # Also in the log (above): a run's step summary is not readable
-          # through the API, and the table is what decisions are made from.
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: available-majors
