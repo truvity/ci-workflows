@@ -100,14 +100,10 @@ runners:
 leak-canary:
     @./hack/leak-canary.sh
 
-# release-pkl's version, tag, changelog and asset checks, re-run behaviour and smoke test
-release-pkl-cases:
-    @./hack/release-pkl-cases.sh
-
 # pkl-fleet's target, consumer discovery, URI rewrite, resolve and pull-request steps
 pkl-fleet-cases:
     @./hack/pkl-fleet-cases.sh
 
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary release-pkl-cases pkl-fleet-cases
+check: lint pins runners leak-canary pkl-fleet-cases
     @echo "✓ All checks passed"

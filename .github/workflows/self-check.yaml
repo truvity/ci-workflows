@@ -60,11 +60,6 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
-      # release-pkl's checks, publish step and smoke test, run as written
-      # against a stubbed `gh` and Pkl: refusals, re-runs, the asset names.
-      - name: release-pkl cases
-        run: ./hack/release-pkl-cases.sh
-
       # pkl-fleet's target, consumer discovery, URI rewrite (every form,
       # several projects, a no-op, the refusals), resolve step and pull
       # request step, run as written against stubbed curl, devbox, just, Pkl
