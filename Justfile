@@ -100,7 +100,7 @@ runners:
 leak-canary:
     @./hack/leak-canary.sh
 
-# pkl-fleet's target, consumer discovery, URI rewrite, resolve and pull-request steps
+# pkl-fleet's target version and consumer discovery
 pkl-fleet-cases:
     @./hack/pkl-fleet-cases.sh
 

@@ -93,9 +93,10 @@
 # or, with a key: `client-id` and the RENOVATE_APP_PRIVATE_KEY secret replace
 # `token-source`, `access-roster-issuer` and `github-app`.
 #
-# The marked blocks (`>>> target`, `>>> consumers`, `>>> rewrite`,
-# `>>> resolve`, `>>> publish`) are run by hack/pkl-fleet-cases.sh as
-# written, against stubbed `curl`, `devbox`, `just` and Pkl.
+# The marked blocks (`>>> target`, `>>> consumers`) are run by
+# hack/pkl-fleet-cases.sh as written, against a stubbed `curl`. The rewrite,
+# resolve and pull-request steps are the ci-actions `pkl-fleet` action's,
+# tested there.
 name: pkl-fleet
 
 on:
@@ -454,21 +455,13 @@ jobs:
       - name: Resolve the commit author
         id: author
         if: ${{ !inputs.dry-run }}
-        env:
-          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
-          USER_LOGIN: ${{ inputs.git-user }}
-          EMAIL: ${{ inputs.git-email }}
-          API: ${{ github.api_url }}
-        run: |
-          set -euo pipefail
-          if [ -z "$EMAIL" ]; then
-            id=$(curl -fsS --max-time 60 -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "$API/users/$(jq -rn --arg u "$USER_LOGIN" '$u | @uri')" | jq -r '.id')
-            EMAIL="$id+$USER_LOGIN@users.noreply.github.com"
-          fi
-          echo "git-email=$EMAIL" >> "$GITHUB_OUTPUT"
-          echo "commits as $USER_LOGIN <$EMAIL>"
+        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: commit-author
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          user-login: ${{ inputs.git-user }}
+          email: ${{ inputs.git-email }}
+          api-url: ${{ github.api_url }}
 
       - name: Read the default branch
         id: repo
@@ -505,266 +498,41 @@ jobs:
 
       - name: Rewrite the dependency URIs
         id: rewrite
-        env:
-          TARGET: ${{ needs.discover.outputs.version }}
-          SOURCE: ${{ inputs.source }}
-          DIRS_FILE: ${{ runner.temp }}/pkl-projects.txt
-        run: |
-          # >>> rewrite (hack/pkl-fleet-cases.sh runs this block)
-          set -euo pipefail
-          fail() { echo "::error::$1"; exit 1; }
-          ver_re='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
-          [[ $TARGET =~ ^${ver_re}$ ]] || fail "target '$TARGET' is not a version (X.Y.Z, optionally -prerelease)"
-          [[ $SOURCE =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "source '$SOURCE' is not owner/name"
-          src_re=${SOURCE//./\\.}
-          find_re="(project)?package://github\.com/${src_re}/releases/download/[^\"' #]*"
-          uri_re="^(project)?package://github\.com/${src_re}/releases/download/v(${ver_re})/([A-Za-z0-9._-]+)@(${ver_re}|[0-9]+)\$"
-          tcore=${TARGET%%-*}
-          tmaj=${TARGET%%.*}
-          tmin=${TARGET#*.}; tmin=${tmin%%.*}
-
-          mapfile -t projects < <(git ls-files | awk -F/ '$NF == "PklProject"')
-          [ "${#projects[@]}" -gt 0 ] || fail "no PklProject in this repository"
-
-          # Pass one reads every file and refuses on any URI it cannot say
-          # what to do with, before a single byte is written.
-          bad=0
-          declare -A stale=() olds=() dirs=()
-          for p in "${projects[@]}"; do
-            d=$(dirname "$p")
-            for f in "$p" "$d/PklProject.deps.json"; do
-              [ -f "$f" ] || continue
-              while IFS=: read -r n uri; do
-                if ! [[ $uri =~ $uri_re ]]; then
-                  echo "::error file=$f,line=$n::'$uri' is a dependency into $SOURCE but not of the shape v<version>/<name>@<version> — refusing to guess"
-                  bad=1; continue
-                fi
-                tag=${BASH_REMATCH[2]}; at=${BASH_REMATCH[5]}
-                if [[ $at == *.* ]]; then
-                  [ "$at" = "$tag" ] || { echo "::error file=$f,line=$n::'$uri' names release v$tag but package version $at"; bad=1; continue; }
-                else
-                  [ "$at" = "${tag%%.*}" ] || { echo "::error file=$f,line=$n::'$uri' has major $at but release v$tag"; bad=1; continue; }
-                fi
-                core=${tag%%-*}
-                if [ "$core" != "$tcore" ] && [ "$(printf '%s\n%s\n' "$core" "$tcore" | sort -V | tail -n 1)" = "$core" ]; then
-                  echo "::error file=$f,line=$n::v$tag is newer than the target v$TARGET — refusing to downgrade"
-                  bad=1; continue
-                fi
-                if [ "$tag" != "$TARGET" ]; then
-                  stale["$f"]=1; olds["$tag"]=1; dirs["$d"]=1
-                fi
-              done < <(grep -noE "$find_re" "$f" || true)
-            done
-          done
-          [ "$bad" = 0 ] || exit 1
-
-          if [ "${#stale[@]}" -eq 0 ]; then
-            echo "already at v$TARGET — nothing to rewrite"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            : > "$DIRS_FILE"
-            exit 0
-          fi
-
-          # `#` as the delimiter: it cannot be in SOURCE or in a version.
-          # The full `@<version>` form first (PklProject, and the
-          # `projectpackage://` values of deps.json), then the major-only
-          # `@<major>` keys of deps.json, which only a different major moves.
-          pre="(package://github\.com/${src_re}/releases/download/)"
-          for f in "${!stale[@]}"; do
-            sed -E -i \
-              -e "s#${pre}v${ver_re}/([A-Za-z0-9._-]+)@${ver_re}#\1v${TARGET}/\3@${TARGET}#g" \
-              -e "s#${pre}v${ver_re}/([A-Za-z0-9._-]+)@[0-9]+([\"' #]|\$)#\1v${TARGET}/\3@${tmaj}\4#g" \
-              "$f"
-          done
-          printf '%s\n' "${!dirs[@]}" | LC_ALL=C sort > "$DIRS_FILE"
-
-          breaking=false
-          [[ $TARGET == *-* ]] && breaking=true
-          for old in "${!olds[@]}"; do
-            omaj=${old%%.*}; omin=${old#*.}; omin=${omin%%.*}
-            if [ "$omaj" != "$tmaj" ]; then breaking=true
-            elif [ "$omaj" = 0 ] && [ "$omin" != "$tmin" ]; then breaking=true; fi
-          done
-          from=$(printf '%s\n' "${!olds[@]}" | sort -V | paste -sd, -)
-          {
-            echo "changed=true"
-            echo "breaking=$breaking"
-            echo "from=$from"
-          } >> "$GITHUB_OUTPUT"
-          echo "moved $(wc -l < "$DIRS_FILE" | tr -d ' ') project(s) from v${from//,/, v} to v$TARGET (breaking: $breaking)"
-          # <<< rewrite
+        uses: truvity/ci-actions/pkl-fleet@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: rewrite
+          target: ${{ needs.discover.outputs.version }}
+          source: ${{ inputs.source }}
+          dirs-file: ${{ runner.temp }}/pkl-projects.txt
 
       # Inside the consumer's devbox, so it is the consumer's Pkl, `just`
       # and generators. A failed resolve or generate fails the job and
       # pushes nothing.
       - name: Resolve and regenerate
         if: steps.rewrite.outputs.changed == 'true'
-        env:
-          DIRS_FILE: ${{ runner.temp }}/pkl-projects.txt
-          PKL_COMMAND: ${{ inputs.pkl-command }}
-        run: |
-          # >>> resolve (hack/pkl-fleet-cases.sh runs this block)
-          set -euo pipefail
-          inbox() { devbox run -- "$@"; }
-          recipes=$(inbox just --summary 2>/dev/null || true)
-          has() { [[ " $recipes " == *" $1 "* ]]; }
-          if has resolve; then
-            echo "resolving with the repository's resolve recipe"
-            inbox just resolve
-          else
-            read -ra pkl <<<"$PKL_COMMAND"
-            while IFS= read -r d; do
-              [ -n "$d" ] || continue
-              echo "resolving $d with ${pkl[*]}"
-              inbox "${pkl[@]}" project resolve "$d"
-            done < "$DIRS_FILE"
-          fi
-          if has generate; then
-            echo "regenerating with the repository's generate recipe"
-            inbox just generate
-          fi
-          # <<< resolve
+        uses: truvity/ci-actions/pkl-fleet@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: resolve
+          dirs-file: ${{ runner.temp }}/pkl-projects.txt
+          pkl-command: ${{ inputs.pkl-command }}
 
       - name: Open or update the pull request
         id: pr
         if: steps.rewrite.outputs.changed == 'true'
-        env:
-          TOKEN: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
-          REPO: ${{ matrix.repository }}
-          BASE: ${{ steps.repo.outputs.base }}
-          API: ${{ github.api_url }}
-          SOURCE: ${{ inputs.source }}
-          VERSION: ${{ needs.discover.outputs.version }}
-          FROM: ${{ steps.rewrite.outputs.from }}
-          BREAKING: ${{ steps.rewrite.outputs.breaking }}
-          DIRS_FILE: ${{ runner.temp }}/pkl-projects.txt
-          BRANCH_PREFIX: ${{ inputs.branch-prefix }}
-          DRY_RUN: ${{ inputs.dry-run }}
-          AUTO_MERGE: ${{ inputs.auto-merge && inputs.require-check }}
-          GIT_USER: ${{ inputs.git-user }}
-          GIT_EMAIL: ${{ steps.author.outputs.git-email }}
-        run: |
-          # >>> publish (hack/pkl-fleet-cases.sh runs this block)
-          set -euo pipefail
-          api() {
-            curl -fsS --max-time 60 \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" "$@"
-          }
-          name=${SOURCE#*/}
-          branch="${BRANCH_PREFIX}${VERSION}"
-
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "the tree is unchanged — nothing to propose"
-            exit 0
-          fi
-          if [ "$DRY_RUN" = true ]; then
-            echo "dry run: would push $branch and open a pull request with:"
-            git status --short
-            git diff --stat
-            echo "- $REPO: dry run, ${FROM:-?} -> $VERSION" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          # The token is presented to git for these commands only, through
-          # the environment: it is in no config file and no argument.
-          basic=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
-          echo "::add-mask::$basic"
-          gitx() {
-            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
-              GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $basic" git "$@"
-          }
-
-          title="chore(deps): update $name to v$VERSION"
-          git checkout -q -B "$branch"
-          git add -A
-          git -c user.name="$GIT_USER" -c user.email="$GIT_EMAIL" commit -q \
-            -m "$title" -m "Moves the dependencies on $SOURCE from v${FROM//,/, v} to v$VERSION, resolves PklProject.deps.json and regenerates what the repository generates."
-
-          # Push only when the content differs from the branch already
-          # there, so a poll that finds an open pull request does not force
-          # a new commit under it, and its checks, every hour.
-          if gitx fetch -q --depth=1 origin "refs/heads/$branch" 2>/dev/null \
-            && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then
-            echo "$branch already holds exactly this change — not pushed again"
-          else
-            gitx push -q --force origin "HEAD:refs/heads/$branch"
-          fi
-
-          label() { # <name> <colour> <description>
-            api -X POST "$API/repos/$REPO/labels" \
-              -d "$(jq -nc --arg n "$1" --arg c "$2" --arg d "$3" '{name: $n, color: $c, description: $d}')" \
-              >/dev/null 2>&1 || true   # 422: it exists
-          }
-          labels='["dependencies"]'
-          label dependencies 0366d6 "Dependency updates"
-          if [ "$BREAKING" = true ]; then
-            labels='["dependencies","major"]'
-            label major b60205 "Major version update"
-          fi
-
-          body="Moves the Pkl contracts packages ($SOURCE) from v${FROM//,/, v} to **v$VERSION** in:"$'\n\n'
-          while IFS= read -r d; do [ -n "$d" ] && body+="- \`$d\`"$'\n'; done < "$DIRS_FILE"
-          body+=$'\n'"\`PklProject.deps.json\` is resolved again, and the repository's \`generate\` recipe has run where it has one, so committed generated files follow the new contract."$'\n\n'
-          body+="Release notes: https://github.com/$SOURCE/releases/tag/v$VERSION"$'\n\n'
-          if [ "$BREAKING" = true ]; then
-            body+="This bump is **breaking** (a new major, or a new minor below 1.0): it is not auto-merged. Read the release notes' breaking entries, fix what they name, and merge by hand."
-          elif [ "$AUTO_MERGE" = true ]; then
-            body+="Not breaking: auto-merge is armed and GitHub still holds the merge until every required check passes."
-          else
-            body+="Not breaking, but auto-merge is not armed on this run: merge when the checks are green."
-          fi
-          body+=$'\n\n'"Opened by the fleet's pkl job."
-
-          owner=${REPO%/*}
-          existing=$(api "$API/repos/$REPO/pulls?state=open&head=$owner:$branch&per_page=100" | jq -c '.[0] // empty')
-          if [ -n "$existing" ]; then
-            number=$(jq -r '.number' <<<"$existing")
-            api -X PATCH "$API/repos/$REPO/pulls/$number" \
-              -d "$(jq -nc --arg t "$title" --arg b "$body" '{title: $t, body: $b}')" >/dev/null
-            pr=$existing
-            echo "pull request #$number for $branch updated"
-          else
-            pr=$(api -X POST "$API/repos/$REPO/pulls" \
-              -d "$(jq -nc --arg t "$title" --arg b "$body" --arg h "$branch" --arg base "$BASE" \
-                    '{title: $t, body: $b, head: $h, base: $base}')")
-            echo "pull request opened: $(jq -r '.html_url' <<<"$pr")"
-          fi
-          number=$(jq -r '.number' <<<"$pr")
-          url=$(jq -r '.html_url' <<<"$pr")
-          api -X POST "$API/repos/$REPO/issues/$number/labels" -d "$(jq -nc --argjson l "$labels" '{labels: $l}')" >/dev/null
-
-          # Auto-merge only where there is a green to wait for, and never
-          # for a breaking bump. A refusal (auto-merge off in the
-          # repository's settings) leaves the pull request for a human.
-          if [ "$BREAKING" != true ] && [ "$AUTO_MERGE" = true ]; then
-            # shellcheck disable=SC2016  # $id is a GraphQL variable
-            res=$(jq -nc --arg id "$(jq -r '.node_id' <<<"$pr")" \
-              '{query: "mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:REBASE}){clientMutationId}}", variables: {id: $id}}' \
-              | api -X POST "$API/graphql" -d @-)
-            if jq -e '.errors' <<<"$res" >/dev/null; then
-              echo "::warning::$REPO#$number: auto-merge could not be armed: $(jq -c '.errors[0].message' <<<"$res")"
-            else
-              echo "auto-merge armed on #$number"
-            fi
-          else
-            echo "auto-merge not armed on #$number"
-          fi
-
-          # An open pull request for an older version of the same library
-          # is superseded by this one.
-          while read -r old oldref; do
-            [ -n "$old" ] || continue
-            api -X POST "$API/repos/$REPO/issues/$old/comments" \
-              -d "$(jq -nc --arg b "Superseded by #$number (v$VERSION)." '{body: $b}')" >/dev/null
-            api -X PATCH "$API/repos/$REPO/pulls/$old" -d '{"state":"closed"}' >/dev/null
-            api -X DELETE "$API/repos/$REPO/git/refs/heads/$oldref" >/dev/null || true
-            echo "closed #$old ($oldref), superseded"
-          done < <(api "$API/repos/$REPO/pulls?state=open&per_page=100" \
-            | jq -r --arg p "$BRANCH_PREFIX" --arg b "$branch" --arg r "$REPO" \
-                '.[] | select(.head.repo.full_name == $r and (.head.ref | startswith($p)) and .head.ref != $b) | "\(.number) \(.head.ref)"')
-
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "- $REPO: $url" >> "$GITHUB_STEP_SUMMARY"
-          # <<< publish
+        uses: truvity/ci-actions/pkl-fleet@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        with:
+          step: publish
+          token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
+          repository: ${{ matrix.repository }}
+          base: ${{ steps.repo.outputs.base }}
+          api-url: ${{ github.api_url }}
+          source: ${{ inputs.source }}
+          version: ${{ needs.discover.outputs.version }}
+          from: ${{ steps.rewrite.outputs.from }}
+          breaking: ${{ steps.rewrite.outputs.breaking }}
+          dirs-file: ${{ runner.temp }}/pkl-projects.txt
+          branch-prefix: ${{ inputs.branch-prefix }}
+          dry-run: ${{ inputs.dry-run }}
+          auto-merge: ${{ inputs.auto-merge && inputs.require-check }}
+          git-user: ${{ inputs.git-user }}
+          git-email: ${{ steps.author.outputs.git-email }}
