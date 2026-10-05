@@ -22,7 +22,7 @@ lint:
 pins:
     #!/usr/bin/env bash
     set -euo pipefail
-    LIBRARIES="truvity/ci-workflows truvity/ci-actions truvity/ci-cache"
+    LIBRARIES="truvity/ci-workflows truvity/ci-actions"
     
     fail=0
     seen=0
