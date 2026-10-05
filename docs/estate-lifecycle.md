@@ -12,7 +12,7 @@ The three systems, and where their docs live:
 | [github-structure](https://github.com/truvity/github-structure) | What the repo IS: settings, protection, rulesets, teams, Apps | `docs/{registry,safety,adoption,doctrine}.md` |
 | ci-workflows (this repo) | What the repo DOES on push/PR/schedule: check, release, auto-release — and, for the whole estate at once, renovate and version parity | `docs/` here |
 | [ci-plane](https://github.com/truvity/ci-plane) | Where CI RUNS: ARC runners and the warm builders | `docs/{architecture,day-1-install,day-2-operations}.md` |
-| [ci-cache](https://github.com/truvity/ci-cache) | The caches: the server, its chart, and the `setup` action that wires a job to them | `docs/` there |
+| [ci-cache](https://github.com/truvity/ci-cache) | The cache engine and the go-cache-plugin client releases (archived; the `setup-cache` action that wires a job lives in ci-actions) | `docs/` there |
 
 What every public component repository must look like is not in any of
 the three: it is the component contract, in
@@ -70,17 +70,19 @@ exists, so the default is a no-op for non-Node repositories. Pass
 `node-cache: false` to opt out.
 
 The **caches are wired by
-[truvity/ci-cache](https://github.com/truvity/ci-cache)**, not here.
-`setup-devbox` calls ci-cache's nested `setup` action, which reads the
+[truvity/ci-actions](https://github.com/truvity/ci-actions)'
+`setup-cache`**, not here.
+`setup-devbox` calls that nested action, which reads the
 tree (`go.mod`, `devbox.json`, `yarn.lock`, `.moon/`, Gradle files) and
 wires each build system it finds; a repository never names that action
 itself. For Go, that is the build cache through `go-cache-plugin`, which
 talks to the bucket with the runner's own identity. The action fails
 open: on a GitHub-hosted runner, with no bucket, or with a client binary
 missing, it wires nothing, says why, and the job runs uncached. What it
-wires, and why, is ci-cache's
-[`docs/setup-action.md`](https://github.com/truvity/ci-cache/blob/master/docs/setup-action.md);
-the Go side is
+wires, and why, is in its
+[`action.yaml`](https://github.com/truvity/ci-actions/blob/master/setup-cache/action.yaml);
+the Go side is the archived
+[ci-cache](https://github.com/truvity/ci-cache)'s
 [`docs/clients/go.md`](https://github.com/truvity/ci-cache/blob/master/docs/clients/go.md).
 
 What stays here is **which jobs get a cache at all**, and that is the

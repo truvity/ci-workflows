@@ -318,7 +318,7 @@ jobs:
 
       # Only when the caller declares a version-bump-command: the bump runs in
       # the caller's devbox. No input, no extra setup.
-      - uses: truvity/ci-actions/setup-devbox@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
         if: steps.gate.outputs.skip != 'true' && inputs.version-bump-command != ''
         with:
           github-token: ${{ github.token }}
@@ -393,7 +393,7 @@ jobs:
 
       # Only when the caller declares a version-bump-command: the bump runs in
       # the caller's devbox. No input, no extra setup.
-      - uses: truvity/ci-actions/setup-devbox@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
         if: steps.gate.outputs.skip != 'true' && inputs.version-bump-command != ''
         with:
           github-token: ${{ github.token }}

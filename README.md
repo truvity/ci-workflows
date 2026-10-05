@@ -145,8 +145,8 @@ files:
   This repository is the only thing a caller pins.
   [ci-actions](https://github.com/truvity/ci-actions) holds the
   composite steps these workflows call;
-  [ci-cache](https://github.com/truvity/ci-cache) owns cache wiring (its
-  `setup` action, called from `setup-devbox`) and the cache server;
+  [ci-cache](https://github.com/truvity/ci-cache) (archived) held the cache
+  engine; cache wiring is ci-actions' `setup-cache`, called from `setup-devbox`;
   [ci-plane](https://github.com/truvity/ci-plane) is where work executes
   (runner and nix-worker images, `arc-runners`, `ci-builders`).
 - **[policy](https://github.com/truvity/policy)**: the component contract

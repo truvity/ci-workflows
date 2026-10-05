@@ -5,7 +5,9 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v3.26.0
+
+- Every `truvity/ci-actions/setup-devbox` pin moves to v1.15.0, which calls the in-repo `setup-cache` action instead of `truvity/ci-cache/setup@v0.2.0`. No other workflow change; the cache wiring is the ci-cache v0.3.1 action, moved. After this, no workflow here reaches truvity/ci-cache.
 
 - `pkl-fleet.yaml`: the discover job's "Resolve the target version" and "Find the consumers that need a bump" (about 80 lines of curl and jq) are the `truvity/ci-actions/pkl-fleet` action (`step: target|consumers`), the last shell blocks of the workflow. Same inputs, outputs (`version`, `repositories`, `count`), log lines, annotations and API calls; `hack/pkl-fleet-cases.sh` keeps only the setup-devbox wiring assertion, the cases are Go tests in ci-actions.
 
