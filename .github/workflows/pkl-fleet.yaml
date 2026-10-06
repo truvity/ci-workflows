@@ -264,7 +264,7 @@ jobs:
           list: ${{ inputs.list }}
 
       - name: Check the token inputs
-        uses: truvity/ci-actions/token-inputs@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        uses: truvity/ci-actions/token-inputs@d0dc2123d0d698d205713525d84346fffcb86eb5 # v1.15.1
         with:
           source: ${{ inputs.token-source }}
           access-roster-issuer: ${{ inputs.access-roster-issuer }}

@@ -9,6 +9,10 @@ those tags have no GitHub release; v3.14.0 on do.
 
 - `just pins` and the README consumer table no longer list the archived truvity/ci-cache.
 
+## v3.26.1
+
+- Fix: `parity-fleet`, `renovate-fleet`, `pkl-fleet` and `auto-release` failed their preflight with "Unrecognized named-value: 'secrets'" since v3.26.0. The `token-inputs` action pinned at v1.10.0 carried a `${{ secrets... }}` expression in an input description, which the runner evaluates. The pin moves to ci-actions v1.15.1, which rewords it. No other change.
+
 ## v3.26.0
 
 - Every `truvity/ci-actions/setup-devbox` pin moves to v1.15.0, which calls the in-repo `setup-cache` action instead of `truvity/ci-cache/setup@v0.2.0`. No other workflow change; the cache wiring is the ci-cache v0.3.1 action, moved. After this, no workflow here reaches truvity/ci-cache.
