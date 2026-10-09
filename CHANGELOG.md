@@ -5,7 +5,7 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v3.26.2
 
 - The `policy-conformance`, `cluster` and `openbao-secrets` pins move to ci-actions v1.16.0. C5 orders CHANGELOG headings by semver precedence (a release above its release candidates passes); `openbao-secrets` runs `sluisctl` for the token exchange (falling back to `accessctl` with a warning) in `release-private`. No input or output change in this repository's workflows.
 - `check` and `self-check`: the `policy-conformance` pin moves from ci-actions v1.8.0 to v1.15.1. C5 now orders CHANGELOG headings by semver precedence, so a release above its own release candidates (`## v1.74.0` over `## v1.74.0-rc.4`) passes instead of failing. No input or output change.
