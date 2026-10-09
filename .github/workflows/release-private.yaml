@@ -306,7 +306,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-actions/openbao-secrets@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        uses: truvity/ci-actions/openbao-secrets@b9e15d9c85bab02f91156faf9363fcd240946dcb # v1.16.0
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}
