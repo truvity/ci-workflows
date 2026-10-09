@@ -12,8 +12,8 @@
 #   - devbox bootstrap, Go cache/proxy, private modules: setup-devbox;
 #   - cluster and AWS access: the caller's own kubeconfig and aws.ini —
 #     the SAME files a laptop uses. Their exec plugin and credential_process
-#     are `accessctl`, which in a job exchanges the job's GitHub token at
-#     access-issuer instead of a sign-in, so no second copy for CI
+#     are `sluisctl` (formerly `accessctl`), which in a job exchanges the
+#     job's GitHub token at the sluis issuer instead of a sign-in, so no second copy for CI
 #     exists; then the identity proof one caller's cluster-access job ran;
 #   - image builds: the CI plane's remote builders (setup-remote-builders)
 #     with the warm registry cache, and CodeArtifact for the Node
@@ -139,7 +139,7 @@ on:
       kubeconfig:
         description: >-
           Repo-relative kubeconfig, the one a laptop uses, whose exec plugin
-          is `accessctl kube-token`.
+          is `sluisctl kube-token`.
         required: false
         type: string
         default: kubeconfig
@@ -260,7 +260,7 @@ on:
 # declare, at workflow level and on the calling job:
 #
 #   contents: read     # always — checkout
-#   id-token: write    # the cluster and AWS through accessctl
+#   id-token: write    # the cluster and AWS through sluisctl
 #   packages: read     # ONLY if the repo installs @truvity packages from GitHub Packages
 
 jobs:
@@ -429,7 +429,7 @@ jobs:
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
 
-      # `accessctl` (the caller's devbox has it) exchanges the job's GitHub
+      # `sluisctl` (the caller's devbox has it) exchanges the job's GitHub
       # token when kubectl first calls it, so there is nothing to warm and
       # no token handled by a step. The proof then pins the identity before
       # anything is built: a wrong tenant fails here, not as a mysterious

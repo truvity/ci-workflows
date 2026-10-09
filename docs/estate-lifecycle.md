@@ -130,7 +130,7 @@ archives by sha256 (linux amd64/arm64, darwin arm64). A consumer adds the
 asset URL with `#<id>` to its devbox.json, and devbox.lock pins it:
 
 ```json
-"https://github.com/truvity/access-roster/releases/download/v1.7.0/accessctl_1.7.0_nix-flake.tar.gz#accessctl": ""
+"https://github.com/truvity/sluis/releases/download/v1.74.0/sluisctl_1.74.0_nix-flake.tar.gz#sluisctl": ""
 ```
 
 ## 4. Promotion — pull, never push

@@ -20,7 +20,7 @@ survives the job, and nothing it touches belongs to the estate.
 
 A **private** repository's suites keep running exactly as they always
 have: the estate's own runners, against the estate's own development
-cluster, with the estate's credentials exchanged through `accessctl`.
+cluster, with the estate's credentials exchanged through `sluisctl`.
 
 The `tier` input lets a caller override this in ONE direction only: a
 private repository may ask for `tier: kind` (proving the public path
