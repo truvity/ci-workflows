@@ -388,7 +388,7 @@ jobs:
       # Install, which DOES need the whole box.
       - name: "cluster (mode: kind, background)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        uses: truvity/ci-actions/cluster@b9e15d9c85bab02f91156faf9363fcd240946dcb # v1.16.0
         with:
           mode: kind
           background: "true"
@@ -533,7 +533,7 @@ jobs:
       # installs land on real Services), not just the registry.
       - name: "cluster (mode: wait)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        uses: truvity/ci-actions/cluster@b9e15d9c85bab02f91156faf9363fcd240946dcb # v1.16.0
         with:
           mode: wait
 
