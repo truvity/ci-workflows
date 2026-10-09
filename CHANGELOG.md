@@ -7,6 +7,7 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `check` and `self-check`: the `policy-conformance` pin moves from ci-actions v1.8.0 to v1.15.1. C5 now orders CHANGELOG headings by semver precedence, so a release above its own release candidates (`## v1.74.0` over `## v1.74.0-rc.4`) passes instead of failing. No input or output change.
 - `just pins` and the README consumer table no longer list the archived truvity/ci-cache.
 
 ## v3.26.1

@@ -363,7 +363,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/policy-conformance@d0dc2123d0d698d205713525d84346fffcb86eb5 # v1.15.1
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
