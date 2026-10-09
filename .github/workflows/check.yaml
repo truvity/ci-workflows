@@ -293,7 +293,7 @@ on:
 #
 #   permissions:
 #     contents: read     # always — checkout
-#     id-token: write    # ONLY if recipes reach AWS/k8s through accessctl
+#     id-token: write    # ONLY if recipes reach AWS/k8s through sluisctl
 #     packages: read     # ONLY if it installs @truvity packages from GitHub Packages
 #
 # Public repositories omit id-token: fork PRs never receive it, and

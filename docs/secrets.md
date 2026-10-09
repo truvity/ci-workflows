@@ -16,7 +16,7 @@ may read is decided outside it.
 
 ```
 the job's GitHub OIDC identity token
-  → accessctl token --audience <audience>      (exchanged at the issuer)
+  → sluisctl token --audience <audience>       (exchanged at the issuer)
   → POST auth/<auth-mount>/login               (its groups → OpenBAO's)
   → GET  <mount>/data/<path>                   (what the policy admits)
   → POST auth/token/revoke-self
@@ -93,9 +93,11 @@ multi-line secret is masked whole. The file is owner-only, lives under
 - **A self-hosted runner.** The address is normally a private endpoint;
   a GitHub-hosted runner cannot resolve it, and that is where the
   boundary sits.
-- **`accessctl` in the repository's devbox**, where its version is pinned
-  beside the rest of the job's tools. `accessctl: direct` takes it from
-  the job's PATH instead.
+- **`sluisctl` in the repository's devbox**, where its version is pinned
+  beside the rest of the job's tools. `sluisctl: direct` takes it from
+  the job's PATH instead. (`accessctl`, its deprecated name, still runs
+  when the PATH has no `sluisctl`, with a warning; before ci-actions
+  v1.16.0 the input is called `accessctl`.)
 - **`id-token: write`** on the job, granted by the workflow and by any
   caller of it.
 - **Caller variables** for the issuer, the address, the namespace and —

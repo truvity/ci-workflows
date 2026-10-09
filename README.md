@@ -154,10 +154,10 @@ files:
 - **[github-structure](https://github.com/truvity/github-structure)**:
   what a repository *is* (settings, rulesets, required contexts); this
   repository is what it *does*.
-- **[access-roster](https://github.com/truvity/access-roster)**: its
-  action mints the fleet and auto-release tokens with
-  `token-source: access-roster`, and its `accessctl` is how a job reaches
-  AWS and the cluster.
+- **[sluis](https://github.com/truvity/sluis)** (formerly access-roster):
+  its issuer mints the fleet and auto-release tokens with
+  `token-source: access-roster`, and its `sluisctl` (formerly `accessctl`)
+  is how a job reaches AWS and the cluster.
 
 ## Documentation
 
