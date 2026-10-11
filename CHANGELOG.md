@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `check`: opt-in remote BuildKit builders for recipes that build container images (validation builds that ran cold on GitHub-hosted runners). New inputs `remote-builder-recipes` (JSON array, default `[]`), `remote-builders`, `buildx-cache` and `ecr-registries`; the caller passes `vars.CI_REMOTE_BUILDERS` and `vars.CI_BUILDX_CACHE`, as `integration.yaml` already does. A listed recipe registers the shared builder (`setup-remote-builders`, `BUILDX_BUILDER`), logs into the ECR registries, and gets `CI_BUILDX_CACHE` in its environment so its `docker build` can add `--cache-from/--cache-to type=registry`. A listed recipe on a GitHub-hosted runner fails loudly before anything is built. Callers that list nothing see no change. Security note: a shared buildkitd shares `RUN --mount=type=cache` mounts by id across organisations; secrets passed per build are not persisted. Acceptable under the shared-cache rule (the enforced boundary is registry push and the stable tier).
+
 ## v3.26.4
 
 - `release-private`: on a self-hosted runner the job now points npm and yarn at the CI-plane cache (same 2-second probe and fail-open behaviour as `check`'s step), so a release's host `yarn install` no longer pulls its packages straight from the public registry. GitHub-hosted runners are untouched. No input change.
