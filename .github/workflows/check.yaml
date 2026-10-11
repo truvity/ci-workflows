@@ -267,7 +267,10 @@ on:
           ECR account ids to log into before a `remote-builder-recipes`
           recipe builds (base images come through the account's
           pull-through prefixes; the warm cache is pushed there). Empty
-          skips the login.
+          means the account named by `buildx-cache`'s host (its first
+          DNS label), so a caller passing the two org variables needs
+          nothing else; empty with an empty `buildx-cache` skips the
+          login.
         required: false
         type: string
         default: ''
@@ -575,10 +578,26 @@ jobs:
       # ambient pod identity, the same way integration.yaml's image lanes
       # do. `setup-remote-builders` fails by itself on an empty
       # `remote-builders`.
+      - name: ECR registry to log into
+        id: ecr
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
+        env:
+          REGISTRIES: ${{ inputs.ecr-registries }}
+          CACHE: ${{ inputs.buildx-cache }}
+        run: |
+          set -euo pipefail
+          # <account>.dkr.ecr.<region>.amazonaws.com/<repo>: the account is
+          # the first DNS label. A cache reference that is not an ECR one
+          # leaves the registries empty and skips the login.
+          if [ -z "$REGISTRIES" ] && [[ "$CACHE" =~ ^([0-9]+)\.dkr\.ecr\. ]]; then
+            REGISTRIES="${BASH_REMATCH[1]}"
+          fi
+          echo "registries=$REGISTRIES" >> "$GITHUB_OUTPUT"
+
       - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
-        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && inputs.ecr-registries != ''
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && steps.ecr.outputs.registries != ''
         with:
-          registries: ${{ inputs.ecr-registries }}
+          registries: ${{ steps.ecr.outputs.registries }}
           mask-password: "true"
 
       - uses: truvity/ci-actions/setup-remote-builders@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
