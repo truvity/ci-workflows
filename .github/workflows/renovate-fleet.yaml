@@ -356,6 +356,51 @@ jobs:
           go-version: stable
           cache: false
 
+      # The same fallback-not-dependency wiring as check.yaml: the registry
+      # and module-proxy overrides apply only when the in-cluster cache
+      # answers a 2s probe, and only on a self-hosted runner (a GitHub-hosted
+      # runner can never resolve the in-cluster names). They cover the
+      # `npx` install of renovate itself, corepack's yarn/pnpm shims,
+      # renovate's npm and go datasource lookups, and `go mod` for go.sum
+      # regeneration. Without them each job downloads ~400 packages and its
+      # Go modules straight from the public registries.
+      - name: Point npm, yarn and go at the CI-plane caches
+        if: runner.environment == 'self-hosted'
+        env:
+          CI_GOPROXY: ${{ vars.CI_GOPROXY }}
+        run: |
+          set -euo pipefail
+          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
+            {
+              echo "npm_config_registry=http://npm-cache.ci-cache.svc"
+              echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc"
+              echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc"
+            } >> "$GITHUB_ENV"
+            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+          else
+            echo "::warning::npm cache unreachable — direct npmjs for this job"
+          fi
+          # CI_GOPROXY is a comma list whose first entry may be the
+          # in-cluster proxy. An http:// first entry is applied only when
+          # it accepts a connection (any HTTP status counts), so a down
+          # proxy costs 2s, not the job.
+          if [ -n "${CI_GOPROXY:-}" ] && [[ "$CI_GOPROXY" != *$'\n'* ]]; then
+            first="${CI_GOPROXY%%,*}"
+            case "$first" in
+              http://*)
+                if curl -sS --max-time 2 -o /dev/null "$first" 2>/dev/null; then
+                  echo "GOPROXY=$CI_GOPROXY" >> "$GITHUB_ENV"
+                  echo "go modules: $first answered — GOPROXY override active"
+                else
+                  echo "::warning::go module proxy unreachable — default GOPROXY for this job"
+                fi
+                ;;
+              *)
+                echo "GOPROXY=$CI_GOPROXY" >> "$GITHUB_ENV"
+                ;;
+            esac
+          fi
+
       # yarn/pnpm shims for lockfile regeneration; each shim fetches the
       # version the target repository's `packageManager` pins.
       - name: Enable corepack

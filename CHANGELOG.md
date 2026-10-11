@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `renovate-fleet`: on a self-hosted runner each job now points npm, yarn and Go at the CI-plane caches, with the same 2-second probe and fail-open behaviour as `check`'s "Point npm and yarn at the CI-plane cache" step (npm and yarn registry; `vars.CI_GOPROXY` as `GOPROXY` once its first entry answers). Before, every one of the fleet's jobs (about 490 a week) installed renovate and its ~415 packages straight from the public registry and fetched Go modules direct. GitHub-hosted runners are untouched. No input change.
+
 ## v3.26.3
 
 - `check`: the `runners` guard is skipped when the caller is a private repository. Its rule can only refuse a public repository, so for a private caller it proved nothing while costing a GitHub-hosted job (billed at the 1-minute minimum) on every run. An event without a visibility in its payload still runs it. `pins`, `policy-conformance` and the recipe jobs accept the guard skipped and still never run after it failed. No input or output change.
