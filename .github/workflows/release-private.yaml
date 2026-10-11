@@ -115,6 +115,20 @@ on:
         required: false
         type: string
         default: ""
+      sbom-generator:
+        description: >-
+          The SBOM scanner image buildx runs for the image attestations,
+          from the caller's org variable (vars.CI_SBOM_GENERATOR_STABLE: the
+          stable account's pull-through copy of
+          docker/buildkit-syft-scanner). Exported to the release command as
+          GEMAAL_SBOM_GENERATOR, which gemaal turns into `--attest
+          type=sbom,generator=<image>`; empty keeps buildx's default
+          (Docker Hub, unauthenticated, rate-limited). The release role must
+          be allowed to pull through the cache, and `ecr-registries` must
+          include its account.
+        required: false
+        type: string
+        default: ""
       reclaim-disk:
         description: >-
           Reclaim ~30GB of preinstalled toolchains (dotnet, Android,
@@ -351,6 +365,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ steps.licence.outputs.value || secrets.goreleaser-key }}
           CI_BUILDX_CACHE: ${{ inputs.buildx-cache }}
+          GEMAAL_SBOM_GENERATOR: ${{ inputs.sbom-generator }}
           # No profiles on a runner: the default credential chain must
           # resolve the job's OIDC role from env. A stray AWS_PROFILE
           # overrides it and surfaces as a confusing 403 several layers
