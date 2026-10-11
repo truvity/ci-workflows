@@ -5,6 +5,11 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- `check`: the `runners` guard is skipped when the caller is a private repository. Its rule can only refuse a public repository, so for a private caller it proved nothing while costing a GitHub-hosted job (billed at the 1-minute minimum) on every run. An event without a visibility in its payload still runs it. `pins`, `policy-conformance` and the recipe jobs accept the guard skipped and still never run after it failed. No input or output change.
+- `check`: the golangci-lint cache is keyed on the commit (`golangci-<os>-<devbox.lock>-<go.sum>-<sha>`), restores the newest entry under the same `devbox.lock` (same `go.sum` first), and is saved on every run. Before, the key was `devbox.lock` + `go.sum` and it was saved only on a miss, so after the first run on a given `go.sum` it was never written again and every run re-analysed everything changed since. No input or output change.
+
 ## v3.26.2
 
 - The `policy-conformance`, `cluster` and `openbao-secrets` pins move to ci-actions v1.16.0. C5 orders CHANGELOG headings by semver precedence (a release above its release candidates passes); `openbao-secrets` runs `sluisctl` for the token exchange (falling back to `accessctl` with a warning) in `release-private`. No input or output change in this repository's workflows.
