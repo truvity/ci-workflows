@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.26.3
+
 - `check`: the `runners` guard is skipped when the caller is a private repository. Its rule can only refuse a public repository, so for a private caller it proved nothing while costing a GitHub-hosted job (billed at the 1-minute minimum) on every run. An event without a visibility in its payload still runs it. `pins`, `policy-conformance` and the recipe jobs accept the guard skipped and still never run after it failed. No input or output change.
 - `check`: the golangci-lint cache is keyed on the commit (`golangci-<os>-<devbox.lock>-<go.sum>-<sha>`), restores the newest entry under the same `devbox.lock` (same `go.sum` first), and is saved on every run. Before, the key was `devbox.lock` + `go.sum` and it was saved only on a miss, so after the first run on a given `go.sum` it was never written again and every run re-analysed everything changed since. No input or output change.
 
