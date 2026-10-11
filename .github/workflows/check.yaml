@@ -226,6 +226,51 @@ on:
         required: false
         type: string
         default: ''
+      remote-builder-recipes:
+        description: >-
+          JSON array of recipes that build container images through the CI
+          plane's shared BuildKit builders (the `image` recipe of a
+          repository that validates its Dockerfile). OPT-IN: empty (the
+          default) changes nothing for any other recipe or caller. A
+          listed recipe gets the remote buildx builder registered
+          (truvity/ci-actions setup-remote-builders, builder `ci`,
+          exported as BUILDX_BUILDER), the registry login for
+          `ecr-registries`, and CI_BUILDX_CACHE in its environment; the
+          recipe's own `docker build` adds `--cache-from/--cache-to`
+          from it. SELF-HOSTED ONLY: the builders resolve nowhere else, so
+          a listed recipe on a GitHub-hosted runner fails loudly, before
+          anything is built. Validation only -- nothing here pushes an
+          image; the cache push is the only registry write.
+        required: false
+        type: string
+        default: '[]'
+      remote-builders:
+        description: >-
+          The CI plane's BuildKit nodes, `platforms=endpoint` entries
+          separated by whitespace (the caller passes
+          vars.CI_REMOTE_BUILDERS). Required by every recipe listed in
+          `remote-builder-recipes`; ignored otherwise. No fallback to an
+          org variable inside this workflow, like every cache input.
+        required: false
+        type: string
+        default: ''
+      buildx-cache:
+        description: >-
+          Registry reference of the BuildKit warm cache (the caller passes
+          vars.CI_BUILDX_CACHE); exported to the listed recipes as
+          CI_BUILDX_CACHE. Empty means no cache flags: slow, not broken.
+        required: false
+        type: string
+        default: ''
+      ecr-registries:
+        description: >-
+          ECR account ids to log into before a `remote-builder-recipes`
+          recipe builds (base images come through the account's
+          pull-through prefixes; the warm cache is pushed there). Empty
+          skips the login.
+        required: false
+        type: string
+        default: ''
       env-json:
         description: >-
           Extra environment as a JSON object, for repo-specific values the
@@ -404,6 +449,9 @@ jobs:
       # The job's own, which reads only what the caller's `packages: read`
       # grants; a caller whose packages come from nowhere else ignores it.
       GITHUB_PACKAGES_TOKEN: ${{ github.token }}
+      # The warm-cache reference, only for the recipes that build images
+      # through the remote builders; empty everywhere else.
+      CI_BUILDX_CACHE: ${{ contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && inputs.buildx-cache || '' }}
     strategy:
       # Every recipe reports its own verdict, and one failure does not
       # hide the others — the point of separate jobs in the first place.
@@ -411,6 +459,17 @@ jobs:
       matrix:
         recipe: ${{ fromJSON(inputs.recipes) }}
     steps:
+      # Opted in to the remote builders on a runner that cannot reach them:
+      # refuse now, with the reason, instead of failing later in a
+      # `docker build` with no daemon.
+      - name: Remote builders need a self-hosted runner
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && runner.environment != 'self-hosted'
+        run: |
+          echo "::error::recipe '$RECIPE' is listed in remote-builder-recipes but runs on a GitHub-hosted runner; the BuildKit builders resolve only inside the ARC cluster. Pass an ARC runner label as runner/small-runner/medium-runner."
+          exit 1
+        env:
+          RECIPE: ${{ matrix.recipe }}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
@@ -508,6 +567,24 @@ jobs:
             >> "$GITHUB_ENV"
         env:
           ENV_JSON: ${{ inputs.env-json }}
+
+      # The remote BuildKit builders, for the recipes that opted in. The
+      # registry login comes first: whatever it writes to
+      # ~/.docker/config.json is forwarded to the builder when it pulls
+      # base images and pushes the warm cache. The login uses the pool's
+      # ambient pod identity, the same way integration.yaml's image lanes
+      # do. `setup-remote-builders` fails by itself on an empty
+      # `remote-builders`.
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && inputs.ecr-registries != ''
+        with:
+          registries: ${{ inputs.ecr-registries }}
+          mask-password: "true"
+
+      - uses: truvity/ci-actions/setup-remote-builders@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
+        with:
+          remote-builders: ${{ inputs.remote-builders }}
 
       - uses: truvity/ci-actions/recipe@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
         with:
