@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `integration` and `release-private`: new optional `sbom-generator` input (the caller passes `vars.CI_SBOM_GENERATOR` / `vars.CI_SBOM_GENERATOR_STABLE`), exported to the build and release commands as `GEMAAL_SBOM_GENERATOR`. With a gemaal that reads it, the image builds attest their SBOM with `--attest type=sbom,generator=<image>`, so the scanner image (`docker/buildkit-syft-scanner`) comes from the tier's ECR pull-through cache instead of unauthenticated from Docker Hub. Empty (the default) changes nothing.
+
 ## v3.27.0
 
 - `check`: opt-in remote BuildKit builders for recipes that build container images (validation builds that ran cold on GitHub-hosted runners). New inputs `remote-builder-recipes` (JSON array, default `[]`), `remote-builders`, `buildx-cache` and `ecr-registries`; the caller passes `vars.CI_REMOTE_BUILDERS` and `vars.CI_BUILDX_CACHE`, as `integration.yaml` already does. A listed recipe registers the shared builder (`setup-remote-builders`, `BUILDX_BUILDER`), logs into the ECR registries, and gets `CI_BUILDX_CACHE` in its environment so its `docker build` can add `--cache-from/--cache-to type=registry`. A listed recipe on a GitHub-hosted runner fails loudly before anything is built. Callers that list nothing see no change. Security note: a shared buildkitd shares `RUN --mount=type=cache` mounts by id across organisations; secrets passed per build are not persisted. Acceptable under the shared-cache rule (the enforced boundary is registry push and the stable tier).
