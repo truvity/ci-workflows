@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.27.0
+
 ## v3.26.4
 
 - `release-private`: on a self-hosted runner the job now points npm and yarn at the CI-plane cache (same 2-second probe and fail-open behaviour as `check`'s step), so a release's host `yarn install` no longer pulls its packages straight from the public registry. GitHub-hosted runners are untouched. No input change.
