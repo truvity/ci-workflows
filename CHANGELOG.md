@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `release-private`: on a self-hosted runner the job now points npm and yarn at the CI-plane cache (same 2-second probe and fail-open behaviour as `check`'s step), so a release's host `yarn install` no longer pulls its packages straight from the public registry. GitHub-hosted runners are untouched. No input change.
+
 - `renovate-fleet`: on a self-hosted runner each job now points npm, yarn and Go at the CI-plane caches, with the same 2-second probe and fail-open behaviour as `check`'s "Point npm and yarn at the CI-plane cache" step (npm and yarn registry; `vars.CI_GOPROXY` as `GOPROXY` once its first entry answers). Before, every one of the fleet's jobs (about 490 a week) installed renovate and its ~415 packages straight from the public registry and fetched Go modules direct. GitHub-hosted runners are untouched. No input change.
 
 ## v3.26.3

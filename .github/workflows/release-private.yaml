@@ -237,6 +237,28 @@ jobs:
           proto: ${{ inputs.proto }}
           strip-local-tools: ${{ inputs.strip-local-tools }}
 
+      # Registry override only when the in-cluster cache answers a 2s
+      # ping: fallback-not-dependency, the same step check.yaml carries.
+      # Self-hosted only; a GitHub-hosted runner cannot resolve the name.
+      # Release builds run `yarn install` on the host (about 150-400 MiB a
+      # release) and the Node image builds. The write to GITHUB_ENV is
+      # fixed literals. YARN_UNSAFE_HTTP_WHITELIST: berry refuses
+      # plain-http registries without it.
+      - name: Point npm and yarn at the CI-plane cache
+        if: runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
+            {
+              echo "npm_config_registry=http://npm-cache.ci-cache.svc"
+              echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc"
+              echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc"
+            } >> "$GITHUB_ENV"
+            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+          else
+            echo "::warning::npm cache unreachable — direct npmjs for this job"
+          fi
+
       # GitHub-hosted carries only buildx's default `docker` driver,
       # which cannot produce attestations — goreleaser's dockers_v2 asks
       # for them. setup-buildx-action creates a docker-container builder
