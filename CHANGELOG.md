@@ -7,7 +7,7 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
-- `integration` and `release-private`: new optional `sbom-generator` input (the caller passes `vars.CI_SBOM_GENERATOR` / `vars.CI_SBOM_GENERATOR_STABLE`), exported to the build and release commands as `GEMAAL_SBOM_GENERATOR`. With a gemaal that reads it, the image builds attest their SBOM with `--attest type=sbom,generator=<image>`, so the scanner image (`docker/buildkit-syft-scanner`) comes from the tier's ECR pull-through cache instead of unauthenticated from Docker Hub. Empty (the default) changes nothing.
+- `release-private`: new optional `sbom-generator` input (the caller passes `vars.CI_SBOM_GENERATOR_STABLE`), exported to the release command as `GEMAAL_SBOM_GENERATOR`. With a gemaal that reads it, the release's image builds attest their SBOM with `--attest type=sbom,generator=<image>`, so the scanner image (`docker/buildkit-syft-scanner`) comes from the stable ECR pull-through cache instead of unauthenticated from Docker Hub. Empty (the default) changes nothing. `integration` gets no such input: snapshot builds carry no SBOM.
 
 ## v3.27.0
 
