@@ -12,7 +12,7 @@
 #   - devbox bootstrap, Go cache/proxy, private modules: setup-devbox;
 #   - cluster and AWS access: the caller's own kubeconfig and aws.ini —
 #     the SAME files a laptop uses. Their exec plugin and credential_process
-#     are `sluisctl` (formerly `accessctl`), which in a job exchanges the
+#     are `sluisctl`, which in a job exchanges the
 #     job's GitHub token at the sluis issuer instead of a sign-in, so no second copy for CI
 #     exists; then the identity proof one caller's cluster-access job ran;
 #   - image builds: the CI plane's remote builders (setup-remote-builders)

@@ -156,7 +156,7 @@ files:
   repository is what it *does*.
 - **[sluis](https://github.com/truvity/sluis)** (formerly access-roster):
   its issuer mints the fleet and auto-release tokens with
-  `token-source: access-roster`, and its `sluisctl` (formerly `accessctl`)
+  `token-source: access-roster`, and its `sluisctl`
   is how a job reaches AWS and the cluster.
 
 ## Documentation

@@ -95,9 +95,7 @@ multi-line secret is masked whole. The file is owner-only, lives under
   boundary sits.
 - **`sluisctl` in the repository's devbox**, where its version is pinned
   beside the rest of the job's tools. `sluisctl: direct` takes it from
-  the job's PATH instead. (`accessctl`, its deprecated name, still runs
-  when the PATH has no `sluisctl`, with a warning; before ci-actions
-  v1.16.0 the input is called `accessctl`.)
+  the job's PATH instead.
 - **`id-token: write`** on the job, granted by the workflow and by any
   caller of it.
 - **Caller variables** for the issuer, the address, the namespace and —
