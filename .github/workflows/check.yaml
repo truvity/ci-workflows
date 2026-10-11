@@ -310,10 +310,18 @@ jobs:
   # and stays off; this is the second lock, and it exists because the way a
   # public repository ends up on a self-hosted tier is not malice — it is
   # copying a private repository's caller, which currently succeeds silently.
-  # A private caller passes immediately and pays a few seconds.
   # Every runner input the caller can set is checked, not only the default.
+  #
+  # SKIPPED for a private caller. The rule can only refuse a public
+  # repository, so for a private one the job proved nothing -- and it
+  # still cost a hosted job, which a private repository pays for at the
+  # 1-minute minimum, on every CI and security run. Only an explicit
+  # `private` skips: an event whose payload carries no visibility (a
+  # `schedule`, for one) still runs the guard, as before. The jobs below
+  # need this one and accept it skipped; they never run after it failed.
   runners:
     name: runners
+    if: github.event.repository.visibility != 'private'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -335,6 +343,8 @@ jobs:
   pins:
     name: pins
     needs: runners
+    # A plain `needs` would skip this whenever the guard is skipped.
+    if: ${{ !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped') }}
     runs-on: >-
       ${{ inputs.small-runner != '' && inputs.small-runner || inputs.runner }}
     timeout-minutes: 5
@@ -354,7 +364,7 @@ jobs:
   # the CHANGELOG against the latest tag.
   policy-conformance:
     name: policy-conformance
-    if: inputs.policy-conformance
+    if: inputs.policy-conformance && !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped')
     needs: runners
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -370,6 +380,7 @@ jobs:
   recipe:
     name: ${{ matrix.recipe }}
     needs: runners
+    if: ${{ !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped') }}
     # Resolved per matrix entry, so `name:` stays the recipe and the
     # status contexts do not move. Renaming a job renames the required
     # check and wedges every open PR — twice already.
@@ -463,13 +474,25 @@ jobs:
       # devbox.lock in the key: a toolchain bump strands a cache whose
       # objects reference the old nix store path, and that fails at exec
       # time rather than missing cleanly.
+      #
+      # The commit in the key, and a save on EVERY run (below). Keyed on
+      # devbox.lock + go.sum alone, the first run after a dependency bump
+      # saved the cache and every later run hit that exact key, so nothing
+      # was ever saved again: the analysis of every package changed since
+      # that bump was redone on every run, and the cache aged as the code
+      # moved. Now each run restores the newest cache under the same
+      # devbox.lock (same go.sum first) and saves what it adds, under its
+      # own commit. golangci-lint invalidates per package, so a cache from
+      # an older commit is still mostly hits.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
           path: ~/.cache/golangci-lint
-          key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
-          restore-keys: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
+          key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}-
+            golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
 
       # Through env, never spliced into the script: a ${{ }} expression is
       # pasted in before bash parses the line, so a value carrying a quote
@@ -551,7 +574,9 @@ jobs:
 
       # if: always() — otherwise a failing lint kills the job before the
       # post step and the cache is never written, which is exactly when
-      # someone is iterating and most wants it warm.
+      # someone is iterating and most wants it warm. cache-hit is true only
+      # on an exact key, i.e. a re-run of the same commit, whose cache is
+      # already saved.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
