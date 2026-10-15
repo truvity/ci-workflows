@@ -25,7 +25,9 @@
 #
 # Every image is signed by DIGEST (cosign keyless, GitHub OIDC) and gets
 # a GitHub build-provenance attestation pushed to the registry. A
-# failure fails the run: there is no silent skip. `[]` does nothing.
+# failure fails the run: there is no silent skip. With `require-images`
+# (default true) an empty list or an entry without a digest fails too;
+# with it false, `[]` does nothing.
 name: sign-images
 
 on:
@@ -39,6 +41,17 @@ on:
         required: false
         type: string
         default: '[]'
+      require-images:
+        description: >-
+          Fail loudly ("the release published no signable image digests")
+          when `images` is `[]`, empty, or any entry lacks a valid
+          `sha256:` digest. Default true: a caller that adds this job
+          wants its images signed, and release-public only warns when it
+          cannot find a digest. Set false for a release that may
+          legitimately publish no image.
+        required: false
+        type: boolean
+        default: true
       runner:
         required: false
         type: string
@@ -55,7 +68,25 @@ permissions:
   attestations: write
 
 jobs:
+  check:
+    name: check images
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Refuse an empty or malformed image list
+        if: inputs.require-images
+        env:
+          IMAGES: ${{ inputs.images }}
+        run: |
+          set -euo pipefail
+          if ! jq -e 'type == "array" and length > 0 and all(.[]; (.digest // "") | test("^sha256:[0-9a-f]{64}$"))' <<<"${IMAGES:-[]}" >/dev/null; then
+            echo "::error::the release published no signable image digests (images=${IMAGES:-})"
+            exit 1
+          fi
+
   sign:
+    needs: check
     name: sign ${{ matrix.image.repo }}
     if: inputs.images != '[]' && inputs.images != ''
     runs-on: ${{ inputs.runner }}

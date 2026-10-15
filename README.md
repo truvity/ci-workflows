@@ -211,8 +211,11 @@ jobs:
       images: ${{ needs.release.outputs.images }}
 ```
 
-A failed signature fails the run; a release that published no image signs
-nothing. A consumer verifies a digest, never a tag:
+A failed signature fails the run. `release-public` only warns when an
+image has no digest in `dist/artifacts.json` and leaves it out of `images`;
+`sign-images` is strict: with `require-images` (default true) an empty list
+or an entry without a `sha256:` digest fails the run, and `require-images:
+false` makes `[]` a no-op. A consumer verifies a digest, never a tag:
 
 ```sh
 cosign verify <image>@<digest> \
