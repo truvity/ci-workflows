@@ -58,7 +58,8 @@ on:
           JSON array of `{"repo": "ghcr.io/<owner>/<image>", "digest":
           "sha256:..."}`, one per distinct image GoReleaser (or ko) pushed
           in this run, taken from dist/artifacts.json. Never a tag. `[]`
-          when the run published no image. Feed it to sign-images.yaml.
+          when the run published no image; an entry without a valid digest
+          is left out with a warning, never an error. Feed it to sign-images.yaml.
         value: ${{ jobs.release.outputs.images }}
     inputs:
       charts:
@@ -318,33 +319,33 @@ jobs:
           # never meant to hold one.
           KO_DOCKER_REPO: ${{ inputs.image-repo || inputs.ko-docker-repo }}
 
-      # What was published, by digest. Read from GoReleaser's own record, so
-      # it names exactly the images this run pushed. Manifests (and
-      # dockers_v2 / ko images) are preferred; the per-platform "Docker
-      # Image" entries are used only when there is nothing else, because
-      # signing the manifest covers them. A missing or malformed digest
-      # fails the release rather than yielding an unsigned image.
+      # What was published, by digest, for sign-images.yaml. Read from
+      # GoReleaser's own record. In artifacts.json an image is type
+      # "Docker Manifest" (ko, docker_manifests) or "Docker Image"
+      # (dockers_v2, per-platform dockers), and the digest is
+      # `extra.Digest` (GoReleaser's ExtraDigest key; `digest` is
+      # accepted too). This step NEVER fails the release: an entry
+      # without a valid sha256 digest is reported with ::warning:: and
+      # left out. Whether that is an error is sign-images.yaml's call
+      # (`require-images`), so no caller that does not sign is affected.
       - name: Published image digests
         id: images
         run: |
-          set -euo pipefail
+          set -uo pipefail
           images='[]'
           if [ -f dist/artifacts.json ]; then
-            images="$(jq -c '
-              [ .[] | select(.type == "Docker Manifest" or .type == "Docker Image V2") ] as $m
-              | (if ($m | length) > 0 then $m else [ .[] | select(.type == "Docker Image") ] end)
-              | map({
-                  repo: (.name | sub("@sha256:.*$"; "") | sub(":[^/:]*$"; "")),
-                  digest: (.extra.digest // "")
-                })
-              | unique' dist/artifacts.json)"
+            norm='(.extra.Digest // .extra.digest // "") | if test("^[0-9a-f]{64}$") then "sha256:" + . else . end'
+            images="$(jq -c "
+              [ .[] | select(.type == \"Docker Manifest\" or .type == \"Docker Image\")
+                | { repo: (.name | sub(\"@sha256:.*\$\"; \"\") | sub(\":[^/:]*\$\"; \"\")),
+                    digest: ($norm), name: .name } ]
+              | map(select(.digest | test(\"^sha256:[0-9a-f]{64}\$\")))
+              | map({repo, digest}) | unique" dist/artifacts.json)" || images='[]'
+            jq -r ".[] | select(.type == \"Docker Manifest\" or .type == \"Docker Image\")
+              | select(($norm) | test(\"^sha256:[0-9a-f]{64}\$\") | not) | .name" dist/artifacts.json 2>/dev/null |
+              while read -r n; do echo "::warning::no valid digest in dist/artifacts.json for image $n; it is left out of the images output"; done
           fi
-          bad="$(jq -r '.[] | select(.digest | test("^sha256:[0-9a-f]{64}$") | not) | .repo' <<<"$images")"
-          if [ -n "$bad" ]; then
-            echo "::error::no usable digest in dist/artifacts.json for: $bad"
-            exit 1
-          fi
-          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "images=${images:-[]}" >> "$GITHUB_OUTPUT"
 
       # The git tag is the sole version authority: a chart's own version
       # field is a placeholder that never moves, and is stamped here.
