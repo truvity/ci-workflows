@@ -241,11 +241,11 @@ jobs:
       # `require-green-checks` action's.
       - name: Require green checks on the tagged commit
         if: inputs.require-green-checks
-        uses: truvity/ci-actions/require-green-checks@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        uses: truvity/ci-actions/require-green-checks@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           token: ${{ github.token }}
 
-      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
+      - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -288,7 +288,7 @@ jobs:
       # (native builds on a hot layer cache; no QEMU). The logic is the
       # ci-actions binary's `remote-builders` command, the same one
       # integration.yaml uses.
-      - uses: truvity/ci-actions/setup-remote-builders@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/setup-remote-builders@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         if: runner.environment == 'self-hosted'
         with:
           remote-builders: ${{ inputs.remote-builders }}
@@ -342,7 +342,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-actions/openbao-secrets@b9e15d9c85bab02f91156faf9363fcd240946dcb # v1.16.0
+        uses: truvity/ci-actions/openbao-secrets@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}

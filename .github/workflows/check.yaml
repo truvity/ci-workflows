@@ -389,7 +389,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/public-runners@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -437,7 +437,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@b9e15d9c85bab02f91156faf9363fcd240946dcb # v1.16.0
+      - uses: truvity/ci-actions/policy-conformance@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -617,7 +617,7 @@ jobs:
           registries: ${{ steps.ecr.outputs.registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-actions/setup-remote-builders@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/setup-remote-builders@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
         with:
           remote-builders: ${{ inputs.remote-builders }}

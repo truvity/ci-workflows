@@ -258,7 +258,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check the token inputs
-        uses: truvity/ci-actions/token-inputs@d0dc2123d0d698d205713525d84346fffcb86eb5 # v1.15.1
+        uses: truvity/ci-actions/token-inputs@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           source: ${{ inputs.token-source }}
           access-roster-issuer: ${{ inputs.access-roster-issuer }}
@@ -303,7 +303,7 @@ jobs:
       - name: Release security and fix pushes
         id: gate
         if: github.event_name == 'push'
-        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        uses: truvity/ci-actions/auto-release@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: gate
           token: ${{ steps.token.outputs.token }}
@@ -318,14 +318,14 @@ jobs:
 
       # Only when the caller declares a version-bump-command: the bump runs in
       # the caller's devbox. No input, no extra setup.
-      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
+      - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         if: steps.gate.outputs.skip != 'true' && inputs.version-bump-command != ''
         with:
           github-token: ${{ github.token }}
 
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
-        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        uses: truvity/ci-actions/auto-release@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: tag
           token: ${{ steps.token.outputs.token }}
@@ -368,7 +368,7 @@ jobs:
       # the grant is the ceiling, this input only narrows. The
       # installation reaches the organisation; this token reaches one
       # repository.
-      - uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
+      - uses: truvity/ci-actions/token-exchange@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         id: token
         with:
           issuer: ${{ inputs.access-roster-issuer }}
@@ -379,7 +379,7 @@ jobs:
       - name: Release security and fix pushes
         id: gate
         if: github.event_name == 'push'
-        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        uses: truvity/ci-actions/auto-release@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: gate
           token: ${{ steps.token.outputs.github-token }}
@@ -393,14 +393,14 @@ jobs:
 
       # Only when the caller declares a version-bump-command: the bump runs in
       # the caller's devbox. No input, no extra setup.
-      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
+      - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         if: steps.gate.outputs.skip != 'true' && inputs.version-bump-command != ''
         with:
           github-token: ${{ github.token }}
 
       - name: Cut the next patch tag if master moved
         if: steps.gate.outputs.skip != 'true'
-        uses: truvity/ci-actions/auto-release@b1929140480a682ba6fc2cadaf58da387b500a90 # v1.11.0
+        uses: truvity/ci-actions/auto-release@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: tag
           token: ${{ steps.token.outputs.github-token }}

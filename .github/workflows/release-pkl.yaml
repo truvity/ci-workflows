@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/public-runners@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -159,7 +159,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
+      - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -169,14 +169,14 @@ jobs:
       # value.
       - name: Read the declared version
         id: declared
-        uses: truvity/ci-actions/release-pkl@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/release-pkl@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: declared
           version-command: ${{ inputs.version-command }}
 
       - name: Refuse a tag that is not the declared version, or has no changelog heading
         id: checks
-        uses: truvity/ci-actions/release-pkl@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/release-pkl@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: checks
           ref-type: ${{ github.ref_type }}
@@ -192,7 +192,7 @@ jobs:
 
       - name: Check the assets
         id: assets
-        uses: truvity/ci-actions/release-pkl@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/release-pkl@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: assets
           output-dir: ${{ inputs.output-dir }}
@@ -200,7 +200,7 @@ jobs:
           manifest: ${{ runner.temp }}/assets.txt
 
       - name: Publish the release
-        uses: truvity/ci-actions/release-pkl@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/release-pkl@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: publish
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -216,7 +216,7 @@ jobs:
       # from the assets: every one named `<name>@<version>` with no suffix
       # is a package's metadata.
       - name: Smoke test the published packages
-        uses: truvity/ci-actions/release-pkl@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/release-pkl@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: smoke
           pkl-command: devbox run -- ${{ inputs.pkl-command }}
