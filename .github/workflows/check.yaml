@@ -40,6 +40,22 @@ on:
         required: false
         type: string
         default: just
+      devbox-config:
+        description: >-
+          Directory, relative to the workspace, that holds its own
+          devbox.json and devbox.lock: a second, smaller devbox
+          environment than the repository's own, so the job downloads
+          that closure instead of the full one. Passed to setup-devbox
+          and to every recipe as `devbox run -c <dir>`, which makes that
+          directory devbox's project root; `just` still finds the
+          Justfile by searching parent directories, so recipes run from
+          the repository root. Must be a relative path inside the
+          workspace with a devbox.json in it. A second environment that
+          ships no proto also needs `proto: "false"`. Empty (the
+          default) uses the repository's own devbox.json, unchanged.
+        required: false
+        type: string
+        default: ""
       node-cache:
         description: >-
           Probe the CI plane's npm read-through cache
@@ -477,8 +493,9 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/setup-devbox@0fcf84dbeb8d406bce34d969e6cc32592af5cb5b # v1.15.0
+      - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
+          devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
           go-cache-server: ${{ inputs.go-cache-server }}
@@ -605,10 +622,11 @@ jobs:
         with:
           remote-builders: ${{ inputs.remote-builders }}
 
-      - uses: truvity/ci-actions/recipe@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/recipe@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
+          devbox-config: ${{ inputs.devbox-config }}
 
       # The high-water mark, straight from the kernel. cgroup v2 keeps it
       # for free, so a job can report what it ACTUALLY needed instead of

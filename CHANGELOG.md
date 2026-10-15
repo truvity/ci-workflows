@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- `check`: new optional `devbox-config` input (string, default empty): a workspace-relative directory holding its own `devbox.json` and `devbox.lock`, so the job runs in a second, smaller devbox environment and downloads that closure instead of the repository's full one. It is passed to both `setup-devbox` and every `recipe` as `devbox run -c <dir>`; devbox makes that directory the project root and `just` finds the Justfile by searching parent directories, so recipes still run from the repository root. A second environment that ships no proto also needs `proto: "false"`. Empty (the default) changes nothing. The `setup-devbox` and `recipe` pins move to truvity/ci-actions v1.17.0, which carries the input.
+
 ## v3.28.0
 
 - `release-private`: new optional `sbom-generator` input (the caller passes `vars.CI_SBOM_GENERATOR_STABLE`), exported to the release command as `GEMAAL_SBOM_GENERATOR`. With a gemaal that reads it, the release's image builds attest their SBOM with `--attest type=sbom,generator=<image>`, so the scanner image (`docker/buildkit-syft-scanner`) comes from the stable ECR pull-through cache instead of unauthenticated from Docker Hub. Empty (the default) changes nothing. `integration` gets no such input: snapshot builds carry no SBOM.
