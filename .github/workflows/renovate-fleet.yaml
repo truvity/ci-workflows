@@ -229,14 +229,14 @@ jobs:
       - name: Read the enrolment list
         id: enrolled
         if: inputs.list != ''
-        uses: truvity/ci-actions/enrolment-list@62eecede955676a2c0fb760dd185521528886d0b # v1.10.0
+        uses: truvity/ci-actions/enrolment-list@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           file: ${{ inputs.repositories-file }}
           list: ${{ inputs.list }}
 
       # Once, here: every other job needs this one.
       - name: Check the token inputs
-        uses: truvity/ci-actions/token-inputs@d0dc2123d0d698d205713525d84346fffcb86eb5 # v1.15.1
+        uses: truvity/ci-actions/token-inputs@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           source: ${{ inputs.token-source }}
           access-roster-issuer: ${{ inputs.access-roster-issuer }}
@@ -259,7 +259,7 @@ jobs:
       # its claims are printed.
       - name: Print this job's OIDC claims
         if: inputs.debug-oidc-claims
-        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/fleet-step@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: oidc-claims
 
@@ -277,14 +277,14 @@ jobs:
       # refUpdateRule, answers for the VIEWER, so a token weaker than the
       # matrix jobs' could find no required check where they would, and
       # skip the whole estate.
-      - uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
+      - uses: truvity/ci-actions/token-exchange@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
 
-      - uses: truvity/ci-actions/fleet-discover@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
+      - uses: truvity/ci-actions/fleet-discover@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         id: discover
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -328,7 +328,7 @@ jobs:
           repositories: ${{ steps.repo.outputs.name }}
 
       # Every permission the grant allows: renovate's own list.
-      - uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
+      - uses: truvity/ci-actions/token-exchange@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -420,7 +420,7 @@ jobs:
       - name: Exchange a token for reading private Go modules
         id: module-roster-token
         if: inputs.token-source == 'access-roster' && inputs.go-modules-github-app != ''
-        uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
+        uses: truvity/ci-actions/token-exchange@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.go-modules-github-app }}
@@ -496,7 +496,7 @@ jobs:
       - name: Exchange the approver token
         id: approver-roster
         if: inputs.token-source == 'access-roster' && inputs.approver-github-app != ''
-        uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
+        uses: truvity/ci-actions/token-exchange@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.approver-github-app }}
@@ -505,7 +505,7 @@ jobs:
 
       - name: Approve non-major renovate PRs that need a review
         if: steps.approver-key.outputs.token != '' || steps.approver-roster.outputs.github-token != ''
-        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/fleet-step@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: approve-renovate
           token: ${{ steps.approver-key.outputs.token || steps.approver-roster.outputs.github-token }}
@@ -527,6 +527,6 @@ jobs:
           path: reports
 
       - name: Available majors across the estate
-        uses: truvity/ci-actions/fleet-step@fbd89c3cb282ac906414235d5c6455cd83d254a8 # v1.12.0
+        uses: truvity/ci-actions/fleet-step@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
         with:
           step: available-majors

@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- Every `truvity/ci-actions` pin in the workflows moves to v1.17.0 (`5811f05`), except `tagged-pins`. The v1.17.0 `setup-devbox` and `recipe` only add the opt-in `devbox-config` input, which no workflow here sets, so their behaviour is unchanged. The other actions are bumped because their ci-actions changelog shows no behaviour change between the old pin and v1.17.0: `auto-release`, `caller-parity`, `devbox-parity`, `enrolment-list`, `fleet-discover`, `fleet-step`, `pkl-fleet` (v1.13.0's additions are new outputs), `public-runners`, `publish-charts`, `publish-nix-flakes`, `release-pkl`, `require-green-checks`, `setup-remote-builders`, `token-exchange`, `token-inputs`, and the ones already at v1.16.0 (`cluster`, `openbao-secrets`, `policy-conformance`). `tagged-pins` stays at v1.8.0: from v1.16.0 it no longer lists the archived ci-cache library by default, which changes what it checks.
+
 ## v3.29.0
 
 - `check`: new optional `devbox-config` input (string, default empty): a workspace-relative directory holding its own `devbox.json` and `devbox.lock`, so the job runs in a second, smaller devbox environment and downloads that closure instead of the repository's full one. It is passed to both `setup-devbox` and every `recipe` as `devbox run -c <dir>`; devbox makes that directory the project root and `just` finds the Justfile by searching parent directories, so recipes still run from the repository root. A second environment that ships no proto also needs `proto: "false"`. Empty (the default) changes nothing. The `setup-devbox` and `recipe` pins move to truvity/ci-actions v1.17.0, which carries the input.
