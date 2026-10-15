@@ -186,6 +186,44 @@ files:
   and says what changed.
 - [CHANGELOG.md](CHANGELOG.md): every release.
 
+## Signed images
+
+Every public image can be signed with cosign (keyless, GitHub OIDC) and
+given a GitHub build-provenance attestation, by digest, once, in
+`sign-images.yaml`. It is opt-in: a reusable workflow cannot exceed the
+caller's permissions, and `release-public` must keep working for callers
+that grant neither `id-token` nor `attestations`. Add a second job:
+
+```yaml
+jobs:
+  release:
+    permissions: { contents: write, packages: write }
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@<sha>
+  sign:
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: truvity/ci-workflows/.github/workflows/sign-images.yaml@<sha>
+    with:
+      images: ${{ needs.release.outputs.images }}
+```
+
+A failed signature fails the run; a release that published no image signs
+nothing. A consumer verifies a digest, never a tag:
+
+```sh
+cosign verify <image>@<digest> \
+  --certificate-identity-regexp '^https://github.com/truvity/<repo>/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify oci://<image>@<digest> -R truvity/<repo>
+```
+
+Signing moves into `release-public` behind a `sign-images` input, default
+true, in a later major once all callers are migrated.
+
 ## The rule that makes this repository public
 
 **Mechanism only.** Account ids, role ARNs, registry hostnames, bucket

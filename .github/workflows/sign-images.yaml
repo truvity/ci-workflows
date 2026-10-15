@@ -1,0 +1,91 @@
+# Sign and attest the images a release published. Opt-in, and a SECOND
+# job in the caller's release workflow because signing needs
+# `id-token: write` and `attestations: write`, which a reusable workflow
+# cannot widen. Declared inside release-public.yaml, they would stop
+# every caller that has not granted them from starting at all — a
+# static check, whatever the job's `if`. Here only a caller that adds
+# this job must grant them.
+#
+#   jobs:
+#     release:
+#       permissions:
+#         contents: write
+#         packages: write
+#       uses: truvity/ci-workflows/.github/workflows/release-public.yaml@<sha>
+#     sign:
+#       needs: release
+#       permissions:
+#         contents: read
+#         packages: write
+#         id-token: write
+#         attestations: write
+#       uses: truvity/ci-workflows/.github/workflows/sign-images.yaml@<sha>
+#       with:
+#         images: ${{ needs.release.outputs.images }}
+#
+# Every image is signed by DIGEST (cosign keyless, GitHub OIDC) and gets
+# a GitHub build-provenance attestation pushed to the registry. A
+# failure fails the run: there is no silent skip. `[]` does nothing.
+name: sign-images
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: >-
+          JSON array of `{"repo": "ghcr.io/<owner>/<image>", "digest":
+          "sha256:..."}`, as the `images` output of release-public. `[]`
+          (the default) signs nothing.
+        required: false
+        type: string
+        default: '[]'
+      runner:
+        required: false
+        type: string
+        default: ubuntu-latest
+      timeout-minutes:
+        required: false
+        type: number
+        default: 15
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  sign:
+    name: sign ${{ matrix.image.repo }}
+    if: inputs.images != '[]' && inputs.images != ''
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.images) }}
+    steps:
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign by digest
+        run: cosign sign --yes "${IMAGE_REPO}@${IMAGE_DIGEST}"
+        env:
+          IMAGE_REPO: ${{ matrix.image.repo }}
+          IMAGE_DIGEST: ${{ matrix.image.digest }}
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ matrix.image.repo }}
+          subject-digest: ${{ matrix.image.digest }}
+          push-to-registry: true

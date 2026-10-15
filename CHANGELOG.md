@@ -7,6 +7,10 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v3.31.0
+
+- Signed images, opt-in. New reusable workflow `sign-images.yaml`: for each image digest it runs `cosign sign --yes <repo>@<digest>` (keyless, GitHub OIDC) and `actions/attest-build-provenance` with `push-to-registry`, and fails the run on any error. `release-public` gains an `images` output (JSON `[{repo, digest}]` from `dist/artifacts.json`, `[]` when nothing was published) and a step that fails the release if an image has no usable digest. It is a second job rather than an input of `release-public` because a reusable workflow cannot widen the caller's permissions: requesting `id-token: write` inside `release-public` would stop every caller that has not granted it. A caller opts in by adding a `sign` job with `needs: release`, `contents: read`, `packages: write`, `id-token: write`, `attestations: write`, and `with: images: ${{ needs.release.outputs.images }}`. Callers that add nothing see no change. The plan is to fold this into `release-public` behind a `sign-images` input, defaulting to true, in a later major once all callers are migrated. See README, "Signed images".
+
 ## v3.30.0
 
 - Every `truvity/ci-actions` pin in the workflows moves to v1.17.0 (`5811f05`), except `tagged-pins`. The v1.17.0 `setup-devbox` and `recipe` only add the opt-in `devbox-config` input, which no workflow here sets, so their behaviour is unchanged. The other actions are bumped because their ci-actions changelog shows no behaviour change between the old pin and v1.17.0: `auto-release`, `caller-parity`, `devbox-parity`, `enrolment-list`, `fleet-discover`, `fleet-step`, `pkl-fleet` (v1.13.0's additions are new outputs), `public-runners`, `publish-charts`, `publish-nix-flakes`, `release-pkl`, `require-green-checks`, `setup-remote-builders`, `token-exchange`, `token-inputs`, and the ones already at v1.16.0 (`cluster`, `openbao-secrets`, `policy-conformance`). `tagged-pins` stays at v1.8.0: from v1.16.0 it no longer lists the archived ci-cache library by default, which changes what it checks.
