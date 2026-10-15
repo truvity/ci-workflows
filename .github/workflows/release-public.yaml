@@ -44,10 +44,22 @@
 #         sourcemaps-image: web
 #         sourcemaps-dir: dist-sourcemaps
 #         sourcemaps-app: url-shortener   # when the image is named `web`
+#
+#   Signing the images is opt-in and is a SECOND job in the caller, not
+#   an input here: see sign-images.yaml. This workflow only reports the
+#   `images` it published (repository and digest) for it to consume.
 name: release-public
 
 on:
   workflow_call:
+    outputs:
+      images:
+        description: >-
+          JSON array of `{"repo": "ghcr.io/<owner>/<image>", "digest":
+          "sha256:..."}`, one per distinct image GoReleaser (or ko) pushed
+          in this run, taken from dist/artifacts.json. Never a tag. `[]`
+          when the run published no image. Feed it to sign-images.yaml.
+        value: ${{ jobs.release.outputs.images }}
     inputs:
       charts:
         description: >-
@@ -257,6 +269,8 @@ jobs:
     needs: runners
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
+    outputs:
+      images: ${{ steps.images.outputs.images }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -303,6 +317,34 @@ jobs:
           # failed afterwards, writing an SBOM to a repository that was
           # never meant to hold one.
           KO_DOCKER_REPO: ${{ inputs.image-repo || inputs.ko-docker-repo }}
+
+      # What was published, by digest. Read from GoReleaser's own record, so
+      # it names exactly the images this run pushed. Manifests (and
+      # dockers_v2 / ko images) are preferred; the per-platform "Docker
+      # Image" entries are used only when there is nothing else, because
+      # signing the manifest covers them. A missing or malformed digest
+      # fails the release rather than yielding an unsigned image.
+      - name: Published image digests
+        id: images
+        run: |
+          set -euo pipefail
+          images='[]'
+          if [ -f dist/artifacts.json ]; then
+            images="$(jq -c '
+              [ .[] | select(.type == "Docker Manifest" or .type == "Docker Image V2") ] as $m
+              | (if ($m | length) > 0 then $m else [ .[] | select(.type == "Docker Image") ] end)
+              | map({
+                  repo: (.name | sub("@sha256:.*$"; "") | sub(":[^/:]*$"; "")),
+                  digest: (.extra.digest // "")
+                })
+              | unique' dist/artifacts.json)"
+          fi
+          bad="$(jq -r '.[] | select(.digest | test("^sha256:[0-9a-f]{64}$") | not) | .repo' <<<"$images")"
+          if [ -n "$bad" ]; then
+            echo "::error::no usable digest in dist/artifacts.json for: $bad"
+            exit 1
+          fi
+          echo "images=$images" >> "$GITHUB_OUTPUT"
 
       # The git tag is the sole version authority: a chart's own version
       # field is a placeholder that never moves, and is stamped here.
