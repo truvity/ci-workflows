@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **Breaking: the retired `go-cache-server` input is removed from `check` and `integration`.** It has been ignored (with a warning from setup-devbox) since the Go build cache went straight to `go-cache-bucket`, and neither workflow forwards it to setup-devbox any more. A reusable workflow refuses an input it does not declare, so a caller that still passes it fails: remove it. No caller in the truvity, trust-form, finttech or opwerm organisations passes it, and no `CI_GOCACHE_SERVER` org variable is left. The rule its description carried (the caller passes every cache input; no fallback to an org variable inside the workflow) now sits on `go-cache-bucket`. `docs/estate-lifecycle.md` drops the retirement note.
+
 ## v3.33.0
 
 - **Git LFS objects are fetched at checkout, ON by default.** New `workflow_call` input `lfs` (boolean, default true) on `check`, `integration`, `release-private`, `release-public` and `release-pkl`, passed to the `actions/checkout` of the caller's repository as `lfs: ${{ inputs.lfs }}`. A repository that ships images or other binaries through Git LFS (truvity/docs shipped pointer files) built from pointer files because no checkout fetched LFS. Requires `git-lfs` on the runner: the ARC image has it since ci-plane v6.7.0 (`git lfs install --system`), GitHub-hosted runners ship it. Set `lfs: false` for a repository whose LFS objects the job does not need. A repository without LFS content sees no change. Checkouts that need no LFS objects set `lfs: false` explicitly and take no input: `check` `pins` and `policy-conformance`, the `auto-release` tag jobs, the sparse checkouts of the enrolment list or policy file in `parity-fleet`, `pkl-fleet` and `renovate-fleet`, and the checkouts of an enrolled consumer repository in `parity-fleet` and `pkl-fleet`. See README, "Git LFS at checkout".

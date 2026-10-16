@@ -164,23 +164,14 @@ on:
         required: false
         type: string
         default: ''
-      go-cache-server:
+      go-cache-bucket:
         description: >-
-          RETIRED and ignored; passing it warns. The Go build cache goes
-          straight to go-cache-bucket. See the input of the same name in
-          the setup-devbox action for why the server left the Go path.
-
-          The rule it used to illustrate still holds for every cache
-          input here: the CALLER passes them and there is deliberately NO
-          fallback to an org variable inside this workflow. A caller's
+          ARC only — from the caller's org variable, never hard-coded here.
+          The CALLER passes every cache input, and there is deliberately
+          NO fallback to an org variable inside this workflow: a caller's
           security workflow passes none on purpose and once got one
           anyway, on a GitHub-hosted runner that could reach neither the
           binary nor the service.
-        required: false
-        type: string
-        default: ''
-      go-cache-bucket:
-        description: ARC only — from the caller's org variable, never hard-coded here.
         required: false
         type: string
         default: ''
@@ -528,7 +519,6 @@ jobs:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
           aws-config-file: ${{ inputs.aws-config-file }}
-          go-cache-server: ${{ inputs.go-cache-server }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           go-cache-endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}

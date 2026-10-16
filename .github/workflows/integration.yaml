@@ -191,22 +191,14 @@ on:
         required: false
         type: string
         default: ""
-      go-cache-server:
-        description: >-
-          Base URL of a truvity/ci-cache server. The CALLER passes it, as
-          it does go-cache-bucket, and there is deliberately NO fallback to
-          `vars.CI_GOCACHE_SERVER` here: a caller decides per workflow
-          whether a Go cache applies at all, and reading the org variable
-          inside this workflow took that decision away. A caller's security
-          workflow passes no cache inputs on purpose and got one anyway,
-          on a GitHub-hosted runner that can reach neither the binary nor
-          the service. TAKES PRECEDENCE over go-cache-bucket when both are
-          set, so a caller migrating from one to the other does not depend
-          on the order of two conditions.
-        required: false
-        type: string
-        default: ""
       go-cache-bucket:
+        description: >-
+          The CALLER passes it, and there is deliberately NO fallback to an
+          org variable here: a caller decides per workflow whether a Go
+          cache applies at all. A caller's security workflow passes no
+          cache inputs on purpose and once got one anyway, on a
+          GitHub-hosted runner that could reach neither the binary nor the
+          service.
         required: false
         type: string
         default: ""
@@ -382,7 +374,6 @@ jobs:
           go-private: ${{ inputs.go-private }}
           module-app-client-id: ${{ inputs.module-app-client-id }}
           module-app-private-key: ${{ secrets.module-app-private-key }}
-          go-cache-server: ${{ inputs.go-cache-server }}
           go-cache-bucket: ${{ inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy || vars.CI_GOPROXY }}
