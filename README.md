@@ -122,6 +122,19 @@ this repository, where it could only report as
 `integration / integration`. So the fan-in lives in the caller, next to
 the call, as in the example above.
 
+### Git LFS at checkout
+
+The workflows that check out the caller's repository (`check` recipe jobs,
+`integration`, `release-private`, `release-public`, `release-pkl`) fetch Git
+LFS objects: the input `lfs` (boolean) defaults to `true`. Without it a
+repository that tracks images or other binaries in LFS builds from pointer
+files. Set `lfs: false` for a repository whose LFS objects are not needed by
+the job. The runner needs `git-lfs`: the ARC image has it since ci-plane
+v6.7.0, and GitHub-hosted runners ship it. Checkouts that read only metadata
+(`pins`, `policy-conformance`, the `auto-release` tag jobs), sparse
+checkouts of an enrolment list, and checkouts of a different repository
+(the fleet workflows) set `lfs: false` and have no input.
+
 ## Consumers
 
 As of 2026-09-29, by a code search of each organisation's workflow

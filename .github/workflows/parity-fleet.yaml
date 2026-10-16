@@ -221,6 +221,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.list != ''
         with:
+          # Sparse checkout of the enrolment list; no LFS objects needed.
+          lfs: false
           sparse-checkout: ${{ inputs.repositories-file }}
           sparse-checkout-cone-mode: false
 
@@ -309,6 +311,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.list != '' || inputs.caller-parity-list != '' || inputs.caller-parity-kits != ''
         with:
+          # Sparse checkout of the enrolment list and kits; no LFS objects needed.
+          lfs: false
           # The enrolment list, and the estate's own canonical copies
           # when it keeps them itself.
           sparse-checkout: |
@@ -435,6 +439,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A different repository (an enrolled consumer), not the caller's tree; LFS objects are not fetched.
+          lfs: false
           repository: ${{ matrix.repository }}
           ref: ${{ steps.repo.outputs.base }}
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}

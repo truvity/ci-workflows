@@ -62,6 +62,15 @@ on:
           is left out with a warning, never an error. Feed it to sign-images.yaml.
         value: ${{ jobs.release.outputs.images }}
     inputs:
+      lfs:
+        description: >-
+          Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
+          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          it). Set false for a repository whose LFS objects are not needed by
+          this job.
+        required: false
+        type: boolean
+        default: true
       charts:
         description: >-
           JSON array of charts to publish. A plain entry (`url-shortener`) is
@@ -275,6 +284,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          lfs: ${{ inputs.lfs }}
           # goreleaser derives the changelog from history; a shallow
           # clone gives it nothing to derive from.
           fetch-depth: 0
