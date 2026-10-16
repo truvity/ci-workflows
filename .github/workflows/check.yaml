@@ -301,6 +301,19 @@ on:
         required: false
         type: number
         default: 30
+      stable-mtimes:
+        description: >-
+          Right after the checkout, give every tracked file a modification
+          time derived from its content (truvity/ci-actions stable-mtimes),
+          so Go's test cache can hit. Go keys a cached test result on the
+          size and mtime of every file the test opened; a fresh checkout
+          stamps them all "now", so every test that reads repository files
+          missed the cache although the content was unchanged. ON by default.
+          Set false for a repository whose CI relies on make-style timestamp
+          ordering (a committed generated file judged newer than its source).
+        required: false
+        type: boolean
+        default: true
       policy-conformance:
         description: >-
           Run the `policy-conformance` job: truvity/ci-actions'
@@ -389,7 +402,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
+      - uses: truvity/ci-actions/public-runners@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -437,7 +450,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
+      - uses: truvity/ci-actions/policy-conformance@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -493,7 +506,10 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
+      - uses: truvity/ci-actions/stable-mtimes@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+        if: inputs.stable-mtimes
+
+      - uses: truvity/ci-actions/setup-devbox@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -617,12 +633,12 @@ jobs:
           registries: ${{ steps.ecr.outputs.registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-actions/setup-remote-builders@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
+      - uses: truvity/ci-actions/setup-remote-builders@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
         with:
           remote-builders: ${{ inputs.remote-builders }}
 
-      - uses: truvity/ci-actions/recipe@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
+      - uses: truvity/ci-actions/recipe@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
