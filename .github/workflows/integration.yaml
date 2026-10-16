@@ -60,6 +60,15 @@ name: integration
 on:
   workflow_call:
     inputs:
+      lfs:
+        description: >-
+          Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
+          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          it). Set false for a repository whose LFS objects are not needed by
+          this job.
+        required: false
+        type: boolean
+        default: true
       lanes:
         description: >-
           JSON array of lanes, each a job. Keys: `name` (job suffix and
@@ -361,6 +370,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          lfs: ${{ inputs.lfs }}
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 

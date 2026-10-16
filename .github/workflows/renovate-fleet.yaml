@@ -223,6 +223,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.list != ''
         with:
+          # Sparse checkout of the enrolment list; no LFS objects needed.
+          lfs: false
           sparse-checkout: ${{ inputs.repositories-file }}
           sparse-checkout-cone-mode: false
 
@@ -340,6 +342,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.global-config != ''
         with:
+          # Sparse checkout of the estate policy file; no LFS objects needed.
+          lfs: false
           path: caller
           sparse-checkout: ${{ inputs.global-config }}
           sparse-checkout-cone-mode: false

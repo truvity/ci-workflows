@@ -43,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          lfs: true
           # Depth 1 again. The full history was here for `pins are
           # current`, which compared two commits in this repository; the
           # gates that remain read the working tree and the libraries'

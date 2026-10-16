@@ -27,6 +27,15 @@ name: check
 on:
   workflow_call:
     inputs:
+      lfs:
+        description: >-
+          Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
+          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          it). Set false for a repository whose LFS objects are not needed by
+          this job.
+        required: false
+        type: boolean
+        default: true
       recipes:
         description: >-
           JSON array of recipes. Each becomes its OWN job, running in
@@ -428,6 +437,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Reads workflow files only; no LFS objects needed.
+          lfs: false
           fetch-depth: 1
 
       - uses: truvity/ci-actions/tagged-pins@598251d570fd99ba403b99bfa65ae4472ed25e73 # v1.8.0
@@ -448,6 +459,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Reads repository metadata for the rules; no LFS objects needed.
+          lfs: false
           fetch-depth: 0
 
       - uses: truvity/ci-actions/policy-conformance@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
@@ -504,6 +517,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
       - uses: truvity/ci-actions/stable-mtimes@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0

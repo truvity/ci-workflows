@@ -72,6 +72,15 @@ name: release-pkl
 on:
   workflow_call:
     inputs:
+      lfs:
+        description: >-
+          Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
+          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          it). Set false for a repository whose LFS objects are not needed by
+          this job.
+        required: false
+        type: boolean
+        default: true
       package-recipe:
         description: The `just` recipe that builds the packages into `output-dir`.
         required: false
@@ -157,6 +166,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          lfs: ${{ inputs.lfs }}
           persist-credentials: false
 
       - uses: truvity/ci-actions/setup-devbox@5811f05aa1a4711c1ab95574f7d410bd764c9902 # v1.17.0
