@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v4.0.0
+
 - **Breaking: the retired `go-cache-server` input is removed from `check` and `integration`.** It has been ignored (with a warning from setup-devbox) since the Go build cache went straight to `go-cache-bucket`, and neither workflow forwards it to setup-devbox any more. A reusable workflow refuses an input it does not declare, so a caller that still passes it fails: remove it. No caller in the truvity, trust-form, finttech or opwerm organisations passes it, and no `CI_GOCACHE_SERVER` org variable is left. The rule its description carried (the caller passes every cache input; no fallback to an org variable inside the workflow) now sits on `go-cache-bucket`. `docs/estate-lifecycle.md` drops the retirement note.
 - Docs: the "until v3.0.0" history is gone from `docs/devbox-update.md`, `docs/estate-lifecycle.md`, `docs/renovate.md` and the `parity-fleet.yaml` header; each now says what the fleet shape does, not what it replaced. `docs/component-contract.md`, the stub left behind when the component contract moved to truvity/policy (`docs/contracts/component.md`), is deleted: nothing in the truvity, trust-form or finttech organisations links to it except this repository's own README, which now links truvity/policy only.
 
