@@ -194,9 +194,7 @@ files:
 - [docs/golden-renders.md](docs/golden-renders.md): golden chart
   renders, and the canonical `hack/golden.sh`.
 - The component contract lives in
-  [truvity/policy](https://github.com/truvity/policy/blob/master/docs/contracts/component.md);
-  [docs/component-contract.md](docs/component-contract.md) points there
-  and says what changed.
+  [truvity/policy](https://github.com/truvity/policy/blob/master/docs/contracts/component.md).
 - [CHANGELOG.md](CHANGELOG.md): every release.
 
 ## Signed images

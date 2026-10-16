@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- Docs: the "until v3.0.0" history is gone from `docs/devbox-update.md`, `docs/estate-lifecycle.md`, `docs/renovate.md` and the `parity-fleet.yaml` header; each now says what the fleet shape does, not what it replaced. `docs/component-contract.md`, the stub left behind when the component contract moved to truvity/policy (`docs/contracts/component.md`), is deleted: nothing in the truvity, trust-form or finttech organisations links to it except this repository's own README, which now links truvity/policy only.
+
 ## v3.33.0
 
 - **Git LFS objects are fetched at checkout, ON by default.** New `workflow_call` input `lfs` (boolean, default true) on `check`, `integration`, `release-private`, `release-public` and `release-pkl`, passed to the `actions/checkout` of the caller's repository as `lfs: ${{ inputs.lfs }}`. A repository that ships images or other binaries through Git LFS (truvity/docs shipped pointer files) built from pointer files because no checkout fetched LFS. Requires `git-lfs` on the runner: the ARC image has it since ci-plane v6.7.0 (`git lfs install --system`), GitHub-hosted runners ship it. Set `lfs: false` for a repository whose LFS objects the job does not need. A repository without LFS content sees no change. Checkouts that need no LFS objects set `lfs: false` explicitly and take no input: `check` `pins` and `policy-conformance`, the `auto-release` tag jobs, the sparse checkouts of the enrolment list or policy file in `parity-fleet`, `pkl-fleet` and `renovate-fleet`, and the checkouts of an enrolled consumer repository in `parity-fleet` and `pkl-fleet`. See README, "Git LFS at checkout".

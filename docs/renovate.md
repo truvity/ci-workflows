@@ -5,13 +5,11 @@ How the fleet is scheduled, scoped and given tokens is
 half: how Renovate itself is executed, and what a repository has to do
 to be updatable by it.
 
-Until v3.0.0 there was also a `renovate.yaml` every repository called
-from a workflow of its own, entitled by an organisation variable and
-secret with a hand-kept selected-repository list. Its defining failure
-is worth remembering, because it is what the fleet shape was built to
-make impossible: **a repository outside the selected scope never ran
-renovate and never said so.** Two repositories carried the caller for
-weeks, entitled to nothing (2026-08-25). The fleet run names every
+The fleet shape is built to make one failure impossible: **a repository
+outside a hand-kept scope never runs renovate and never says so.** A
+per-repository caller entitled by a selected-repository list did exactly
+that: two repositories carried it for weeks, entitled to nothing
+(2026-08-25). The fleet run names every
 enrolled repository it cannot reach, in the run summary, individually —
 "renovate has never opened a PR here" is a symptom, never a baseline.
 

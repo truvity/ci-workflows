@@ -11,11 +11,8 @@ things that must agree** aligned in the same pull request:
 
 This document is the why, the rules, and every pitfall the rollout hit
 (2026-08-23). Read it before touching the action or a fleet caller. The
-rules outlived the shape they were found in: until v3.0.0 the same logic
-ran from a `devbox-update.yaml` workflow inside each repository, and
-every pitfall below was paid for there. The name survives that workflow
-because it is still what the run does and what the pull request it opens
-is called (`chore/devbox-update`).
+run is called devbox-update because that is what it does, and so is the
+pull request it opens (`chore/devbox-update`).
 
 ## Why three things, and why one owner
 

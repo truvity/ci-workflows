@@ -56,9 +56,7 @@ repository (`docs/fleet.md`), and a repository opts in by being enrolled
 there and carrying a `renovate.json` and a `devbox.json`, plus the
 required `check`. What that job does to a Go repository's toolchain
 triple is `docs/devbox-update.md`; how the renovate engine itself is
-run is `docs/renovate.md`. Until v3.0.0 this library also shipped
-`renovate.yaml`, `devbox-update.yaml` and `auto-approve.yaml` for the
-per-repository shape; they are gone.
+run is `docs/renovate.md`.
 
 `node-cache` defaults to `true` in `check.yaml` and `integration.yaml`
 (no need to pass it): on a self-hosted (ARC) runner the job probes the
