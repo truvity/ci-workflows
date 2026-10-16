@@ -97,13 +97,6 @@ only describe *how* to reach a bucket the caller already chose, do fall
 back to the caller's `vars.CI_GOCACHE_S3_ENDPOINT` and
 `vars.CI_GOCACHE_S3_PATH_STYLE`.
 
-**`go-cache-server` is retired.** It pointed the Go build cache at
-ci-cache's own server, which was measured out of the Go path: it reached
-parity with the bucket in its own best case and lost to it in CI. The
-input is still accepted so a caller's pin and its org variable can move
-separately, but it does nothing and warns; remove it, and the
-`CI_GOCACHE_SERVER` org variable with it.
-
 `goproxy` falls back to the caller's `vars.CI_GOPROXY` when the input is
 empty (a reusable workflow reads the calling repository's configuration
 variables), so callers need not pass it. Do not pin `GOPROXY` in a
