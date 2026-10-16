@@ -5,8 +5,9 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v3.32.0
 
+- `check`: **stable file times for Go's test cache, ON by default.** New `workflow_call` input `stable-mtimes` (boolean, default true) runs truvity/ci-actions `stable-mtimes` right after the repository checkout and before `setup-devbox` and every recipe, in the recipe jobs only (not in `release-*` or `integration`). Go's test cache keys a cached result on the size and modification time of every file the test opened (the content is not hashed) and refuses to cache files modified in the last couple of seconds; a fresh checkout stamps every file "now", so in CI every test that reads repository files missed the cache although its result sat in the shared cache. The action gives each tracked file an mtime derived from its blob id and every directory with tracked files the constant 2000-01-01Z, so unchanged content has the same mtime on every runner and branch. Expect the first run after adoption to be cold, later runs to show `(cached)` packages. Opt out with `stable-mtimes: false` for a repository whose CI relies on make-style timestamp ordering (a committed generated file may be judged newer than a changed source). All other ci-actions pins in `check.yaml` move to v1.18.0 (`f9130c6`), which only adds the new action; `tagged-pins` stays at v1.8.0 as before.
 - Docs: the "Signed images" verify commands in README now match what the signatures carry. The signer identity is `sign-images.yaml` in truvity/ci-workflows, not the caller's repository, so `--certificate-identity-regexp` names that workflow, and `--certificate-github-workflow-repository` plus `gh attestation verify --signer-repo truvity/ci-workflows` tie the check to the calling repository. The old commands fail on current signatures.
 
 ## v3.31.0
