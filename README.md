@@ -215,13 +215,19 @@ A failed signature fails the run. `release-public` only warns when an
 image has no digest in `dist/artifacts.json` and leaves it out of `images`;
 `sign-images` is strict: with `require-images` (default true) an empty list
 or an entry without a `sha256:` digest fails the run, and `require-images:
-false` makes `[]` a no-op. A consumer verifies a digest, never a tag:
+false` makes `[]` a no-op. A consumer verifies a digest, never a tag. The
+signer is the reusable `sign-images.yaml` in ci-workflows, not the calling
+repository, so the identity regexp names that workflow's path;
+`--certificate-github-workflow-repository` then ties the signature to the
+calling repository, and `gh attestation verify` needs `--signer-repo` for the
+same reason:
 
 ```sh
 cosign verify <image>@<digest> \
-  --certificate-identity-regexp '^https://github.com/truvity/<repo>/' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify oci://<image>@<digest> -R truvity/<repo>
+  --certificate-identity-regexp '^https://github.com/truvity/ci-workflows/\.github/workflows/sign-images\.yaml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-repository truvity/<repo>
+gh attestation verify oci://<image>@<digest> -R truvity/<repo> --signer-repo truvity/ci-workflows
 ```
 
 Signing moves into `release-public` behind a `sign-images` input, default
