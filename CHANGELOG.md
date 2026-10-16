@@ -7,6 +7,10 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v4.1.1
+
+- Every `truvity/ci-actions` pin moves from v2.1.0 to v2.1.1 (`47005bc`), except `tagged-pins`. v2.1.0's `s3-cache` could not restore on a real runner (every restore was a miss, so v4.1.0's golangci-lint and yarn caches never hit on the bucket); v2.1.1 fixes it. Nothing else changes.
+
 ## v4.1.0
 
 - **`check`, `integration`: Actions cache traffic of self-hosted runners moves from GitHub's cache to the CI cache bucket.** The golangci-lint cache (`check`, lint recipe) and the yarn fetch cache (`integration`) use truvity/ci-actions `s3-cache/restore` and `s3-cache/save`. On a self-hosted runner whose caller passes `go-cache-bucket` (and `go-cache-region`, plus the endpoint and path-style variables, exactly as for the Go build cache) the cache is read and written under the `gha-cache/` prefix of that bucket, which the runners reach through a gateway endpoint instead of through the NAT; GitHub-hosted runners, callers without the bucket inputs and runners without usable credentials keep using GitHub's cache through the pinned `actions/cache`. No new input. `setup-devbox` (proto toolchain cache) takes the same path through the new ci-actions pin.
