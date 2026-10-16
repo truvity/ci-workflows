@@ -402,7 +402,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/public-runners@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -454,7 +454,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/policy-conformance@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -511,10 +511,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/stable-mtimes@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/setup-devbox@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -588,7 +588,7 @@ jobs:
       # when the caller passes go-cache-bucket (traffic stays inside the
       # region, none of it through the NAT) and GitHub's cache everywhere
       # else.
-      - uses: truvity/ci-actions/s3-cache/restore@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/s3-cache/restore@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
@@ -645,12 +645,12 @@ jobs:
           registries: ${{ steps.ecr.outputs.registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-actions/setup-remote-builders@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/setup-remote-builders@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
         with:
           remote-builders: ${{ inputs.remote-builders }}
 
-      - uses: truvity/ci-actions/recipe@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/recipe@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -719,7 +719,7 @@ jobs:
       # someone is iterating and most wants it warm. cache-hit is true only
       # on an exact key, so the save runs when the devbox.lock + go.sum key
       # is missing and not otherwise (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
+      - uses: truvity/ci-actions/s3-cache/save@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
