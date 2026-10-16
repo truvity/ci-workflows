@@ -402,7 +402,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+      - uses: truvity/ci-actions/public-runners@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -454,7 +454,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+      - uses: truvity/ci-actions/policy-conformance@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -511,10 +511,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+      - uses: truvity/ci-actions/stable-mtimes@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+      - uses: truvity/ci-actions/setup-devbox@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -574,24 +574,32 @@ jobs:
       # objects reference the old nix store path, and that fails at exec
       # time rather than missing cleanly.
       #
-      # The commit in the key, and a save on EVERY run (below). Keyed on
-      # devbox.lock + go.sum alone, the first run after a dependency bump
-      # saved the cache and every later run hit that exact key, so nothing
-      # was ever saved again: the analysis of every package changed since
-      # that bump was redone on every run, and the cache aged as the code
-      # moved. Now each run restores the newest cache under the same
-      # devbox.lock (same go.sum first) and saves what it adds, under its
-      # own commit. golangci-lint invalidates per package, so a cache from
-      # an older commit is still mostly hits.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Keyed on devbox.lock + go.sum, NOT on the commit, and saved only
+      # when that exact key is missing (below). From v3.26.3 the key carried
+      # the commit and every run saved a new ~25 MB to ~1.9 GB cache: the
+      # biggest writer of Actions cache in the estate, and on a self-hosted
+      # runner every byte of it crossed the NAT. Now the first run after a
+      # dependency or toolchain bump saves one cache; later runs restore it.
+      # The price is that the analysis of packages changed since that bump is
+      # redone on every run until the next bump; golangci-lint invalidates
+      # per package, so that is the changed packages only.
+      #
+      # s3-cache/restore reads the CI cache bucket on a self-hosted runner
+      # when the caller passes go-cache-bucket (traffic stays inside the
+      # region, none of it through the NAT) and GitHub's cache everywhere
+      # else.
+      - uses: truvity/ci-actions/s3-cache/restore@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
           path: ~/.cache/golangci-lint
-          key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          key: golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}-
             golangci-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
+          bucket: ${{ inputs.go-cache-bucket }}
+          region: ${{ inputs.go-cache-region }}
+          endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
+          path-style: ${{ inputs.go-cache-path-style || vars.CI_GOCACHE_S3_PATH_STYLE }}
 
       # Through env, never spliced into the script: a ${{ }} expression is
       # pasted in before bash parses the line, so a value carrying a quote
@@ -637,12 +645,12 @@ jobs:
           registries: ${{ steps.ecr.outputs.registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-actions/setup-remote-builders@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+      - uses: truvity/ci-actions/setup-remote-builders@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
         with:
           remote-builders: ${{ inputs.remote-builders }}
 
-      - uses: truvity/ci-actions/recipe@f9130c63db2899c18884c027a7eade20d0ab796a # v1.18.0
+      - uses: truvity/ci-actions/recipe@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -709,10 +717,14 @@ jobs:
       # if: always() — otherwise a failing lint kills the job before the
       # post step and the cache is never written, which is exactly when
       # someone is iterating and most wants it warm. cache-hit is true only
-      # on an exact key, i.e. a re-run of the same commit, whose cache is
-      # already saved.
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # on an exact key, so the save runs when the devbox.lock + go.sum key
+      # is missing and not otherwise (a restore-keys match is a miss here).
+      - uses: truvity/ci-actions/s3-cache/save@1af3b3f73f838d5a55b88d8a22ed68dff19e5626 # v2.1.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
           key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
+          bucket: ${{ inputs.go-cache-bucket }}
+          region: ${{ inputs.go-cache-region }}
+          endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
+          path-style: ${{ inputs.go-cache-path-style || vars.CI_GOCACHE_S3_PATH_STYLE }}
