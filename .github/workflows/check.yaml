@@ -436,7 +436,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/public-runners@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -488,7 +488,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/policy-conformance@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -550,10 +550,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/stable-mtimes@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/setup-devbox@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -660,7 +660,7 @@ jobs:
       # when the caller passes go-cache-bucket (traffic stays inside the
       # region, none of it through the NAT) and GitHub's cache everywhere
       # else.
-      - uses: truvity/ci-actions/s3-cache/restore@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/s3-cache/restore@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
@@ -723,7 +723,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/setup-buildkit-tls@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -834,7 +834,7 @@ jobs:
             esac
           done
 
-      - uses: truvity/ci-actions/recipe@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/recipe@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -921,7 +921,7 @@ jobs:
       # someone is iterating and most wants it warm. cache-hit is true only
       # on an exact key, so the save runs when the devbox.lock + go.sum key
       # is missing and not otherwise (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+      - uses: truvity/ci-actions/s3-cache/save@e6f7599223c4fb2934c544060b02e99550ada53f # v3.3.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
