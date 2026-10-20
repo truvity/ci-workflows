@@ -104,6 +104,26 @@ repository's `devbox.json` `env` block: `devbox run` re-applies that
 block over the job environment and the CI proxy is silently bypassed.
 `setup-devbox` warns when it finds one.
 
+**A runner can override the cache addresses.** `CI_GOPROXY`,
+`CI_NPM_REGISTRY`, `CI_BAZEL_REMOTE_CACHE` and `CI_REMOTE_BUILDERS` are
+organisation-wide, one value for every runner. A runner pool that reaches
+the same services by other names (a container-task pool going through a
+private gateway, where a Kubernetes pod uses in-cluster names) exports its
+own value in the runner's process environment, and that wins:
+`CI_RUNNER_GOPROXY`, `CI_RUNNER_NPM_REGISTRY`,
+`CI_RUNNER_BAZEL_REMOTE_CACHE` and `CI_RUNNER_REMOTE_BUILDERS` (same
+format as the input). Precedence: runner environment, then the input, then
+the organisation variable, then the legacy default. The `setup-devbox` and
+`setup-remote-builders` actions of truvity/ci-actions apply it for GOPROXY,
+bazel-remote and the builders; the npm step and the "Plan the remote
+builders" step of `check`, `integration`, `release-private` and
+`renovate-fleet` apply it for the registry and the builders; `renovate-fleet`
+also for its own GOPROXY probe; `canary` probes the effective values and
+reports the source of each. Each step logs which source won, never a
+credential. With no `CI_RUNNER_*` set, nothing changes. The override picks
+WHICH nodes the builders are; whether a job uses builders at all stays the
+caller's choice (a non-empty `remote-builders`).
+
 ## 3. Release — one tag, every artifact
 
 `release.yaml` → `release-public.yaml`: goreleaser builds binaries and

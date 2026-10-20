@@ -169,7 +169,9 @@ on:
         description: >-
           The CI plane's BuildKit nodes, `platforms=endpoint` entries
           separated by whitespace (vars.CI_REMOTE_BUILDERS). Required by
-          every lane that builds images.
+          every lane that builds images. A runner that exports
+          `CI_RUNNER_REMOTE_BUILDERS` (same format) overrides which nodes
+          are registered; the caller still chooses to use builders.
         required: false
         type: string
         default: ""
@@ -212,6 +214,7 @@ on:
           `vars.CI_GOPROXY` (a reusable workflow reads the caller
           repository's variables); both empty leaves Go's default. Applied
           only alongside go-cache-bucket, like the rest of the cache wiring.
+          A runner that exports `CI_RUNNER_GOPROXY` overrides both.
         required: false
         type: string
         default: ""
@@ -237,6 +240,8 @@ on:
           only when it answers. LEGACY: while both are empty the previous
           in-cluster address is probed instead, so a runner pool that
           has not yet been given the variable behaves exactly as before.
+          A runner that exports `CI_RUNNER_NPM_REGISTRY` overrides both:
+          its own value wins over this input and the variable.
         required: false
         type: string
         default: ''
@@ -248,6 +253,8 @@ on:
           to every lane as CI_BAZEL_REMOTE_CACHE for the project's own
           tooling to read; this workflow wires nothing else with it and
           never carries a literal address.
+          A runner that exports `CI_RUNNER_BAZEL_REMOTE_CACHE` overrides both
+          (setup-devbox exports the winner as CI_BAZEL_REMOTE_CACHE).
         required: false
         type: string
         default: ''
@@ -311,7 +318,7 @@ jobs:
     outputs:
       tier: ${{ steps.resolve.outputs.tier }}
     steps:
-      - uses: truvity/ci-actions/public-runners@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/public-runners@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -392,7 +399,7 @@ jobs:
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/setup-devbox@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -418,7 +425,7 @@ jobs:
       # Install, which DOES need the whole box.
       - name: "cluster (mode: kind, background)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+        uses: truvity/ci-actions/cluster@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           mode: kind
           background: "true"
@@ -436,7 +443,7 @@ jobs:
       - name: Cache the yarn fetch cache
         id: yarn-cache
         if: inputs.node-cache && hashFiles('yarn.lock') != ''
-        uses: truvity/ci-actions/s3-cache/restore@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+        uses: truvity/ci-actions/s3-cache/restore@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           path: .yarn/cache
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
@@ -460,6 +467,20 @@ jobs:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
           set -euo pipefail
+          # A value the RUNNER exports (CI_RUNNER_NPM_REGISTRY, from its pod
+          # spec or task definition) wins over the input and the org variable:
+          # a pool that reaches the registry by another name carries its own.
+          # Unset, nothing changes. Only the source is logged here.
+          runner_registry="${CI_RUNNER_NPM_REGISTRY:-}"
+          runner_registry="${runner_registry//[[:space:]]/}"
+          if [ -n "$runner_registry" ]; then
+            NPM_REGISTRY="$runner_registry"
+            echo "npm registry: from the runner (CI_RUNNER_NPM_REGISTRY)"
+          elif [ -n "${NPM_REGISTRY:-}" ]; then
+            echo "npm registry: from the input or organisation variable"
+          else
+            echo "npm registry: unset, the legacy in-cluster default is probed"
+          fi
           # The address is the org variable `CI_NPM_REGISTRY` (input
           # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
           # in-cluster name is probed exactly as before; delete the default
@@ -552,7 +573,17 @@ jobs:
           set -euo pipefail
           set -f
           fail() { echo "::error::$*"; exit 1; }
-          [ -n "${NODES//[[:space:]]/}" ] || fail "remote-builders is empty — set the org variable or skip this step"
+          # The list a RUNNER exports (CI_RUNNER_REMOTE_BUILDERS, same format)
+          # wins over the input: a pool that reaches the builders by other
+          # names carries its own. Whether builders are used at all stays the
+          # caller's choice; unset, nothing changes. Only the source is logged.
+          if [ -n "$(printf %s "${CI_RUNNER_REMOTE_BUILDERS:-}" | tr -d "[:space:]")" ]; then
+            NODES="$CI_RUNNER_REMOTE_BUILDERS"
+            echo "builders: nodes from the runner (CI_RUNNER_REMOTE_BUILDERS)"
+          else
+            echo "builders: nodes from the input"
+          fi
+          [ -n "${NODES//[[:space:]]/}" ] || fail "remote-builders is empty — set the org variable, export CI_RUNNER_REMOTE_BUILDERS from the runner, or skip this step"
 
           opts=""
           tls_dir="${CI_BUILDKIT_TLS_DIR:-}"
@@ -689,7 +720,7 @@ jobs:
       # installs land on real Services), not just the registry.
       - name: "cluster (mode: wait)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+        uses: truvity/ci-actions/cluster@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           mode: wait
 
@@ -745,7 +776,7 @@ jobs:
 
       - name: Save the yarn fetch cache
         if: success() && inputs.node-cache && hashFiles('yarn.lock') != '' && steps.yarn-cache.outputs.cache-hit != 'true'
-        uses: truvity/ci-actions/s3-cache/save@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+        uses: truvity/ci-actions/s3-cache/save@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}

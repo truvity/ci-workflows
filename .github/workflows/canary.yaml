@@ -38,6 +38,13 @@
 #     key.pem there; it is never an org variable) the builders are
 #     reached over mTLS, otherwise over plain TCP.
 #
+# RUNNER-PROVIDED OVERRIDES. A value the runner exports in its own
+# environment wins over the matching organisation variable:
+# CI_RUNNER_GOPROXY, CI_RUNNER_NPM_REGISTRY, CI_RUNNER_BAZEL_REMOTE_CACHE
+# and CI_RUNNER_REMOTE_BUILDERS (the last for this tier's builders). The
+# endpoint rows probe the effective value, and a `<VAR> source` row says
+# whether it came from the runner, the organisation variable or nowhere.
+#
 # FAILS ONLY ON HARD FAILURES. A hard failure is: a `require`d variable
 # unset; a malformed builder entry; CI_BUILDKIT_TLS_DIR naming a
 # directory without its three files; and -- with `strict: true`, the
@@ -195,7 +202,7 @@ jobs:
         with:
           lfs: false
 
-      - uses: truvity/ci-actions/setup-devbox@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/setup-devbox@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         if: steps.tools.outputs.devbox == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -312,6 +319,34 @@ jobs:
             return 1
           }
 
+          # ── runner-provided overrides ─────────────────────────────────
+          # A value the RUNNER exports in its own environment wins over the
+          # organisation variable (CI_RUNNER_GOPROXY over CI_GOPROXY, and so
+          # on: the same rule the shared workflows apply). The checks below
+          # then probe the EFFECTIVE value, so the table shows what a job on
+          # this runner would use. One INFO row per variable names the source.
+          #
+          # override <VAR> <RUNNER_VAR> [list]
+          override() {
+            local var=$1 rv=$2 raw="${!2:-}" squeezed
+            squeezed=$(printf '%s' "$raw" | tr -d '[:space:]')
+            if [ -n "$squeezed" ]; then
+              if [ "${3:-}" = list ]; then
+                printf -v "$var" '%s' "$raw"
+              else
+                printf -v "$var" '%s' "$squeezed"
+              fi
+              add "$var source" INFO "runner: $rv wins over the organisation variable"
+            elif [ -n "${!var:-}" ]; then
+              add "$var source" INFO "organisation variable (no $rv on this runner)"
+            else
+              add "$var source" INFO "unset (neither $rv nor the organisation variable)"
+            fi
+          }
+          override CI_GOPROXY CI_RUNNER_GOPROXY
+          override CI_NPM_REGISTRY CI_RUNNER_NPM_REGISTRY
+          override CI_BAZEL_REMOTE_CACHE CI_RUNNER_BAZEL_REMOTE_CACHE
+
           # ── variables and the endpoints they name ─────────────────────
           for v in CI_RUNNER_LABEL_LARGE CI_RUNNER_LABEL_MEDIUM CI_RUNNER_LABEL_SMALL CI_RUNNER_LABEL_STABLE; do
             present "$v" && add "$v" OK "set: ${!v}"
@@ -358,6 +393,8 @@ jobs:
           else
             this=; other=_STABLE
           fi
+          # The runner's builders list is for the tier this runner belongs to.
+          override "CI_REMOTE_BUILDERS$this" CI_RUNNER_REMOTE_BUILDERS list
           present CI_BUILDX_CACHE$this && registry CI_BUILDX_CACHE$this "$(val CI_BUILDX_CACHE$this)"
           present CI_BUILDX_CACHE$other && registry CI_BUILDX_CACHE$other "$(val CI_BUILDX_CACHE$other)" "other tier"
 

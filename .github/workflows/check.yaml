@@ -74,6 +74,8 @@ on:
           only when it answers. LEGACY: while both are empty the previous
           in-cluster address is probed instead, so a runner pool that
           has not yet been given the variable behaves exactly as before.
+          A runner that exports `CI_RUNNER_NPM_REGISTRY` overrides both:
+          its own value wins over this input and the variable.
         required: false
         type: string
         default: ''
@@ -253,6 +255,7 @@ on:
           `vars.CI_GOPROXY` (a reusable workflow reads the caller
           repository's variables); both empty leaves Go's default. Applied
           only alongside go-cache-bucket, like the rest of the cache wiring.
+          A runner that exports `CI_RUNNER_GOPROXY` overrides both.
         required: false
         type: string
         default: ''
@@ -264,6 +267,8 @@ on:
           to every recipe as CI_BAZEL_REMOTE_CACHE for the project's own
           tooling to read; this workflow wires nothing else with it and
           never carries a literal address.
+          A runner that exports `CI_RUNNER_BAZEL_REMOTE_CACHE` overrides both
+          (setup-devbox exports the winner as CI_BAZEL_REMOTE_CACHE).
         required: false
         type: string
         default: ''
@@ -292,7 +297,10 @@ on:
           separated by whitespace (the caller passes
           vars.CI_REMOTE_BUILDERS). Required by every recipe listed in
           `remote-builder-recipes`; ignored otherwise. No fallback to an
-          org variable inside this workflow, like every cache input.
+          org variable inside this workflow, like every cache input. A
+          runner that exports `CI_RUNNER_REMOTE_BUILDERS` (same format)
+          overrides WHICH nodes are registered; whether builders are used
+          is still the caller's choice, by passing a non-empty value.
         required: false
         type: string
         default: ''
@@ -428,7 +436,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/public-runners@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -480,7 +488,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/policy-conformance@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -542,10 +550,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/stable-mtimes@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/setup-devbox@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -582,6 +590,20 @@ jobs:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
           set -euo pipefail
+          # A value the RUNNER exports (CI_RUNNER_NPM_REGISTRY, from its pod
+          # spec or task definition) wins over the input and the org variable:
+          # a pool that reaches the registry by another name carries its own.
+          # Unset, nothing changes. Only the source is logged here.
+          runner_registry="${CI_RUNNER_NPM_REGISTRY:-}"
+          runner_registry="${runner_registry//[[:space:]]/}"
+          if [ -n "$runner_registry" ]; then
+            NPM_REGISTRY="$runner_registry"
+            echo "npm registry: from the runner (CI_RUNNER_NPM_REGISTRY)"
+          elif [ -n "${NPM_REGISTRY:-}" ]; then
+            echo "npm registry: from the input or organisation variable"
+          else
+            echo "npm registry: unset, the legacy in-cluster default is probed"
+          fi
           # The address is the org variable `CI_NPM_REGISTRY` (input
           # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
           # in-cluster name is probed exactly as before; delete the default
@@ -638,7 +660,7 @@ jobs:
       # when the caller passes go-cache-bucket (traffic stays inside the
       # region, none of it through the NAT) and GitHub's cache everywhere
       # else.
-      - uses: truvity/ci-actions/s3-cache/restore@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/s3-cache/restore@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
@@ -715,7 +737,17 @@ jobs:
           set -euo pipefail
           set -f
           fail() { echo "::error::$*"; exit 1; }
-          [ -n "${NODES//[[:space:]]/}" ] || fail "remote-builders is empty — set the org variable or skip this step"
+          # The list a RUNNER exports (CI_RUNNER_REMOTE_BUILDERS, same format)
+          # wins over the input: a pool that reaches the builders by other
+          # names carries its own. Whether builders are used at all stays the
+          # caller's choice; unset, nothing changes. Only the source is logged.
+          if [ -n "$(printf %s "${CI_RUNNER_REMOTE_BUILDERS:-}" | tr -d "[:space:]")" ]; then
+            NODES="$CI_RUNNER_REMOTE_BUILDERS"
+            echo "builders: nodes from the runner (CI_RUNNER_REMOTE_BUILDERS)"
+          else
+            echo "builders: nodes from the input"
+          fi
+          [ -n "${NODES//[[:space:]]/}" ] || fail "remote-builders is empty — set the org variable, export CI_RUNNER_REMOTE_BUILDERS from the runner, or skip this step"
 
           opts=""
           tls_dir="${CI_BUILDKIT_TLS_DIR:-}"
@@ -792,7 +824,7 @@ jobs:
             esac
           done
 
-      - uses: truvity/ci-actions/recipe@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/recipe@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -879,7 +911,7 @@ jobs:
       # someone is iterating and most wants it warm. cache-hit is true only
       # on an exact key, so the save runs when the devbox.lock + go.sum key
       # is missing and not otherwise (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
+      - uses: truvity/ci-actions/s3-cache/save@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
