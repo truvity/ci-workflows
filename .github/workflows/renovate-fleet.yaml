@@ -108,6 +108,18 @@ on:
         required: false
         type: string
         default: ""
+      npm-registry:
+        description: >-
+          Address of the CI plane's npm read-through registry, an
+          http(s) URL with no query. Empty falls back to the CALLER's
+          `vars.CI_NPM_REGISTRY` (a reusable workflow reads the caller
+          repository's variables). It is probed with a 2s ping and used
+          only when it answers. LEGACY: while both are empty the previous
+          in-cluster address is probed instead, so a runner pool that
+          has not yet been given the variable behaves exactly as before.
+        required: false
+        type: string
+        default: ''
       debug-oidc-claims:
         description: >-
           Print the discover job's GitHub OIDC claims (repository, ref,
@@ -372,15 +384,32 @@ jobs:
         if: runner.environment == 'self-hosted'
         env:
           CI_GOPROXY: ${{ vars.CI_GOPROXY }}
+          NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
           set -euo pipefail
-          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
+          # The address is the org variable `CI_NPM_REGISTRY` (input
+          # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
+          # in-cluster name is probed exactly as before; delete the default
+          # below once the variable is set org-wide.
+          registry="${NPM_REGISTRY:-http://npm-cache.ci-cache.svc}"
+          registry="${registry%/}"
+          re='^(https?)://([A-Za-z0-9.-]+)(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'
+          if ! [[ "$registry" =~ $re ]]; then
+            echo "::warning::npm registry is not a plain http(s) URL — direct npmjs for this job"
+          elif curl -fsS --max-time 2 "$registry/-/ping" >/dev/null 2>&1; then
+            # YARN_UNSAFE_HTTP_WHITELIST: berry refuses plain-http registries
+            # outright (YN0081 "Unsafe http requests must be explicitly
+            # whitelisted"), so an http registry is whitelisted by host; an
+            # https one needs nothing. The value is matched against a strict
+            # pattern above, so nothing but a URL can ride GITHUB_ENV.
             {
-              echo "npm_config_registry=http://npm-cache.ci-cache.svc"
-              echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc"
-              echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc"
+              echo "npm_config_registry=$registry"
+              echo "YARN_NPM_REGISTRY_SERVER=$registry"
+              if [ "${BASH_REMATCH[1]}" = http ]; then
+                echo "YARN_UNSAFE_HTTP_WHITELIST=${BASH_REMATCH[2]}"
+              fi
             } >> "$GITHUB_ENV"
-            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+            echo "npm cache: $registry answered — registry override active"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
