@@ -311,7 +311,7 @@ jobs:
     outputs:
       tier: ${{ steps.resolve.outputs.tier }}
     steps:
-      - uses: truvity/ci-actions/public-runners@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+      - uses: truvity/ci-actions/public-runners@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -392,7 +392,7 @@ jobs:
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+      - uses: truvity/ci-actions/setup-devbox@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -418,7 +418,7 @@ jobs:
       # Install, which DOES need the whole box.
       - name: "cluster (mode: kind, background)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        uses: truvity/ci-actions/cluster@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           mode: kind
           background: "true"
@@ -436,7 +436,7 @@ jobs:
       - name: Cache the yarn fetch cache
         id: yarn-cache
         if: inputs.node-cache && hashFiles('yarn.lock') != ''
-        uses: truvity/ci-actions/s3-cache/restore@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        uses: truvity/ci-actions/s3-cache/restore@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           path: .yarn/cache
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
@@ -689,7 +689,7 @@ jobs:
       # installs land on real Services), not just the registry.
       - name: "cluster (mode: wait)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        uses: truvity/ci-actions/cluster@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           mode: wait
 
@@ -745,7 +745,7 @@ jobs:
 
       - name: Save the yarn fetch cache
         if: success() && inputs.node-cache && hashFiles('yarn.lock') != '' && steps.yarn-cache.outputs.cache-hit != 'true'
-        uses: truvity/ci-actions/s3-cache/save@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        uses: truvity/ci-actions/s3-cache/save@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
