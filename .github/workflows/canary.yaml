@@ -36,7 +36,9 @@
 #     `stable: true`) and bootstraps it, then removes it. With
 #     CI_BUILDKIT_TLS_DIR set (the runner provides ca.pem, cert.pem and
 #     key.pem there; it is never an org variable) the builders are
-#     reached over mTLS, otherwise over plain TCP. A runner that gets the
+#     reached over mTLS, otherwise over plain TCP; a runner that also
+#     exports CI_BUILDKIT_TLS_SERVERNAME has the certificate verified
+#     against that name, as the build workflows do. A runner that gets the
 #     certificate as CI_BUILDKIT_TLS_CA_PEM, CI_BUILDKIT_TLS_CERT_PEM and
 #     CI_BUILDKIT_TLS_KEY_PEM has it written to such a directory first.
 #
@@ -48,9 +50,10 @@
 # whether it came from the runner, the organisation variable or nowhere.
 #
 # FAILS ONLY ON HARD FAILURES. A hard failure is: a `require`d variable
-# unset; a malformed builder entry; CI_BUILDKIT_TLS_DIR naming a
-# directory without its three files; and -- with `strict: true`, the
-# default -- an endpoint, the identity or a builder that does not answer.
+# unset; a malformed builder entry or CI_BUILDKIT_TLS_SERVERNAME;
+# CI_BUILDKIT_TLS_DIR naming a directory without its three files; and --
+# with `strict: true`, the default -- an endpoint, the identity or a
+# builder that does not answer.
 # `strict: false` is for a runner that cannot reach the CI plane BY
 # DESIGN (a GitHub-hosted one): the same failures are WARNs there, so the
 # hosted row of a matrix shows what a hosted runner sees without turning
@@ -425,6 +428,18 @@ jobs:
             else
               add CI_BUILDKIT_TLS_DIR OK "ca.pem, cert.pem and key.pem present: builders over mTLS"
               tls_opts=(--driver-opt "cacert=$tls_dir/ca.pem,cert=$tls_dir/cert.pem,key=$tls_dir/key.pem")
+              # The same name check and the same driver options as the
+              # "Plan the remote builders" step of check, integration and
+              # release-private: the certificate is verified against
+              # CI_BUILDKIT_TLS_SERVERNAME, not the endpoint host.
+              servername=${CI_BUILDKIT_TLS_SERVERNAME:-}
+              if [ -n "$servername" ]; then
+                if [[ "$servername" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                  tls_opts+=(--driver-opt "servername=$servername")
+                else
+                  add CI_BUILDKIT_TLS_SERVERNAME FAIL "not a plain DNS name"
+                fi
+              fi
             fi
           else
             add CI_BUILDKIT_TLS_DIR INFO "unset: builders over plain TCP"
