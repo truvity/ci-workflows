@@ -251,6 +251,7 @@ jobs:
 
           # tcp <host> <port>: a connect within 4 seconds.
           tcp() {
+            # shellcheck disable=SC2016 # $0 and $1 are bash -c's own arguments
             timeout 4 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "${1#[}" "$2" 2>/dev/null
           }
 
@@ -318,7 +319,7 @@ jobs:
 
           if present CI_GOPROXY; then
             n=0
-            mapfile -t proxies < <(tr ',|' '\n\n' <<<"$CI_GOPROXY")
+            mapfile -t proxies < <(tr ',|' '\n' <<<"$CI_GOPROXY")
             for p in "${proxies[@]}"; do
               p=${p//[[:space:]]/}
               case $p in "" | direct | off) continue ;; esac
@@ -398,29 +399,29 @@ jobs:
               plats=${entry%%=*}
               ep=${entry#*=}
               if [ "$plats" = "$entry" ] || ! parse "$ep" || [ "$P_SCHEME" != tcp ] || [ -z "$P_PORT" ]; then
-                add "$var[$n]" FAIL "not platforms=tcp://host:port: $entry"
+                add "${var}[$n]" FAIL "not platforms=tcp://host:port: $entry"
                 continue
               fi
               if ! tcp "$P_HOST" "$P_PORT"; then
-                soft "$var[$n]" "TCP $P_HOST:$P_PORT did not connect" "$note"
+                soft "${var}[$n]" "TCP $P_HOST:$P_PORT did not connect" "$note"
                 continue
               fi
               if [ -n "$note" ]; then
-                add "$var[$n]" OK "TCP $P_HOST:$P_PORT connected"
+                add "${var}[$n]" OK "TCP $P_HOST:$P_PORT connected"
                 continue
               fi
               if ! $have_docker; then
-                soft "$var[$n]" "TCP connected, but docker buildx is not on this runner"
+                soft "${var}[$n]" "TCP connected, but docker buildx is not on this runner"
                 continue
               fi
               name="canary-${GITHUB_RUN_ID:-0}-$n"
               if ! docker buildx create --name "$name" --driver remote \
                 --platform "$plats" "${tls_opts[@]}" "$ep" >/dev/null 2>"$RUNNER_TEMP/buildx.err"; then
-                soft "$var[$n]" "buildx create failed for $P_HOST:$P_PORT: $(tail -n 2 "$RUNNER_TEMP/buildx.err" | tr '\n' ' ')"
+                soft "${var}[$n]" "buildx create failed for $P_HOST:$P_PORT: $(tail -n 2 "$RUNNER_TEMP/buildx.err" | tr '\n' ' ')"
               elif timeout 60 docker buildx inspect --bootstrap "$name" >"$RUNNER_TEMP/buildx.out" 2>&1; then
-                add "$var[$n]" OK "buildx bootstrapped $plats on $P_HOST:$P_PORT"
+                add "${var}[$n]" OK "buildx bootstrapped $plats on $P_HOST:$P_PORT"
               else
-                soft "$var[$n]" "buildx could not bootstrap $plats on $P_HOST:$P_PORT: $(tail -n 2 "$RUNNER_TEMP/buildx.out" | tr '\n' ' ')"
+                soft "${var}[$n]" "buildx could not bootstrap $plats on $P_HOST:$P_PORT: $(tail -n 2 "$RUNNER_TEMP/buildx.out" | tr '\n' ' ')"
               fi
               docker buildx rm --force "$name" >/dev/null 2>&1 || true
             done
