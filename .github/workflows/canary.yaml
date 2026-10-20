@@ -1,0 +1,471 @@
+# The CI plane's canary: on the runner this job lands on, are the things a
+# real job reaches there, reachable?
+#
+# A runner pool, a cache, a builder or an identity that quietly stopped
+# working shows up today as a red build in some unrelated repository, and
+# the first hour goes on finding out whether the build or the plane broke.
+# This workflow asks the plane directly, on a schedule, from each kind of
+# runner the estate has, and prints one table:
+#
+#   check                  verdict  detail
+#   CI_GOPROXY[1]          OK       HEAD answered 200 in 0.04s
+#   CI_REMOTE_BUILDERS     OK       buildx bootstrapped 2 node(s)
+#   CI_BAZEL_REMOTE_CACHE  WARN     unset (optional)
+#
+# WHAT IT CHECKS, and where each answer comes from:
+#   - variables: the org variables of the shared contract are present
+#     (CI_RUNNER_LABEL_{LARGE,MEDIUM,SMALL,STABLE}, CI_GOPROXY,
+#     CI_GOCACHE_S3_BUCKET, CI_GOCACHE_S3_REGION, CI_REMOTE_BUILDERS and
+#     _STABLE, CI_BUILDX_CACHE and _STABLE, CI_NPM_REGISTRY,
+#     CI_BAZEL_REMOTE_CACHE). They are read from the CALLER's `vars`, like
+#     every other workflow here. An unset one is a WARN while it is
+#     optional, which today is all of them; `require` names the ones a
+#     caller already depends on, and those FAIL.
+#   - endpoints: each configured cache, proxy, registry and builder
+#     answers. An HTTP address gets a HEAD (any status is an answer: a 401
+#     or 404 proves the server is there, which is the question), anything
+#     else a TCP connect. Both time out in seconds.
+#   - identity: `aws sts get-caller-identity` through the repository's own
+#     credential chain -- whatever `aws-config-file` and the runner's pod
+#     identity resolve, exactly as a build would. The aws CLI is not on the
+#     ARC runner image (it arrives with the project's devbox), so when
+#     `aws` is not on PATH the job checks out the caller and runs
+#     setup-devbox, and uses the devbox's aws.
+#   - builders: `docker buildx` creates a remote-driver builder for each
+#     entry of CI_REMOTE_BUILDERS (CI_REMOTE_BUILDERS_STABLE with
+#     `stable: true`) and bootstraps it, then removes it. With
+#     CI_BUILDKIT_TLS_DIR set (the runner provides ca.pem, cert.pem and
+#     key.pem there; it is never an org variable) the builders are
+#     reached over mTLS, otherwise over plain TCP.
+#
+# FAILS ONLY ON HARD FAILURES. A hard failure is: a `require`d variable
+# unset; a malformed builder entry; CI_BUILDKIT_TLS_DIR naming a
+# directory without its three files; and -- with `strict: true`, the
+# default -- an endpoint, the identity or a builder that does not answer.
+# `strict: false` is for a runner that cannot reach the CI plane BY
+# DESIGN (a GitHub-hosted one): the same failures are WARNs there, so the
+# hosted row of a matrix shows what a hosted runner sees without turning
+# the run red. The other tier's variables (the stable ones on a devel
+# runner and the reverse) are never hard failures either.
+#
+# PRIVATE REPOSITORIES ONLY. The table prints the estate's addresses, and
+# a public repository's logs are public; the job refuses to run there.
+# The same rule keeps the ARC runners out of a public repository's
+# reach, so a caller that can use this workflow on the interesting
+# runner is private anyway. NOTHING PARTICULAR LIVES HERE: every address
+# arrives through the caller's variables.
+#
+# Permissions: NO permissions block, deliberately, like check.yaml and
+# integration.yaml. A caller whose `aws-config-file` goes through sluisctl
+# grants `id-token: write`; one that does not, leaves it out and
+# `contents: read` is enough.
+#
+#   name: canary
+#   on:
+#     workflow_dispatch:
+#     schedule:
+#       - cron: "17 5 * * 1"
+#   permissions:
+#     contents: read
+#     id-token: write
+#   jobs:
+#     canary:
+#       strategy:
+#         fail-fast: false
+#         matrix:
+#           include:
+#             - { runner: ubuntu-latest, strict: false }
+#             - { runner: "${{ vars.CI_RUNNER_LABEL_SMALL }}", strict: true }
+#       uses: truvity/ci-workflows/.github/workflows/canary.yaml@<sha> # vX.Y.Z
+#       with:
+#         runner: ${{ matrix.runner }}
+#         strict: ${{ matrix.strict }}
+#         aws-config-file: aws.ini
+name: canary
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: >-
+          Runner label for the job (a matrix over `ubuntu-latest` and
+          vars.CI_RUNNER_LABEL_SMALL is the usual caller).
+        required: false
+        type: string
+        default: ubuntu-latest
+      strict:
+        description: >-
+          true (the default) makes an endpoint, the AWS identity or a
+          builder that does not answer a hard failure. false reports the
+          same as WARN, for a runner that cannot reach the CI plane by
+          design (GitHub-hosted).
+        required: false
+        type: boolean
+        default: true
+      stable:
+        description: >-
+          true when the runner belongs to the stable tier: its builders
+          are CI_REMOTE_BUILDERS_STABLE and CI_BUILDX_CACHE_STABLE, and
+          the plain ones are only reported. false (the default) is the
+          other way round.
+        required: false
+        type: boolean
+        default: false
+      require:
+        description: >-
+          Variables that must be set, comma- or space-separated, e.g.
+          "CI_GOPROXY,CI_REMOTE_BUILDERS". An unset one FAILs. Empty (the
+          default) treats every variable as optional: unset is a WARN.
+        required: false
+        type: string
+        default: ""
+      aws-config-file:
+        description: >-
+          Repo-relative CI-shaped AWS config (e.g. aws.ini), passed to
+          setup-devbox when the job needs the devbox for the aws CLI.
+          Empty uses the runner's default credential chain.
+        required: false
+        type: string
+        default: ""
+      devbox:
+        description: >-
+          true (the default) lets the job check out the caller and run
+          setup-devbox when `aws` is not on PATH, to get the project's
+          aws CLI. false leaves the identity check to fail (or WARN)
+          without it.
+        required: false
+        type: boolean
+        default: true
+      timeout-minutes:
+        description: Job timeout. The checks themselves take well under a minute; setup-devbox is the rest.
+        required: false
+        type: number
+        default: 15
+
+jobs:
+  canary:
+    name: canary (${{ inputs.runner }})
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      VISIBILITY: ${{ github.event.repository.visibility }}
+      STRICT: ${{ inputs.strict }}
+      STABLE: ${{ inputs.stable }}
+      REQUIRE: ${{ inputs.require }}
+      CI_RUNNER_LABEL_LARGE: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+      CI_RUNNER_LABEL_MEDIUM: ${{ vars.CI_RUNNER_LABEL_MEDIUM }}
+      CI_RUNNER_LABEL_SMALL: ${{ vars.CI_RUNNER_LABEL_SMALL }}
+      CI_RUNNER_LABEL_STABLE: ${{ vars.CI_RUNNER_LABEL_STABLE }}
+      CI_GOPROXY: ${{ vars.CI_GOPROXY }}
+      CI_GOCACHE_S3_BUCKET: ${{ vars.CI_GOCACHE_S3_BUCKET }}
+      CI_GOCACHE_S3_REGION: ${{ vars.CI_GOCACHE_S3_REGION }}
+      CI_GOCACHE_S3_ENDPOINT: ${{ vars.CI_GOCACHE_S3_ENDPOINT }}
+      CI_REMOTE_BUILDERS: ${{ vars.CI_REMOTE_BUILDERS }}
+      CI_REMOTE_BUILDERS_STABLE: ${{ vars.CI_REMOTE_BUILDERS_STABLE }}
+      CI_BUILDX_CACHE: ${{ vars.CI_BUILDX_CACHE }}
+      CI_BUILDX_CACHE_STABLE: ${{ vars.CI_BUILDX_CACHE_STABLE }}
+      CI_NPM_REGISTRY: ${{ vars.CI_NPM_REGISTRY }}
+      CI_BAZEL_REMOTE_CACHE: ${{ vars.CI_BAZEL_REMOTE_CACHE }}
+    steps:
+      - name: Refuse a public repository
+        run: |
+          if [ "$VISIBILITY" = public ]; then
+            echo "::error::canary prints the estate's addresses and a public repository's logs are public; call it from a private repository"
+            exit 1
+          fi
+
+      # The identity check needs an aws CLI. A GitHub-hosted runner has
+      # one; the ARC image does not (aws arrives with the project's
+      # devbox), so only then pay for checkout + nix + devbox.
+      - name: Does the runner have aws
+        id: tools
+        env:
+          WANT_DEVBOX: ${{ inputs.devbox }}
+        run: |
+          if command -v aws >/dev/null 2>&1; then
+            echo "devbox=false" >> "$GITHUB_OUTPUT"
+          elif [ "$WANT_DEVBOX" = true ]; then
+            echo "devbox=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "devbox=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.tools.outputs.devbox == 'true'
+        with:
+          lfs: false
+
+      - uses: truvity/ci-actions/setup-devbox@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        if: steps.tools.outputs.devbox == 'true'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Only the devbox-shipped CLIs are wanted, never the proto toolchain.
+          proto: "false"
+          aws-config-file: ${{ inputs.aws-config-file }}
+
+      - name: Canary
+        env:
+          USE_DEVBOX: ${{ steps.tools.outputs.devbox }}
+        run: |
+          set -uo pipefail
+
+          rows=()
+          hard=0
+
+          # add <check> <OK|WARN|FAIL|SKIP|INFO> <detail>
+          add() {
+            rows+=("$1"$'\t'"$2"$'\t'"$3")
+            case $2 in
+              FAIL) hard=$((hard + 1)); echo "::error title=canary $1::$3" ;;
+              WARN) echo "::warning title=canary $1::$3" ;;
+            esac
+          }
+
+          # A failure that is hard only under `strict`. A second argument
+          # other than "" marks the other tier's check, never hard.
+          soft() {
+            if [ "$STRICT" = true ] && [ -z "${3:-}" ]; then
+              add "$1" FAIL "$2"
+            elif [ -n "${3:-}" ]; then
+              add "$1" WARN "$2 (${3})"
+            else
+              add "$1" WARN "$2 (strict: false)"
+            fi
+          }
+
+          required() {
+            case ",${REQUIRE// /,}," in *",$1,"*) return 0 ;; *) return 1 ;; esac
+          }
+
+          # scheme, host and port of an address; port empty when absent.
+          parse() {
+            local re='^([A-Za-z][A-Za-z0-9+.-]*)://(\[[^]]+\]|[^/:?#]+)(:([0-9]+))?'
+            if [[ $1 =~ $re ]]; then
+              P_SCHEME=${BASH_REMATCH[1],,}
+              P_HOST=${BASH_REMATCH[2]}
+              P_PORT=${BASH_REMATCH[4]}
+              return 0
+            fi
+            return 1
+          }
+
+          # tcp <host> <port>: a connect within 4 seconds.
+          tcp() {
+            timeout 4 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "${1#[}" "$2" 2>/dev/null
+          }
+
+          # http_head <url>: prints "<status> <seconds>s" when something
+          # answered HTTP at all; any status counts.
+          http_head() {
+            local out
+            out=$(curl -sS -I -o /dev/null -m 6 --connect-timeout 3 \
+              -w '%{http_code} %{time_total}' "$1" 2>&1) || return 1
+            [ "${out%% *}" != 000 ] || return 1
+            printf '%s %ss' "${out%% *}" "${out##* }"
+          }
+
+          # endpoint <check> <address> <other-tier-note>: HEAD an http(s)
+          # address, TCP-connect anything else.
+          endpoint() {
+            local name=$1 addr=$2 note=${3:-} out
+            if ! parse "$addr"; then
+              add "$name" FAIL "not an address: $addr"
+              return
+            fi
+            case $P_SCHEME in
+              http | https)
+                if out=$(http_head "$addr"); then
+                  add "$name" OK "HEAD $addr answered $out"
+                else
+                  soft "$name" "HEAD $addr did not answer" "$note"
+                fi
+                ;;
+              *)
+                local port=$P_PORT
+                if [ -z "$port" ]; then
+                  case $P_SCHEME in grpcs | https) port=443 ;; *) port=80 ;; esac
+                fi
+                if tcp "$P_HOST" "$port"; then
+                  add "$name" OK "TCP $P_HOST:$port connected"
+                else
+                  soft "$name" "TCP $P_HOST:$port did not connect" "$note"
+                fi
+                ;;
+            esac
+          }
+
+          # val <VAR>: the value of a variable named by a computed string.
+          val() { printf '%s' "${!1:-}"; }
+
+          # present <VAR>: records the variable and returns 0 when set.
+          present() {
+            local v=$1
+            if [ -n "${!v:-}" ]; then
+              return 0
+            fi
+            if required "$v"; then
+              add "$v" FAIL "unset, and required by this caller"
+            else
+              add "$v" WARN "unset (optional)"
+            fi
+            return 1
+          }
+
+          # ── variables and the endpoints they name ─────────────────────
+          for v in CI_RUNNER_LABEL_LARGE CI_RUNNER_LABEL_MEDIUM CI_RUNNER_LABEL_SMALL CI_RUNNER_LABEL_STABLE; do
+            present "$v" && add "$v" OK "set: ${!v}"
+          done
+
+          if present CI_GOPROXY; then
+            n=0
+            mapfile -t proxies < <(tr ',|' '\n\n' <<<"$CI_GOPROXY")
+            for p in "${proxies[@]}"; do
+              p=${p//[[:space:]]/}
+              case $p in "" | direct | off) continue ;; esac
+              n=$((n + 1))
+              endpoint "CI_GOPROXY[$n]" "$p"
+            done
+            [ "$n" -gt 0 ] || add CI_GOPROXY OK "set, no remote proxy in it: $CI_GOPROXY"
+          fi
+
+          bucket_ok=true
+          present CI_GOCACHE_S3_BUCKET || bucket_ok=false
+          present CI_GOCACHE_S3_REGION || bucket_ok=false
+          if $bucket_ok; then
+            if [ -n "${CI_GOCACHE_S3_ENDPOINT:-}" ]; then
+              endpoint CI_GOCACHE_S3_BUCKET "$CI_GOCACHE_S3_ENDPOINT"
+            else
+              endpoint CI_GOCACHE_S3_BUCKET "https://${CI_GOCACHE_S3_BUCKET}.s3.${CI_GOCACHE_S3_REGION}.amazonaws.com/"
+            fi
+          fi
+
+          # A registry reference (host[:port]/path[:tag]) answers /v2/.
+          registry() {
+            local name=$1 ref=${2#*://} note=${3:-} host out
+            host=${ref%%/*}
+            if out=$(http_head "https://$host/v2/"); then
+              add "$name" OK "HEAD https://$host/v2/ answered $out"
+            elif out=$(http_head "http://$host/v2/"); then
+              add "$name" OK "HEAD http://$host/v2/ answered $out"
+            else
+              soft "$name" "registry $host did not answer /v2/" "$note"
+            fi
+          }
+
+          if [ "$STABLE" = true ]; then
+            this=_STABLE; other=
+          else
+            this=; other=_STABLE
+          fi
+          present CI_BUILDX_CACHE$this && registry CI_BUILDX_CACHE$this "$(val CI_BUILDX_CACHE$this)"
+          present CI_BUILDX_CACHE$other && registry CI_BUILDX_CACHE$other "$(val CI_BUILDX_CACHE$other)" "other tier"
+
+          if present CI_NPM_REGISTRY; then
+            endpoint CI_NPM_REGISTRY "$CI_NPM_REGISTRY"
+          fi
+          if present CI_BAZEL_REMOTE_CACHE; then
+            endpoint CI_BAZEL_REMOTE_CACHE "$CI_BAZEL_REMOTE_CACHE"
+          fi
+
+          # ── builders ──────────────────────────────────────────────────
+          tls_dir=${CI_BUILDKIT_TLS_DIR:-}
+          tls_opts=()
+          if [ -n "$tls_dir" ]; then
+            missing=
+            for f in ca.pem cert.pem key.pem; do
+              [ -r "$tls_dir/$f" ] || missing="$missing $f"
+            done
+            if [ -n "$missing" ]; then
+              add CI_BUILDKIT_TLS_DIR FAIL "$tls_dir lacks:$missing"
+            else
+              add CI_BUILDKIT_TLS_DIR OK "ca.pem, cert.pem and key.pem present: builders over mTLS"
+              tls_opts=(--driver-opt "cacert=$tls_dir/ca.pem,cert=$tls_dir/cert.pem,key=$tls_dir/key.pem")
+            fi
+          else
+            add CI_BUILDKIT_TLS_DIR INFO "unset: builders over plain TCP"
+          fi
+
+          have_docker=true
+          docker buildx version >/dev/null 2>&1 || have_docker=false
+
+          # builders <VAR> <other-tier-note>: TCP-connect every node, and
+          # for this tier's set also bootstrap it through buildx.
+          builders() {
+            local var=$1 note=${2:-} entry plats ep n=0 name
+            present "$var" || return 0
+            for entry in ${!var}; do
+              n=$((n + 1))
+              plats=${entry%%=*}
+              ep=${entry#*=}
+              if [ "$plats" = "$entry" ] || ! parse "$ep" || [ "$P_SCHEME" != tcp ] || [ -z "$P_PORT" ]; then
+                add "$var[$n]" FAIL "not platforms=tcp://host:port: $entry"
+                continue
+              fi
+              if ! tcp "$P_HOST" "$P_PORT"; then
+                soft "$var[$n]" "TCP $P_HOST:$P_PORT did not connect" "$note"
+                continue
+              fi
+              if [ -n "$note" ]; then
+                add "$var[$n]" OK "TCP $P_HOST:$P_PORT connected"
+                continue
+              fi
+              if ! $have_docker; then
+                soft "$var[$n]" "TCP connected, but docker buildx is not on this runner"
+                continue
+              fi
+              name="canary-${GITHUB_RUN_ID:-0}-$n"
+              if ! docker buildx create --name "$name" --driver remote \
+                --platform "$plats" "${tls_opts[@]}" "$ep" >/dev/null 2>"$RUNNER_TEMP/buildx.err"; then
+                soft "$var[$n]" "buildx create failed for $P_HOST:$P_PORT: $(tail -n 2 "$RUNNER_TEMP/buildx.err" | tr '\n' ' ')"
+              elif timeout 60 docker buildx inspect --bootstrap "$name" >"$RUNNER_TEMP/buildx.out" 2>&1; then
+                add "$var[$n]" OK "buildx bootstrapped $plats on $P_HOST:$P_PORT"
+              else
+                soft "$var[$n]" "buildx could not bootstrap $plats on $P_HOST:$P_PORT: $(tail -n 2 "$RUNNER_TEMP/buildx.out" | tr '\n' ' ')"
+              fi
+              docker buildx rm --force "$name" >/dev/null 2>&1 || true
+            done
+          }
+          builders CI_REMOTE_BUILDERS$this
+          builders CI_REMOTE_BUILDERS$other "other tier"
+
+          # ── identity ──────────────────────────────────────────────────
+          if [ "$USE_DEVBOX" = true ]; then
+            awscmd=(devbox run -- aws)
+          elif command -v aws >/dev/null 2>&1; then
+            awscmd=(aws)
+          else
+            awscmd=()
+          fi
+          if [ ${#awscmd[@]} -eq 0 ]; then
+            soft AWS_IDENTITY "no aws CLI on this runner and devbox is off"
+          elif out=$(timeout 60 "${awscmd[@]}" sts get-caller-identity --output text --query Arn 2>"$RUNNER_TEMP/aws.err"); then
+            add AWS_IDENTITY OK "${out##*$'\n'}"
+          else
+            soft AWS_IDENTITY "sts get-caller-identity failed: $(tail -n 2 "$RUNNER_TEMP/aws.err" | tr '\n' ' ')"
+          fi
+
+          # ── the table ─────────────────────────────────────────────────
+          printf '%s\n' "${rows[@]}" | awk -F'\t' '
+            { c[NR] = $1; v[NR] = $2; d[NR] = $3; if (length($1) > w) w = length($1) }
+            END {
+              printf "%-*s  %-7s  %s\n", w, "check", "verdict", "detail"
+              for (i = 1; i <= NR; i++) printf "%-*s  %-7s  %s\n", w, c[i], v[i], d[i]
+            }'
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### canary on \`${RUNNER_NAME:-runner}\` (strict: \`$STRICT\`, stable: \`$STABLE\`)"
+              echo
+              echo "| check | verdict | detail |"
+              echo "| -- | -- | -- |"
+              for r in "${rows[@]}"; do
+                IFS=$'\t' read -r c v d <<<"$r"
+                printf '| %s | %s | %s |\n' "$c" "$v" "${d//|/\\|}"
+              done
+            } >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$hard" -gt 0 ]; then
+            echo "::error::canary: $hard hard failure(s)"
+            exit 1
+          fi
+          echo "canary: no hard failures"
