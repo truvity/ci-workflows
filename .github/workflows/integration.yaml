@@ -400,7 +400,10 @@ jobs:
           go-private: ${{ inputs.go-private }}
           module-app-client-id: ${{ inputs.module-app-client-id }}
           module-app-private-key: ${{ secrets.module-app-private-key }}
-          go-cache-bucket: ${{ inputs.go-cache-bucket }}
+          # The kind tier always runs on a GitHub-hosted runner, where the
+          # cache bucket is unreachable: the bucket is dropped there, so a
+          # caller that passes it on every lane does not pay a lookup.
+          go-cache-bucket: ${{ needs.tier.outputs.tier == 'kind' && '' || inputs.go-cache-bucket }}
           go-cache-region: ${{ inputs.go-cache-region }}
           goproxy: ${{ inputs.goproxy || vars.CI_GOPROXY }}
           aws-config-file: ${{ inputs.aws-config-file }}
@@ -439,7 +442,7 @@ jobs:
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             yarn-${{ runner.os }}-
-          bucket: ${{ inputs.go-cache-bucket }}
+          bucket: ${{ needs.tier.outputs.tier == 'kind' && '' || inputs.go-cache-bucket }}
           region: ${{ inputs.go-cache-region }}
           endpoint: ${{ vars.CI_GOCACHE_S3_ENDPOINT }}
           path-style: ${{ vars.CI_GOCACHE_S3_PATH_STYLE }}
@@ -448,10 +451,11 @@ jobs:
       # pattern into GITHUB_ENV; an http registry host is whitelisted
       # (YARN_UNSAFE_HTTP_WHITELIST), or berry refuses plain http — YN0081.
       - name: Point npm and yarn at the CI-plane cache
-        # Self-hosted only: a GitHub-hosted runner can never resolve the
-        # in-cluster name, and probing there would print the
-        # "unreachable" warning on every job of every hosted caller.
-        if: inputs.node-cache && runner.environment == 'self-hosted'
+        # No runner test: the step asks the registry. A configured
+        # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
+        # unset the legacy in-cluster address is probed silently, which
+        # answers on an ARC runner and is a quiet no-op anywhere else.
+        if: inputs.node-cache
         env:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
@@ -460,6 +464,8 @@ jobs:
           # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
           # in-cluster name is probed exactly as before; delete the default
           # below once the variable is set org-wide.
+          legacy=""
+          [ -n "${NPM_REGISTRY:-}" ] || legacy=1
           registry="${NPM_REGISTRY:-http://npm-cache.ci-cache.svc}"
           registry="${registry%/}"
           re='^(https?)://([A-Za-z0-9.-]+)(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'
@@ -479,6 +485,10 @@ jobs:
               fi
             } >> "$GITHUB_ENV"
             echo "npm cache: $registry answered — registry override active"
+          elif [ -n "$legacy" ]; then
+            # Nothing configured and the old address is silent: not a
+            # fault, e.g. a GitHub-hosted runner. No warning.
+            echo "npm cache: none configured, legacy address silent — direct npmjs for this job"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
@@ -739,7 +749,7 @@ jobs:
         with:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
-          bucket: ${{ inputs.go-cache-bucket }}
+          bucket: ${{ needs.tier.outputs.tier == 'kind' && '' || inputs.go-cache-bucket }}
           region: ${{ inputs.go-cache-region }}
           endpoint: ${{ vars.CI_GOCACHE_S3_ENDPOINT }}
           path-style: ${{ vars.CI_GOCACHE_S3_PATH_STYLE }}

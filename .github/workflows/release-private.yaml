@@ -97,8 +97,8 @@ on:
           releases pass the stable tier's scale set
           (vars.CI_RUNNER_LABEL_STABLE). On an ARC runner the
           image builds go to the CI plane's warm builders
-          (remote-builders) instead of QEMU, and the hosted-only steps
-          skip themselves on `runner.environment`.
+          (remote-builders) instead of QEMU: a non-empty `remote-builders`
+          selects the builders, an empty one the hosted buildx and QEMU.
         required: false
         type: string
         default: ubuntu-latest
@@ -251,11 +251,15 @@ jobs:
           fetch-depth: 0
 
       - name: Reclaim runner disk
-        # Hosted only, whatever the caller asked: an ARC runner has none
-        # of these directories and no sudo to remove them with.
-        if: inputs.reclaim-disk && runner.environment == 'github-hosted'
+        # Only where the hosted image's directories exist and sudo needs
+        # no password; an ARC runner has neither, and the step says so.
+        if: inputs.reclaim-disk
         run: |
           set -euo pipefail
+          if ! sudo -n true 2>/dev/null || [ ! -d /usr/share/dotnet ]; then
+            echo "reclaim-disk: no passwordless sudo or no hosted-image directories here — nothing to reclaim"
+            exit 0
+          fi
           df -h / | tail -1
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
             /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
@@ -278,14 +282,15 @@ jobs:
 
       # Registry override only when the cache answers a 2s ping:
       # fallback-not-dependency, the same step check.yaml carries.
-      # Self-hosted only; a GitHub-hosted runner cannot resolve an
-      # in-cluster name.
       # Release builds run `yarn install` on the host (about 150-400 MiB a
       # release) and the Node image builds. The write to GITHUB_ENV is
       # a URL that matched a strict pattern. YARN_UNSAFE_HTTP_WHITELIST: berry refuses
       # plain-http registries without it.
       - name: Point npm and yarn at the CI-plane cache
-        if: runner.environment == 'self-hosted'
+        # No runner test: the step asks the registry. A configured
+        # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
+        # unset the legacy in-cluster address is probed silently, which
+        # answers on an ARC runner and is a quiet no-op anywhere else.
         env:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
@@ -294,6 +299,8 @@ jobs:
           # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
           # in-cluster name is probed exactly as before; delete the default
           # below once the variable is set org-wide.
+          legacy=""
+          [ -n "${NPM_REGISTRY:-}" ] || legacy=1
           registry="${NPM_REGISTRY:-http://npm-cache.ci-cache.svc}"
           registry="${registry%/}"
           re='^(https?)://([A-Za-z0-9.-]+)(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'
@@ -313,6 +320,10 @@ jobs:
               fi
             } >> "$GITHUB_ENV"
             echo "npm cache: $registry answered — registry override active"
+          elif [ -n "$legacy" ]; then
+            # Nothing configured and the old address is silent: not a
+            # fault, e.g. a GitHub-hosted runner. No warning.
+            echo "npm cache: none configured, legacy address silent — direct npmjs for this job"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
@@ -321,12 +332,13 @@ jobs:
       # which cannot produce attestations — goreleaser's dockers_v2 asks
       # for them. setup-buildx-action creates a docker-container builder
       # that can; QEMU covers the non-native arch of a multi-platform
-      # manifest. Hosted only: an ARC runner has no daemon for either.
+      # manifest. Only without remote builders: with them there is no
+      # daemon for either.
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: runner.environment != 'self-hosted'
+        if: inputs.remote-builders == ''
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        if: runner.environment != 'self-hosted'
+        if: inputs.remote-builders == ''
 
       # ARC only (the hosted steps above skip themselves on ARC).
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -342,7 +354,7 @@ jobs:
       # a step output.
       - name: Plan the remote builders
         id: builders
-        if: runner.environment == 'self-hosted'
+        if: inputs.remote-builders != ''
         env:
           NODES: ${{ inputs.remote-builders }}
         run: |
@@ -399,7 +411,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         id: buildx
-        if: runner.environment == 'self-hosted'
+        if: inputs.remote-builders != ''
         with:
           driver: remote
           name: ci
@@ -412,7 +424,7 @@ jobs:
       # through BUILDX_BUILDER. Fail here, with the reason, when a node does
       # not offer the platform it was declared for.
       - name: Check the builders offer their platforms
-        if: runner.environment == 'self-hosted'
+        if: inputs.remote-builders != ''
         env:
           WANT: ${{ steps.builders.outputs.want }}
           GOT: ${{ steps.buildx.outputs.platforms }}
