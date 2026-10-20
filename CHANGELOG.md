@@ -8,6 +8,7 @@ those tags have no GitHub release; v3.14.0 on do.
 ## v5.2.1
 
 - `renovate-fleet`: installs the devbox release binary before Renovate runs when the runner has none on `PATH`. Renovate's `devbox` manager refreshes `devbox.lock` by running `devbox update <package> --no-install`; on a GitHub-hosted runner that was `spawn devbox ENOENT`, an artifact error on every devbox pin bump, and a red job. The binary (pinned to a release, kept current by the annotated-pin rule) is checked against the release's `checksums.txt`, needs no privilege and no nix, and is added to `PATH` for the Renovate step. A runner that bakes devbox is left alone.
+- Every `truvity/ci-actions` pin moves from v3.2.0 to v3.3.0 (`e6f7599`), except `tagged-pins`. v3.3.0's `devbox-parity` opens the `chore/devbox-update` pull request through the GitHub API instead of the `gh` binary, so `parity-fleet` no longer fails with `exec: "gh": executable file not found in $PATH` on a runner without the GitHub CLI. Nothing else changes in this repository's workflows.
 
 ## v5.2.0
 
