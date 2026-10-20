@@ -36,7 +36,9 @@
 #     `stable: true`) and bootstraps it, then removes it. With
 #     CI_BUILDKIT_TLS_DIR set (the runner provides ca.pem, cert.pem and
 #     key.pem there; it is never an org variable) the builders are
-#     reached over mTLS, otherwise over plain TCP.
+#     reached over mTLS, otherwise over plain TCP. A runner that gets the
+#     certificate as CI_BUILDKIT_TLS_CA_PEM, CI_BUILDKIT_TLS_CERT_PEM and
+#     CI_BUILDKIT_TLS_KEY_PEM has it written to such a directory first.
 #
 # RUNNER-PROVIDED OVERRIDES. A value the runner exports in its own
 # environment wins over the matching organisation variable:
@@ -202,13 +204,18 @@ jobs:
         with:
           lfs: false
 
-      - uses: truvity/ci-actions/setup-devbox@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
+      - uses: truvity/ci-actions/setup-devbox@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
         if: steps.tools.outputs.devbox == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Only the devbox-shipped CLIs are wanted, never the proto toolchain.
           proto: "false"
           aws-config-file: ${{ inputs.aws-config-file }}
+
+      # Writes a client certificate passed as CI_BUILDKIT_TLS_*_PEM variables
+      # to a directory and exports CI_BUILDKIT_TLS_DIR, which the check below
+      # reads; a no-op when the directory is already set or nothing is.
+      - uses: truvity/ci-actions/setup-buildkit-tls@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
 
       - name: Canary
         env:

@@ -274,11 +274,11 @@ jobs:
       # `require-green-checks` action's.
       - name: Require green checks on the tagged commit
         if: inputs.require-green-checks
-        uses: truvity/ci-actions/require-green-checks@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
+        uses: truvity/ci-actions/require-green-checks@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
         with:
           token: ${{ github.token }}
 
-      - uses: truvity/ci-actions/setup-devbox@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
+      - uses: truvity/ci-actions/setup-devbox@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -359,13 +359,23 @@ jobs:
         if: inputs.remote-builders == ''
 
       # ARC only (the hosted steps above skip themselves on ARC).
+      # A runner that gets the BuildKit client certificate as environment
+      # variables (CI_BUILDKIT_TLS_CA_PEM, CI_BUILDKIT_TLS_CERT_PEM and
+      # CI_BUILDKIT_TLS_KEY_PEM, e.g. container-task secrets) gets it written
+      # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
+      # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
+      # them, it changes nothing; a half-set certificate fails here.
+      - uses: truvity/ci-actions/setup-buildkit-tls@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
+        if: inputs.remote-builders != ''
+
       # The CI plane's BuildKit builders as one remote-driver buildx builder
       # (`ci`): one node per `platforms=endpoint` entry, native builds on a
       # hot layer cache, no QEMU. The first node is the builder itself, the
       # rest are appended. Transport comes from the runner, not from here:
       # when the runner provides CI_BUILDKIT_TLS_DIR (a directory holding
-      # ca.pem, cert.pem and key.pem) every node is dialled with mutual TLS;
-      # without it the nodes are plain TCP, as before. An optional
+      # ca.pem, cert.pem and key.pem; the step above writes one from the
+      # CI_BUILDKIT_TLS_*_PEM variables) every node is dialled with mutual
+      # TLS; without it the nodes are plain TCP, as before. An optional
       # CI_BUILDKIT_TLS_SERVERNAME overrides the certificate name the
       # builders are verified against (buildx defaults to the endpoint host).
       # Every entry is matched against a strict pattern before it can reach
@@ -515,7 +525,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-actions/openbao-secrets@b87532f566d0bd85a6ab56e29f3b128c9cee272d # v3.1.0
+        uses: truvity/ci-actions/openbao-secrets@efb03ea08b7bb5931fa0b251acf0ca6c71f9128f # v3.2.0
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}
