@@ -1,0 +1,4 @@
+exempt:
+  C18:
+    reason: legacy default address of the npm cache, kept until the org variable is set everywhere and the default is deleted
+    paths: [.github/workflows/check.yaml, .github/workflows/integration.yaml, .github/workflows/release-private.yaml, .github/workflows/renovate-fleet.yaml]

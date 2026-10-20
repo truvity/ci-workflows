@@ -270,11 +270,11 @@ jobs:
       # `require-green-checks` action's.
       - name: Require green checks on the tagged commit
         if: inputs.require-green-checks
-        uses: truvity/ci-actions/require-green-checks@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        uses: truvity/ci-actions/require-green-checks@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           token: ${{ github.token }}
 
-      - uses: truvity/ci-actions/setup-devbox@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+      - uses: truvity/ci-actions/setup-devbox@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -487,7 +487,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-actions/openbao-secrets@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+        uses: truvity/ci-actions/openbao-secrets@70af68e36bd7061fb866e0660c4c945eb91f35dd # v3.0.1
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}
