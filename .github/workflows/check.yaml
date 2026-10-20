@@ -65,10 +65,22 @@ on:
         required: false
         type: string
         default: ""
+      npm-registry:
+        description: >-
+          Address of the CI plane's npm read-through registry, an
+          http(s) URL with no query. Empty falls back to the CALLER's
+          `vars.CI_NPM_REGISTRY` (a reusable workflow reads the caller
+          repository's variables). It is probed with a 2s ping and used
+          only when it answers. LEGACY: while both are empty the previous
+          in-cluster address is probed instead, so a runner pool that
+          has not yet been given the variable behaves exactly as before.
+        required: false
+        type: string
+        default: ''
       node-cache:
         description: >-
-          Probe the CI plane's npm read-through cache
-          (npm-cache.ci-cache.svc) and point npm and yarn at
+          Probe the CI plane's npm read-through cache (`npm-registry`
+          or `vars.CI_NPM_REGISTRY`) and point npm and yarn at
           it for the job when it answers; when it does not, leave the
           defaults so a down cache degrades CI to slow, never to
           broken. Acts only on self-hosted (ARC) runners: on a
@@ -242,6 +254,17 @@ on:
         required: false
         type: string
         default: ''
+      bazel-remote-cache:
+        description: >-
+          gRPC address of the CI plane's bazel-remote (moon's and bazel's
+          task cache). Empty falls back to the CALLER's
+          `vars.CI_BAZEL_REMOTE_CACHE`; both empty leaves it empty. Exported
+          to every recipe as CI_BAZEL_REMOTE_CACHE for the project's own
+          tooling to read; this workflow wires nothing else with it and
+          never carries a literal address.
+        required: false
+        type: string
+        default: ''
       remote-builder-recipes:
         description: >-
           JSON array of recipes that build container images through the CI
@@ -249,7 +272,7 @@ on:
           repository that validates its Dockerfile). OPT-IN: empty (the
           default) changes nothing for any other recipe or caller. A
           listed recipe gets the remote buildx builder registered
-          (truvity/ci-actions setup-remote-builders, builder `ci`,
+          (docker/setup-buildx-action with the remote driver, builder `ci`,
           exported as BUILDX_BUILDER), the registry login for
           `ecr-registries`, and CI_BUILDX_CACHE in its environment; the
           recipe's own `docker build` adds `--cache-from/--cache-to`
@@ -488,6 +511,9 @@ jobs:
       # The warm-cache reference, only for the recipes that build images
       # through the remote builders; empty everywhere else.
       CI_BUILDX_CACHE: ${{ contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && inputs.buildx-cache || '' }}
+      # The bazel-remote address, from the input or the caller's org
+      # variable; empty when neither is set.
+      CI_BAZEL_REMOTE_CACHE: ${{ inputs.bazel-remote-cache || vars.CI_BAZEL_REMOTE_CACHE }}
     strategy:
       # Every recipe reports its own verdict, and one failure does not
       # hide the others — the point of separate jobs in the first place.
@@ -537,30 +563,42 @@ jobs:
       # npm and yarn classic (classic still FETCHES lockfile-resolved
       # URLs, so at worst it bypasses the cache); YARN_NPM_REGISTRY_SERVER
       # covers berry, whose npm protocol derives fetch URLs from the
-      # configured registry at install time. The GITHUB_ENV writes are
-      # fixed literals — nothing user-controlled rides them, which is
-      # what the job-env doctrine above actually guards against.
+      # configured registry at install time. The GITHUB_ENV writes carry
+      # nothing but a URL that matched a strict pattern (no whitespace,
+      # quotes or newlines), which is what the job-env doctrine above
+      # actually guards against.
       - name: Point npm and yarn at the CI-plane cache
         # Self-hosted only: a GitHub-hosted runner can never resolve the
         # in-cluster name, and probing there would print the
         # "unreachable" warning on every job of every hosted caller.
         if: inputs.node-cache && runner.environment == 'self-hosted'
+        env:
+          NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
           set -euo pipefail
-          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
-            # YARN_UNSAFE_HTTP_WHITELIST: berry refuses plain-http
-            # registries outright (YN0081 "Unsafe http requests must be
-            # explicitly whitelisted") — without it the override below
-            # turns every berry install into a hard fail whenever the
-            # cache answers the ping (2026-08-27). An in-cluster svc
-            # hostname over http is the design here, not an accident, so
-            # the whitelist names exactly that host.
+          # The address is the org variable `CI_NPM_REGISTRY` (input
+          # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
+          # in-cluster name is probed exactly as before; delete the default
+          # below once the variable is set org-wide.
+          registry="${NPM_REGISTRY:-http://npm-cache.ci-cache.svc}"
+          registry="${registry%/}"
+          re='^(https?)://([A-Za-z0-9.-]+)(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'
+          if ! [[ "$registry" =~ $re ]]; then
+            echo "::warning::npm registry is not a plain http(s) URL — direct npmjs for this job"
+          elif curl -fsS --max-time 2 "$registry/-/ping" >/dev/null 2>&1; then
+            # YARN_UNSAFE_HTTP_WHITELIST: berry refuses plain-http registries
+            # outright (YN0081 "Unsafe http requests must be explicitly
+            # whitelisted"), so an http registry is whitelisted by host; an
+            # https one needs nothing. The value is matched against a strict
+            # pattern above, so nothing but a URL can ride GITHUB_ENV.
             {
-              echo "npm_config_registry=http://npm-cache.ci-cache.svc"
-              echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc"
-              echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc"
+              echo "npm_config_registry=$registry"
+              echo "YARN_NPM_REGISTRY_SERVER=$registry"
+              if [ "${BASH_REMATCH[1]}" = http ]; then
+                echo "YARN_UNSAFE_HTTP_WHITELIST=${BASH_REMATCH[2]}"
+              fi
             } >> "$GITHUB_ENV"
-            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+            echo "npm cache: $registry answered — registry override active"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
@@ -621,7 +659,7 @@ jobs:
       # ~/.docker/config.json is forwarded to the builder when it pulls
       # base images and pushes the warm cache. The login uses the pool's
       # ambient pod identity, the same way integration.yaml's image lanes
-      # do. `setup-remote-builders` fails by itself on an empty
+      # do. "Plan the remote builders" fails by itself on an empty
       # `remote-builders`.
       - name: ECR registry to log into
         id: ecr
@@ -645,10 +683,102 @@ jobs:
           registries: ${{ steps.ecr.outputs.registries }}
           mask-password: "true"
 
-      - uses: truvity/ci-actions/setup-remote-builders@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+      # The CI plane's BuildKit builders as one remote-driver buildx builder
+      # (`ci`): one node per `platforms=endpoint` entry, native builds on a
+      # hot layer cache, no QEMU. The first node is the builder itself, the
+      # rest are appended. Transport comes from the runner, not from here:
+      # when the runner provides CI_BUILDKIT_TLS_DIR (a directory holding
+      # ca.pem, cert.pem and key.pem) every node is dialled with mutual TLS;
+      # without it the nodes are plain TCP, as before. An optional
+      # CI_BUILDKIT_TLS_SERVERNAME overrides the certificate name the
+      # builders are verified against (buildx defaults to the endpoint host).
+      # Every entry is matched against a strict pattern before it can reach
+      # a step output.
+      - name: Plan the remote builders
+        id: builders
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
+        env:
+          NODES: ${{ inputs.remote-builders }}
+        run: |
+          set -euo pipefail
+          set -f
+          fail() { echo "::error::$*"; exit 1; }
+          [ -n "${NODES//[[:space:]]/}" ] || fail "remote-builders is empty — set the org variable or skip this step"
+
+          opts=""
+          tls_dir="${CI_BUILDKIT_TLS_DIR:-}"
+          if [ -n "$tls_dir" ]; then
+            [[ "$tls_dir" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "CI_BUILDKIT_TLS_DIR is not a plain absolute path"
+            for f in ca.pem cert.pem key.pem; do
+              [ -r "$tls_dir/$f" ] || fail "CI_BUILDKIT_TLS_DIR is set but $tls_dir/$f is not readable"
+            done
+            opts="cacert=$tls_dir/ca.pem"$'\n'"cert=$tls_dir/cert.pem"$'\n'"key=$tls_dir/key.pem"
+            servername="${CI_BUILDKIT_TLS_SERVERNAME:-}"
+            if [ -n "$servername" ]; then
+              [[ "$servername" =~ ^[A-Za-z0-9.-]+$ ]] || fail "CI_BUILDKIT_TLS_SERVERNAME is not a plain DNS name"
+              opts+=$'\n'"servername=$servername"
+            fi
+            echo "builders: mutual TLS, credentials from $tls_dir"
+          else
+            echo "builders: plain TCP (CI_BUILDKIT_TLS_DIR is not set)"
+          fi
+
+          n=0; want=""; append=""; endpoint=""; platforms=""
+          for entry in $NODES; do
+            [[ "$entry" == *=* ]] || fail "builder entry '$entry' is not platforms=endpoint"
+            p="${entry%%=*}"; e="${entry#*=}"
+            [[ "$p" =~ ^[a-z0-9_./,-]+$ ]] || fail "builder platforms '$p' are not a platform list"
+            [[ "$e" =~ ^(tcp|unix)://[][A-Za-z0-9._:/@-]+$ ]] || fail "builder endpoint '$e' is not a tcp:// or unix:// address"
+            want+="${want:+,}$p"
+            if [ "$n" = 0 ]; then
+              endpoint="$e"; platforms="$p"
+            else
+              append+="- name: ci$n"$'\n'"  endpoint: $e"$'\n'"  platforms: $p"$'\n'
+              if [ -n "$opts" ]; then
+                append+="  driver-opts:"$'\n'
+                while IFS= read -r o; do append+="    - $o"$'\n'; done <<<"$opts"
+              fi
+            fi
+            n=$((n+1))
+          done
+
+          {
+            echo "endpoint=$endpoint"
+            echo "platforms=$platforms"
+            echo "want=$want"
+            echo "driver-opts<<EOF_OPTS"; printf '%s\n' "$opts"; echo "EOF_OPTS"
+            echo "append<<EOF_APPEND"; printf '%s' "$append"; echo "EOF_APPEND"
+          } >> "$GITHUB_OUTPUT"
+          echo "builders: $n node(s), platforms $want"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        id: buildx
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
         with:
-          remote-builders: ${{ inputs.remote-builders }}
+          driver: remote
+          name: ci
+          endpoint: ${{ steps.builders.outputs.endpoint }}
+          platforms: ${{ steps.builders.outputs.platforms }}
+          driver-opts: ${{ steps.builders.outputs.driver-opts }}
+          append: ${{ steps.builders.outputs.append }}
+
+      # Later steps (and the recipes' own `docker build`) reach the builder
+      # through BUILDX_BUILDER. Fail here, with the reason, when a node does
+      # not offer the platform it was declared for.
+      - name: Check the builders offer their platforms
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
+        env:
+          WANT: ${{ steps.builders.outputs.want }}
+          GOT: ${{ steps.buildx.outputs.platforms }}
+        run: |
+          set -euo pipefail
+          echo "BUILDX_BUILDER=ci" >> "$GITHUB_ENV"
+          for p in ${WANT//,/ }; do
+            case ",$GOT," in
+              *",$p,"*) ;;
+              *) echo "::error::builder ci does not offer $p (offers: $GOT)"; exit 1 ;;
+            esac
+          done
 
       - uses: truvity/ci-actions/recipe@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
         with:
@@ -667,15 +797,33 @@ jobs:
       # the number stopped meaning anything.
       - name: peak memory
         if: always()
+        # Reporting only: whatever is missing here, the step ends green.
+        # `continue-on-error` is belt and braces for the arithmetic below.
+        continue-on-error: true
         run: |
-          peak=/sys/fs/cgroup/memory.peak
-          max=/sys/fs/cgroup/memory.max
-          # Hosted runners are not in a memory-limited cgroup; nothing to
-          # report and nothing to warn about.
-          [ -r "$peak" ] || exit 0
+          # The cgroup v2 root, which is the job's own wherever the runner
+          # has a private cgroup namespace (ARC pods).
+          cg=/sys/fs/cgroup
+          peak=$cg/memory.peak
+          max=$cg/memory.max
+          # Hosted runners are not in a memory-limited cgroup, and a
+          # runner without cgroup v2 memory accounting (ECS Fargate
+          # exposes no memory.peak to the task) has nothing to read.
+          # Nothing to report and nothing to fail on: say so in the log
+          # and stop. Fargate could be measured later through the task
+          # metadata endpoint ($ECS_CONTAINER_METADATA_URI_V4/task/stats,
+          # memory_stats.max_usage); that is not wired here.
+          if [ ! -r "$peak" ]; then
+            echo "peak memory: not available on this runner (no readable cgroup v2 memory.peak)"
+            exit 0
+          fi
+          raw=$(cat "$peak" 2>/dev/null || true)
+          case "$raw" in
+            ''|*[!0-9]*) echo "peak memory: unreadable value '$raw' in $peak"; exit 0 ;;
+          esac
 
-          used=$(( $(cat "$peak") / 1048576 ))
-          limit=$(cat "$max")
+          used=$(( raw / 1048576 ))
+          limit=$(cat "$max" 2>/dev/null || echo max)
 
           # memory.events separates "filled the cgroup" from "was killed".
           # memory.peak counts reclaimable page cache, so touching the
@@ -684,13 +832,13 @@ jobs:
           # `oom_kill` (it did not survive). Reporting only the peak would
           # make every cache-heavy job look like it is about to die.
           hits=0; kills=0
-          if [ -r /sys/fs/cgroup/memory.events ]; then
-            hits=$(awk '$1=="max"{print $2}' /sys/fs/cgroup/memory.events)
-            kills=$(awk '$1=="oom_kill"{print $2}' /sys/fs/cgroup/memory.events)
+          if [ -r "$cg/memory.events" ]; then
+            hits=$(awk '$1=="max"{print $2}' "$cg/memory.events")
+            kills=$(awk '$1=="oom_kill"{print $2}' "$cg/memory.events")
           fi
 
           case "$limit" in
-            max) line="**${RECIPE}** peak ${used} MiB (no cgroup limit)" ;;
+            max|''|*[!0-9]*) line="**${RECIPE}** peak ${used} MiB (no cgroup limit)" ;;
             *)
               limit=$(( limit / 1048576 ))
               pct=$(( used * 100 / limit ))

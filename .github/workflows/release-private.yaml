@@ -102,13 +102,28 @@ on:
         required: false
         type: string
         default: ubuntu-latest
+      npm-registry:
+        description: >-
+          Address of the CI plane's npm read-through registry, an
+          http(s) URL with no query. Empty falls back to the CALLER's
+          `vars.CI_NPM_REGISTRY` (a reusable workflow reads the caller
+          repository's variables). It is probed with a 2s ping and used
+          only when it answers. LEGACY: while both are empty the previous
+          in-cluster address is probed instead, so a runner pool that
+          has not yet been given the variable behaves exactly as before.
+        required: false
+        type: string
+        default: ''
       remote-builders:
         description: >-
           ARC only. The CI plane's BuildKit nodes to register as the
           buildx builder, `platforms=endpoint` entries separated by
           whitespace — from the caller's org variable
           (vars.CI_REMOTE_BUILDERS_STABLE), never a literal here. See
-          truvity/ci-actions setup-remote-builders for the format.
+          For the format see the "Plan the remote builders" step: one
+          `linux/arm64=tcp://host:port` entry per node; the transport is
+          mutual TLS when the runner provides CI_BUILDKIT_TLS_DIR, plain
+          TCP otherwise.
         required: false
         type: string
         default: ""
@@ -261,24 +276,43 @@ jobs:
           proto: ${{ inputs.proto }}
           strip-local-tools: ${{ inputs.strip-local-tools }}
 
-      # Registry override only when the in-cluster cache answers a 2s
-      # ping: fallback-not-dependency, the same step check.yaml carries.
-      # Self-hosted only; a GitHub-hosted runner cannot resolve the name.
+      # Registry override only when the cache answers a 2s ping:
+      # fallback-not-dependency, the same step check.yaml carries.
+      # Self-hosted only; a GitHub-hosted runner cannot resolve an
+      # in-cluster name.
       # Release builds run `yarn install` on the host (about 150-400 MiB a
       # release) and the Node image builds. The write to GITHUB_ENV is
-      # fixed literals. YARN_UNSAFE_HTTP_WHITELIST: berry refuses
+      # a URL that matched a strict pattern. YARN_UNSAFE_HTTP_WHITELIST: berry refuses
       # plain-http registries without it.
       - name: Point npm and yarn at the CI-plane cache
         if: runner.environment == 'self-hosted'
+        env:
+          NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
           set -euo pipefail
-          if curl -fsS --max-time 2 http://npm-cache.ci-cache.svc/-/ping >/dev/null 2>&1; then
+          # The address is the org variable `CI_NPM_REGISTRY` (input
+          # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
+          # in-cluster name is probed exactly as before; delete the default
+          # below once the variable is set org-wide.
+          registry="${NPM_REGISTRY:-http://npm-cache.ci-cache.svc}"
+          registry="${registry%/}"
+          re='^(https?)://([A-Za-z0-9.-]+)(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'
+          if ! [[ "$registry" =~ $re ]]; then
+            echo "::warning::npm registry is not a plain http(s) URL — direct npmjs for this job"
+          elif curl -fsS --max-time 2 "$registry/-/ping" >/dev/null 2>&1; then
+            # YARN_UNSAFE_HTTP_WHITELIST: berry refuses plain-http registries
+            # outright (YN0081 "Unsafe http requests must be explicitly
+            # whitelisted"), so an http registry is whitelisted by host; an
+            # https one needs nothing. The value is matched against a strict
+            # pattern above, so nothing but a URL can ride GITHUB_ENV.
             {
-              echo "npm_config_registry=http://npm-cache.ci-cache.svc"
-              echo "YARN_NPM_REGISTRY_SERVER=http://npm-cache.ci-cache.svc"
-              echo "YARN_UNSAFE_HTTP_WHITELIST=npm-cache.ci-cache.svc"
+              echo "npm_config_registry=$registry"
+              echo "YARN_NPM_REGISTRY_SERVER=$registry"
+              if [ "${BASH_REMATCH[1]}" = http ]; then
+                echo "YARN_UNSAFE_HTTP_WHITELIST=${BASH_REMATCH[2]}"
+              fi
             } >> "$GITHUB_ENV"
-            echo "npm cache: npm-cache.ci-cache.svc answered — registry override active"
+            echo "npm cache: $registry answered — registry override active"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
@@ -294,14 +328,103 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: runner.environment != 'self-hosted'
 
-      # ARC: the CI plane's warm BuildKit builders as the buildx builder
-      # (native builds on a hot layer cache; no QEMU). The logic is the
-      # ci-actions binary's `remote-builders` command, the same one
-      # integration.yaml uses.
-      - uses: truvity/ci-actions/setup-remote-builders@47005bc43c1dad87ee18449cefa076e60ad33968 # v2.1.1
+      # ARC only (the hosted steps above skip themselves on ARC).
+      # The CI plane's BuildKit builders as one remote-driver buildx builder
+      # (`ci`): one node per `platforms=endpoint` entry, native builds on a
+      # hot layer cache, no QEMU. The first node is the builder itself, the
+      # rest are appended. Transport comes from the runner, not from here:
+      # when the runner provides CI_BUILDKIT_TLS_DIR (a directory holding
+      # ca.pem, cert.pem and key.pem) every node is dialled with mutual TLS;
+      # without it the nodes are plain TCP, as before. An optional
+      # CI_BUILDKIT_TLS_SERVERNAME overrides the certificate name the
+      # builders are verified against (buildx defaults to the endpoint host).
+      # Every entry is matched against a strict pattern before it can reach
+      # a step output.
+      - name: Plan the remote builders
+        id: builders
+        if: runner.environment == 'self-hosted'
+        env:
+          NODES: ${{ inputs.remote-builders }}
+        run: |
+          set -euo pipefail
+          set -f
+          fail() { echo "::error::$*"; exit 1; }
+          [ -n "${NODES//[[:space:]]/}" ] || fail "remote-builders is empty — set the org variable or skip this step"
+
+          opts=""
+          tls_dir="${CI_BUILDKIT_TLS_DIR:-}"
+          if [ -n "$tls_dir" ]; then
+            [[ "$tls_dir" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "CI_BUILDKIT_TLS_DIR is not a plain absolute path"
+            for f in ca.pem cert.pem key.pem; do
+              [ -r "$tls_dir/$f" ] || fail "CI_BUILDKIT_TLS_DIR is set but $tls_dir/$f is not readable"
+            done
+            opts="cacert=$tls_dir/ca.pem"$'\n'"cert=$tls_dir/cert.pem"$'\n'"key=$tls_dir/key.pem"
+            servername="${CI_BUILDKIT_TLS_SERVERNAME:-}"
+            if [ -n "$servername" ]; then
+              [[ "$servername" =~ ^[A-Za-z0-9.-]+$ ]] || fail "CI_BUILDKIT_TLS_SERVERNAME is not a plain DNS name"
+              opts+=$'\n'"servername=$servername"
+            fi
+            echo "builders: mutual TLS, credentials from $tls_dir"
+          else
+            echo "builders: plain TCP (CI_BUILDKIT_TLS_DIR is not set)"
+          fi
+
+          n=0; want=""; append=""; endpoint=""; platforms=""
+          for entry in $NODES; do
+            [[ "$entry" == *=* ]] || fail "builder entry '$entry' is not platforms=endpoint"
+            p="${entry%%=*}"; e="${entry#*=}"
+            [[ "$p" =~ ^[a-z0-9_./,-]+$ ]] || fail "builder platforms '$p' are not a platform list"
+            [[ "$e" =~ ^(tcp|unix)://[][A-Za-z0-9._:/@-]+$ ]] || fail "builder endpoint '$e' is not a tcp:// or unix:// address"
+            want+="${want:+,}$p"
+            if [ "$n" = 0 ]; then
+              endpoint="$e"; platforms="$p"
+            else
+              append+="- name: ci$n"$'\n'"  endpoint: $e"$'\n'"  platforms: $p"$'\n'
+              if [ -n "$opts" ]; then
+                append+="  driver-opts:"$'\n'
+                while IFS= read -r o; do append+="    - $o"$'\n'; done <<<"$opts"
+              fi
+            fi
+            n=$((n+1))
+          done
+
+          {
+            echo "endpoint=$endpoint"
+            echo "platforms=$platforms"
+            echo "want=$want"
+            echo "driver-opts<<EOF_OPTS"; printf '%s\n' "$opts"; echo "EOF_OPTS"
+            echo "append<<EOF_APPEND"; printf '%s' "$append"; echo "EOF_APPEND"
+          } >> "$GITHUB_OUTPUT"
+          echo "builders: $n node(s), platforms $want"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        id: buildx
         if: runner.environment == 'self-hosted'
         with:
-          remote-builders: ${{ inputs.remote-builders }}
+          driver: remote
+          name: ci
+          endpoint: ${{ steps.builders.outputs.endpoint }}
+          platforms: ${{ steps.builders.outputs.platforms }}
+          driver-opts: ${{ steps.builders.outputs.driver-opts }}
+          append: ${{ steps.builders.outputs.append }}
+
+      # Later steps (and the recipes' own `docker build`) reach the builder
+      # through BUILDX_BUILDER. Fail here, with the reason, when a node does
+      # not offer the platform it was declared for.
+      - name: Check the builders offer their platforms
+        if: runner.environment == 'self-hosted'
+        env:
+          WANT: ${{ steps.builders.outputs.want }}
+          GOT: ${{ steps.buildx.outputs.platforms }}
+        run: |
+          set -euo pipefail
+          echo "BUILDX_BUILDER=ci" >> "$GITHUB_ENV"
+          for p in ${WANT//,/ }; do
+            case ",$GOT," in
+              *",$p,"*) ;;
+              *) echo "::error::builder ci does not offer $p (offers: $GOT)"; exit 1 ;;
+            esac
+          done
 
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
