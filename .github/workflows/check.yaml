@@ -179,7 +179,9 @@ on:
       go-cache-bucket:
         description: >-
           ARC only — from the caller's org variable, never hard-coded here.
-          The CALLER passes every cache input, and there is deliberately
+          Pass it only together with an ARC runner label: on a
+          GitHub-hosted runner it must be empty, or the cache is tried
+          there for nothing. The CALLER passes every cache input, and there is deliberately
           NO fallback to an org variable inside this workflow: a caller's
           security workflow passes none on purpose and once got one
           anyway, on a GitHub-hosted runner that could reach neither the
@@ -276,9 +278,10 @@ on:
           exported as BUILDX_BUILDER), the registry login for
           `ecr-registries`, and CI_BUILDX_CACHE in its environment; the
           recipe's own `docker build` adds `--cache-from/--cache-to`
-          from it. SELF-HOSTED ONLY: the builders resolve nowhere else, so
-          a listed recipe on a GitHub-hosted runner fails loudly, before
-          anything is built. Validation only -- nothing here pushes an
+          from it. CI-PLANE RUNNERS ONLY: the builders resolve nowhere else,
+          so the caller passes `remote-builders` together with an ARC
+          runner label, and a listed recipe with no `remote-builders`
+          fails loudly, before anything is built. Validation only -- nothing here pushes an
           image; the cache push is the only registry write.
         required: false
         type: string
@@ -521,13 +524,15 @@ jobs:
       matrix:
         recipe: ${{ fromJSON(inputs.recipes) }}
     steps:
-      # Opted in to the remote builders on a runner that cannot reach them:
-      # refuse now, with the reason, instead of failing later in a
-      # `docker build` with no daemon.
-      - name: Remote builders need a self-hosted runner
-        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && runner.environment != 'self-hosted'
+      # Opted in to the remote builders with no builders given: refuse
+      # now, with the reason, instead of failing later in a `docker build`
+      # with no daemon. The builders are only reachable from the CI
+      # plane's runners, so the caller passes them together with an ARC
+      # runner label.
+      - name: Remote builders need remote-builders
+        if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && inputs.remote-builders == ''
         run: |
-          echo "::error::recipe '$RECIPE' is listed in remote-builder-recipes but runs on a GitHub-hosted runner; the BuildKit builders resolve only inside the ARC cluster. Pass an ARC runner label as runner/small-runner/medium-runner."
+          echo "::error::recipe '$RECIPE' is listed in remote-builder-recipes but remote-builders is empty; pass vars.CI_REMOTE_BUILDERS together with an ARC runner label as runner/small-runner/medium-runner."
           exit 1
         env:
           RECIPE: ${{ matrix.recipe }}
@@ -568,10 +573,11 @@ jobs:
       # quotes or newlines), which is what the job-env doctrine above
       # actually guards against.
       - name: Point npm and yarn at the CI-plane cache
-        # Self-hosted only: a GitHub-hosted runner can never resolve the
-        # in-cluster name, and probing there would print the
-        # "unreachable" warning on every job of every hosted caller.
-        if: inputs.node-cache && runner.environment == 'self-hosted'
+        # No runner test: the step asks the registry. A configured
+        # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
+        # unset the legacy in-cluster address is probed silently, which
+        # answers on an ARC runner and is a quiet no-op anywhere else.
+        if: inputs.node-cache
         env:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
@@ -580,6 +586,8 @@ jobs:
           # `npm-registry`). LEGACY FALLBACK: while it is unset, the old
           # in-cluster name is probed exactly as before; delete the default
           # below once the variable is set org-wide.
+          legacy=""
+          [ -n "${NPM_REGISTRY:-}" ] || legacy=1
           registry="${NPM_REGISTRY:-http://npm-cache.ci-cache.svc}"
           registry="${registry%/}"
           re='^(https?)://([A-Za-z0-9.-]+)(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'
@@ -599,6 +607,10 @@ jobs:
               fi
             } >> "$GITHUB_ENV"
             echo "npm cache: $registry answered — registry override active"
+          elif [ -n "$legacy" ]; then
+            # Nothing configured and the old address is silent: not a
+            # fault, e.g. a GitHub-hosted runner. No warning.
+            echo "npm cache: none configured, legacy address silent — direct npmjs for this job"
           else
             echo "::warning::npm cache unreachable — direct npmjs for this job"
           fi
