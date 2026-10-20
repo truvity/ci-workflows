@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.2.1
+
+- `renovate-fleet`: installs the devbox release binary before Renovate runs when the runner has none on `PATH`. Renovate's `devbox` manager refreshes `devbox.lock` by running `devbox update <package> --no-install`; on a GitHub-hosted runner that was `spawn devbox ENOENT`, an artifact error on every devbox pin bump, and a red job. The binary (pinned to a release, kept current by the annotated-pin rule) is checked against the release's `checksums.txt`, needs no privilege and no nix, and is added to `PATH` for the Renovate step. A runner that bakes devbox is left alone.
+
 ## v5.2.0
 
 - **A BuildKit client certificate may be passed as PEM environment variables, not only as files in a directory.** A runner that gets the certificate as environment variables (a container task with secrets) exports `CI_BUILDKIT_TLS_CA_PEM`, `CI_BUILDKIT_TLS_CERT_PEM` and `CI_BUILDKIT_TLS_KEY_PEM`; a runner with a mounted Secret keeps exporting `CI_BUILDKIT_TLS_DIR` (and `CI_BUILDKIT_TLS_SERVERNAME`).
