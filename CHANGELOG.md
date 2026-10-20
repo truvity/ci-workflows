@@ -5,6 +5,12 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.2.0
+
+- **A BuildKit client certificate may be passed as PEM environment variables, not only as files in a directory.** A runner that gets the certificate as environment variables (a container task with secrets) exports `CI_BUILDKIT_TLS_CA_PEM`, `CI_BUILDKIT_TLS_CERT_PEM` and `CI_BUILDKIT_TLS_KEY_PEM`; a runner with a mounted Secret keeps exporting `CI_BUILDKIT_TLS_DIR` (and `CI_BUILDKIT_TLS_SERVERNAME`).
+  - `check`, `integration`, `release-private`, `canary`: a new step runs `truvity/ci-actions/setup-buildkit-tls` right before the step that reads `CI_BUILDKIT_TLS_DIR` ("Plan the remote builders"; the check inside `canary`). With `CI_BUILDKIT_TLS_DIR` set it changes nothing. With it unset and all three PEM variables set, it checks each is PEM of the right type, writes `ca.pem`, `cert.pem` and `key.pem` to a fresh directory under `$RUNNER_TEMP` and exports it as `CI_BUILDKIT_TLS_DIR`, so the existing check and the mutual-TLS driver options work unchanged. With only some of the three it fails and names the missing ones. No value is printed and the key is masked; the log says only which source won. In `check`, `integration` and `release-private` the step carries the planning step's condition, so it runs only where builders are planned; in `canary` it always runs and does nothing when nothing is set.
+  - Every `truvity/ci-actions` pin moves from v3.1.0 to v3.2.0 (`efb03ea`), except `tagged-pins`.
+
 ## v5.1.0
 
 - **A runner's own environment overrides the cache addresses (`CI_RUNNER_*`).** `CI_RUNNER_GOPROXY`, `CI_RUNNER_NPM_REGISTRY`, `CI_RUNNER_BAZEL_REMOTE_CACHE` and `CI_RUNNER_REMOTE_BUILDERS`, exported in the runner's process environment (a pod spec, a task definition), win over the matching input and organisation variable. Precedence: runner environment, input, organisation variable, legacy default. Nothing changes while none of them is set, so the stable tier is untouched.
