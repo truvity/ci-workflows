@@ -5,6 +5,14 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.1.0
+
+- **A runner's own environment overrides the cache addresses (`CI_RUNNER_*`).** `CI_RUNNER_GOPROXY`, `CI_RUNNER_NPM_REGISTRY`, `CI_RUNNER_BAZEL_REMOTE_CACHE` and `CI_RUNNER_REMOTE_BUILDERS`, exported in the runner's process environment (a pod spec, a task definition), win over the matching input and organisation variable. Precedence: runner environment, input, organisation variable, legacy default. Nothing changes while none of them is set, so the stable tier is untouched.
+  - `check`, `integration`, `release-private`, `renovate-fleet`: the "Point npm and yarn at the CI-plane cache" step takes `CI_RUNNER_NPM_REGISTRY` first and logs the source; `renovate-fleet` does the same for its GOPROXY probe (`CI_RUNNER_GOPROXY`).
+  - `check`, `integration`, `release-private`: the "Plan the remote builders" step takes `CI_RUNNER_REMOTE_BUILDERS` first and logs the source. Whether builders are used at all stays the caller's choice (a non-empty `remote-builders`).
+  - `canary`: probes the effective values and prints a `<VAR> source` row per variable (runner, organisation variable or unset).
+  - Every `truvity/ci-actions` pin moves from v3.0.1 to v3.1.0 (`b87532f`), whose `setup-devbox` applies the override to GOPROXY and bazel-remote (exporting the winner as `CI_BAZEL_REMOTE_CACHE`) and whose `setup-remote-builders` applies it to the builders. See docs/estate-lifecycle.md.
+
 ## v5.0.0
 
 - **Breaking: every `truvity/ci-actions` pin moves from v2.1.1 to v3.0.1 (`70af68e`), except `tagged-pins`, and with it `policy-conformance` reports rule C18 as an error.** C18 says workflow and action YAML is runner-agnostic: no in-cluster service address, no expression on `runner.environment`, no static AWS credential. A caller of `check` that runs `policy-conformance` in strict mode and whose workflow files still hold one of these goes red. Adoption: fix the finding, or exempt it in `.github/policy-conformance.yaml` (`exempt: C18` with a `reason` and the `paths` it covers). This repository exempts the legacy in-cluster npm cache default in `check`, `integration`, `release-private` and `renovate-fleet`, until the org variable is set and the default is deleted. v3.0.0 also makes the actions decide by configured capability instead of `runner.environment` (`s3-cache` uses the bucket whenever `bucket` is set and the runner has credentials, else GitHub's cache; `setup-cache`'s `usable` follows the bucket alone), and v3.0.1 makes `setup-devbox` run that `setup-cache`. `setup-devbox` gains the `npm-registry` and `bazel-remote` inputs, which no workflow here sets yet. `tagged-pins` stays at v1.8.0.
