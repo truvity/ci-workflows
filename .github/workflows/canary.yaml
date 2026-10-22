@@ -207,7 +207,7 @@ jobs:
         with:
           lfs: false
 
-      - uses: truvity/ci-actions/setup-devbox@eae9926515d96296eeed99aa358d2957a89647e8 # v3.3.1
+      - uses: truvity/ci-actions/setup-devbox@07cb4c5f30a23389cda7bd347a75f78f7e8f71b9 # v3.6.1
         if: steps.tools.outputs.devbox == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -218,7 +218,7 @@ jobs:
       # Writes a client certificate passed as CI_BUILDKIT_TLS_*_PEM variables
       # to a directory and exports CI_BUILDKIT_TLS_DIR, which the check below
       # reads; a no-op when the directory is already set or nothing is.
-      - uses: truvity/ci-actions/setup-buildkit-tls@eae9926515d96296eeed99aa358d2957a89647e8 # v3.3.1
+      - uses: truvity/ci-actions/setup-buildkit-tls@07cb4c5f30a23389cda7bd347a75f78f7e8f71b9 # v3.6.1
 
       - name: Canary
         env:
