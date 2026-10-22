@@ -309,7 +309,11 @@ on:
           Registry reference of the BuildKit warm cache (the caller passes
           vars.CI_BUILDX_CACHE); exported to the listed recipes as
           CI_BUILDX_CACHE. A runner that exports `CI_RUNNER_BUILDX_CACHE`
-          wins over it. Empty means no cache flags: slow, not broken.
+          wins over it, and when that runner also exports
+          `CI_RUNNER_CACHE_WRITES=release-credentials` (its identity only
+          pulls the cache) a job without AWS credentials of its own gets only
+          CI_BUILDX_CACHE_FROM, the read reference, and no CI_BUILDX_CACHE.
+          Empty means no cache flags: slow, not broken.
         required: false
         type: string
         default: ''
@@ -760,12 +764,26 @@ jobs:
           ref_re='^[a-z0-9][a-z0-9.-]*(:[0-9]+)?/[a-z0-9][a-z0-9._/-]*$'
           CACHE="$(trim "$CACHE")"
           runner="$(trim "${CI_RUNNER_BUILDX_CACHE:-}")"
+          # A tier whose own identity only PULLS the cache (CI_RUNNER_CACHE_WRITES=
+          # release-credentials) is read from, not written to, unless the job holds
+          # AWS keys of its own: then only CI_BUILDX_CACHE_FROM (the read reference) is
+          # exported and CI_BUILDX_CACHE (which consumers turn into --cache-from AND
+          # --cache-to) is emptied, over the job-level value. The check on the keys is
+          # a hint; the registry's permissions are the fence.
+          writes="$(trim "${CI_RUNNER_CACHE_WRITES:-}")"
           if [ -n "$runner" ]; then
             [[ "$runner" =~ $ref_re ]] || { echo "::error::CI_RUNNER_BUILDX_CACHE is not a registry reference (<registry>/<repository>, no tag)"; exit 1; }
             CACHE="$runner"
-            echo "CI_BUILDX_CACHE=$CACHE" >> "$GITHUB_ENV"
-            echo "buildx cache: $CACHE (from the runner's CI_RUNNER_BUILDX_CACHE)"
+            echo "CI_BUILDX_CACHE_FROM=$CACHE" >> "$GITHUB_ENV"
+            if [ "$writes" = release-credentials ] && [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
+              echo "CI_BUILDX_CACHE=" >> "$GITHUB_ENV"
+              echo "buildx cache: $CACHE, read only (CI_RUNNER_CACHE_WRITES=release-credentials and the job holds no AWS credentials)"
+            else
+              echo "CI_BUILDX_CACHE=$CACHE" >> "$GITHUB_ENV"
+              echo "buildx cache: $CACHE (from the runner's CI_RUNNER_BUILDX_CACHE)"
+            fi
           elif [ -n "$CACHE" ]; then
+            echo "CI_BUILDX_CACHE_FROM=$CACHE" >> "$GITHUB_ENV"
             echo "buildx cache: $CACHE (from the input)"
           fi
           # <account>.dkr.ecr.<region>.amazonaws.com/<repo>: the account is
