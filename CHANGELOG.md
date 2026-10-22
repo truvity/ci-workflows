@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.4.0
+
+- `check.yaml` takes two optional inputs for a build tool that keeps its own cache on the runner, such as `~/.gradle/caches`. `cache-paths` is the files and directories to keep, one per line (`~` works, no globs); `cache-key-files` is the globs, one per line, whose hash names the cache (empty, or globs that match nothing, use `**/gradle.lockfile`, `**/yarn.lock`, `**/package-lock.json`, `**/pnpm-lock.yaml`, `**/go.sum` and `devbox.lock`). With `cache-paths` set, every recipe job restores its cache after `setup-devbox` and before the recipe, and saves it afterwards, also when the recipe failed, when the exact key was missing. The key is the OS, the architecture, the recipe and the hash, so a changed lockfile starts a new cache that the newest earlier one of the same recipe warms. It goes through `truvity/ci-actions` `s3-cache` with the caller's `go-cache-bucket` and `go-cache-region` (the CI cache bucket, fail-open; GitHub's cache when the runner has no bucket credentials). A caller passes `cache-paths` only from a job that may use the CI plane's caches. Empty (the default) adds no step and changes nothing for existing callers.
+
 ## v5.3.0
 
 - `auto-release`: a new optional `runner` input (default `ubuntu-latest`, so every existing caller is unchanged) sets the runner label of all its jobs (`preflight`, `tag`, `tag-roster`). Until now they were hard-coded to a GitHub-hosted runner, which a private repository on an estate runner could not avoid. The release step runs `gh`, so an estate runner must carry it.

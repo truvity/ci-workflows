@@ -97,6 +97,26 @@ only describe *how* to reach a bucket the caller already chose, do fall
 back to the caller's `vars.CI_GOCACHE_S3_ENDPOINT` and
 `vars.CI_GOCACHE_S3_PATH_STYLE`.
 
+**A cache of the caller's own.** A build tool that keeps a cache on the
+runner and that no cache above covers (Gradle's `~/.gradle/caches` is the
+usual one) is kept with `cache-paths`, one path per line, and named by
+`cache-key-files`, one glob per line (the usual lockfiles when empty). Each
+recipe job restores it after `setup-devbox`, saves it after the recipe when
+the exact key was missing, and keys it on the OS, the architecture, the
+recipe and the hash of those files. It uses the same bucket inputs as the Go
+cache, so a caller passes it only from a job that may use the CI plane's
+caches, and a job on a runner that must not read them passes none:
+
+```yaml
+    with:
+      go-cache-bucket: ${{ vars.CI_GOCACHE_S3_BUCKET }}
+      go-cache-region: ${{ vars.CI_GOCACHE_S3_REGION }}
+      cache-paths: ~/.gradle/caches
+      cache-key-files: |
+        api/gradle.lockfile
+        api/**/*.gradle*
+```
+
 `goproxy` falls back to the caller's `vars.CI_GOPROXY` when the input is
 empty (a reusable workflow reads the calling repository's configuration
 variables), so callers need not pass it. Do not pin `GOPROXY` in a
