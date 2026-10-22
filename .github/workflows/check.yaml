@@ -308,7 +308,8 @@ on:
         description: >-
           Registry reference of the BuildKit warm cache (the caller passes
           vars.CI_BUILDX_CACHE); exported to the listed recipes as
-          CI_BUILDX_CACHE. Empty means no cache flags: slow, not broken.
+          CI_BUILDX_CACHE. A runner that exports `CI_RUNNER_BUILDX_CACHE`
+          wins over it. Empty means no cache flags: slow, not broken.
         required: false
         type: string
         default: ''
@@ -749,6 +750,24 @@ jobs:
           CACHE: ${{ inputs.buildx-cache }}
         run: |
           set -euo pipefail
+          # Which BuildKit cache the recipe gets: a runner that exports
+          # CI_RUNNER_BUILDX_CACHE names the cache of ITS tier (a preview and a stable
+          # runner each have the registry cache of their own account) and wins over the
+          # input, the caller's organisation variable. It replaces the job-level
+          # CI_BUILDX_CACHE for the steps after this one (GITHUB_ENV outranks the job's
+          # env; the value is checked below to be one plain registry reference).
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf %s "$v"; }
+          ref_re='^[a-z0-9][a-z0-9.-]*(:[0-9]+)?/[a-z0-9][a-z0-9._/-]*$'
+          CACHE="$(trim "$CACHE")"
+          runner="$(trim "${CI_RUNNER_BUILDX_CACHE:-}")"
+          if [ -n "$runner" ]; then
+            [[ "$runner" =~ $ref_re ]] || { echo "::error::CI_RUNNER_BUILDX_CACHE is not a registry reference (<registry>/<repository>, no tag)"; exit 1; }
+            CACHE="$runner"
+            echo "CI_BUILDX_CACHE=$CACHE" >> "$GITHUB_ENV"
+            echo "buildx cache: $CACHE (from the runner's CI_RUNNER_BUILDX_CACHE)"
+          elif [ -n "$CACHE" ]; then
+            echo "buildx cache: $CACHE (from the input)"
+          fi
           # <account>.dkr.ecr.<region>.amazonaws.com/<repo>: the account is
           # the first DNS label. A cache reference that is not an ECR one
           # leaves the registries empty and skips the login.
