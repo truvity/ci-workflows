@@ -135,7 +135,9 @@ on:
         description: >-
           Registry reference of the BuildKit warm cache, e.g. the
           stable account's ci/buildkit-cache — from the caller's org
-          variable (vars.CI_BUILDX_CACHE_STABLE). Exported to the
+          variable (vars.CI_BUILDX_CACHE_STABLE). A runner that exports
+          `CI_RUNNER_BUILDX_CACHE` (the stable tier's Fargate runners do) wins
+          over it. Exported to the
           release command as CI_BUILDX_CACHE, which the projects'
           goreleaser configs turn into `--cache-from/--cache-to
           type=registry` per image; empty means no cache flags. The
@@ -533,6 +535,36 @@ jobs:
           ca-cert: ${{ inputs.openbao-ca }}
           path: ${{ inputs.goreleaser-licence-path }}
 
+      # Which BuildKit cache this job uses: the runner's own (CI_RUNNER_BUILDX_CACHE) over the
+      # input. A stable runner names the stable registry account's, a preview runner the
+      # devel account's, whatever organisation variable the caller passed.
+      - name: Resolve the BuildKit cache
+        id: bkcache
+        env:
+          CACHE: ${{ inputs.buildx-cache }}
+        run: |
+          set -euo pipefail
+          # A runner that exports CI_RUNNER_BUILDX_CACHE names the BuildKit cache of ITS
+          # tier (preview and stable runners each have the registry cache of their own
+          # account) and wins over the input, the caller's organisation variable. Whether
+          # a cache is used at all stays the caller's choice: the runner's value matters
+          # only to a job that gets here. Either value must be <registry>/<repository>,
+          # no tag, no space: it becomes an environment value and an ECR login.
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf %s "$v"; }
+          ref_re='^[a-z0-9][a-z0-9.-]*(:[0-9]+)?/[a-z0-9][a-z0-9._/-]*$'
+          cache="$(trim "$CACHE")"
+          runner="$(trim "${CI_RUNNER_BUILDX_CACHE:-}")"
+          if [ -n "$runner" ]; then
+            [[ "$runner" =~ $ref_re ]] || { echo "::error::CI_RUNNER_BUILDX_CACHE is not a registry reference (<registry>/<repository>, no tag)"; exit 1; }
+            cache="$runner"; echo "buildx cache: $cache (from the runner's CI_RUNNER_BUILDX_CACHE)"
+          elif [ -n "$cache" ]; then
+            [[ "$cache" =~ $ref_re ]] || { echo "::error::buildx-cache is not a registry reference (<registry>/<repository>, no tag)"; exit 1; }
+            echo "buildx cache: $cache (from the input)"
+          else
+            echo "buildx cache: none"
+          fi
+          echo "ref=$cache" >> "$GITHUB_OUTPUT"
+
       - name: Release
         # The command reaches the shell through env and word-splits
         # there — an expression spliced into the script text would be
@@ -547,7 +579,7 @@ jobs:
           RELEASE_COMMAND: ${{ inputs.command }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ steps.licence.outputs.value || secrets.goreleaser-key }}
-          CI_BUILDX_CACHE: ${{ inputs.buildx-cache }}
+          CI_BUILDX_CACHE: ${{ steps.bkcache.outputs.ref }}
           GEMAAL_SBOM_GENERATOR: ${{ inputs.sbom-generator }}
           # No profiles on a runner: the default credential chain must
           # resolve the job's OIDC role from env. A stray AWS_PROFILE

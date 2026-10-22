@@ -176,7 +176,7 @@ on:
         type: string
         default: ""
       buildx-cache:
-        description: Registry reference of the BuildKit warm cache (vars.CI_BUILDX_CACHE); empty means no cache flags.
+        description: Registry reference of the BuildKit warm cache (vars.CI_BUILDX_CACHE); empty means no cache flags. A runner that exports CI_RUNNER_BUILDX_CACHE wins over it.
         required: false
         type: string
         default: ""
@@ -690,6 +690,36 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
 
+      # Which BuildKit cache this job uses: the runner's own (CI_RUNNER_BUILDX_CACHE) over the
+      # input. A stable runner names the stable registry account's, a preview runner the
+      # devel account's, whatever organisation variable the caller passed.
+      - name: Resolve the BuildKit cache
+        id: bkcache
+        env:
+          CACHE: ${{ inputs.buildx-cache }}
+        run: |
+          set -euo pipefail
+          # A runner that exports CI_RUNNER_BUILDX_CACHE names the BuildKit cache of ITS
+          # tier (preview and stable runners each have the registry cache of their own
+          # account) and wins over the input, the caller's organisation variable. Whether
+          # a cache is used at all stays the caller's choice: the runner's value matters
+          # only to a job that gets here. Either value must be <registry>/<repository>,
+          # no tag, no space: it becomes an environment value and an ECR login.
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf %s "$v"; }
+          ref_re='^[a-z0-9][a-z0-9.-]*(:[0-9]+)?/[a-z0-9][a-z0-9._/-]*$'
+          cache="$(trim "$CACHE")"
+          runner="$(trim "${CI_RUNNER_BUILDX_CACHE:-}")"
+          if [ -n "$runner" ]; then
+            [[ "$runner" =~ $ref_re ]] || { echo "::error::CI_RUNNER_BUILDX_CACHE is not a registry reference (<registry>/<repository>, no tag)"; exit 1; }
+            cache="$runner"; echo "buildx cache: $cache (from the runner's CI_RUNNER_BUILDX_CACHE)"
+          elif [ -n "$cache" ]; then
+            [[ "$cache" =~ $ref_re ]] || { echo "::error::buildx-cache is not a registry reference (<registry>/<repository>, no tag)"; exit 1; }
+            echo "buildx cache: $cache (from the input)"
+          else
+            echo "buildx cache: none"
+          fi
+          echo "ref=$cache" >> "$GITHUB_OUTPUT"
+
       # The command reaches the shell through env and is evaluated
       # there, never spliced into the script text: matrix values are
       # workflow-controlled constants from the caller, but the habit
@@ -699,14 +729,14 @@ jobs:
           LANE_BUILD: ${{ matrix.build }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.goreleaser-key }}
-          CI_BUILDX_CACHE: ${{ inputs.buildx-cache }}
+          CI_BUILDX_CACHE: ${{ steps.bkcache.outputs.ref }}
           CODEARTIFACT_AUTH_TOKEN: ${{ steps.codeartifact.outputs.token }}
         run: eval "$LANE_BUILD"
 
       - name: Warm-cache report
-        if: always() && inputs.cache-report && env.LANE_IMAGES == 'true' && inputs.buildx-cache != ''
+        if: always() && inputs.cache-report && env.LANE_IMAGES == 'true' && steps.bkcache.outputs.ref != ''
         env:
-          CACHE_REF: ${{ inputs.buildx-cache }}
+          CACHE_REF: ${{ steps.bkcache.outputs.ref }}
           LANE: ${{ matrix.name }}
         run: |
           set -uo pipefail
