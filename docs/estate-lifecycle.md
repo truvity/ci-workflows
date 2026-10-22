@@ -227,6 +227,10 @@ jobs:
       github-app: ci-automation
 ```
 
+The jobs run on a GitHub-hosted runner unless the caller passes `runner:`
+(a private repository on an estate runner passes its label). The runner
+needs `gh`, which the release step calls.
+
 With `access-roster` there is no key in the repository, in an
 organisation secret, or in an entitlement list: the issuer holds the App
 and its grants decide which **job** may have a token of it. The token
