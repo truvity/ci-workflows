@@ -140,8 +140,11 @@ on:
           over it. Exported to the
           release command as CI_BUILDX_CACHE, which the projects'
           goreleaser configs turn into `--cache-from/--cache-to
-          type=registry` per image; empty means no cache flags. The
-          release role must be allowed to push to it.
+          type=registry` per image, and as CI_BUILDX_CACHE_FROM (the
+          read reference); empty means no cache flags. The release
+          role must be allowed to push to it: on a runner that exports
+          `CI_RUNNER_CACHE_WRITES=release-credentials` the release role
+          is the only writer.
         required: false
         type: string
         default: ""
@@ -537,7 +540,9 @@ jobs:
 
       # Which BuildKit cache this job uses: the runner's own (CI_RUNNER_BUILDX_CACHE) over the
       # input. A stable runner names the stable registry account's, a preview runner the
-      # devel account's, whatever organisation variable the caller passed.
+      # devel account's, whatever organisation variable the caller passed. This runs after
+      # the release role is assumed, so it keeps CI_BUILDX_CACHE (read and write) even on a
+      # runner with CI_RUNNER_CACHE_WRITES=release-credentials.
       - name: Resolve the BuildKit cache
         id: bkcache
         env:
@@ -579,7 +584,12 @@ jobs:
           RELEASE_COMMAND: ${{ inputs.command }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ steps.licence.outputs.value || secrets.goreleaser-key }}
+          # Read AND write: this step runs after the release role was assumed, and that
+          # role is what may push the cache on a tier whose own identity only pulls it
+          # (CI_RUNNER_CACHE_WRITES=release-credentials). CI_BUILDX_CACHE_FROM is the
+          # read reference for a consumer that reads without writing.
           CI_BUILDX_CACHE: ${{ steps.bkcache.outputs.ref }}
+          CI_BUILDX_CACHE_FROM: ${{ steps.bkcache.outputs.ref }}
           GEMAAL_SBOM_GENERATOR: ${{ inputs.sbom-generator }}
           # No profiles on a runner: the default credential chain must
           # resolve the job's OIDC role from env. A stray AWS_PROFILE
