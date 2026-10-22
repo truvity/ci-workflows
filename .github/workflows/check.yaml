@@ -324,6 +324,33 @@ on:
         required: false
         type: string
         default: ''
+      cache-paths:
+        description: >-
+          Files or directories to keep between runs in the CI cache bucket,
+          one per line (`~` is the home directory, no globs), for a build
+          that has no cache of its own on the runner, such as `~/.gradle/caches`.
+          Restored after the toolchain is set up and before the recipe runs,
+          saved after it (also when it failed) when the exact key was missing.
+          Each recipe job has its own cache. Empty (the default) caches nothing
+          and changes nothing for a caller. It rides `go-cache-bucket` and
+          `go-cache-region` through truvity/ci-actions `s3-cache`; with no
+          bucket, or a runner without credentials for it, the same step uses
+          GitHub's cache. Pass it only from a job that may read and write the
+          CI plane's caches: a stable runner passes none.
+        required: false
+        type: string
+        default: ''
+      cache-key-files:
+        description: >-
+          Files whose content names the `cache-paths` cache, one glob per line
+          (`**` works), hashed with `hashFiles`; a change in any of them starts
+          a new cache and the previous one is the fallback. Empty, or globs that
+          match nothing, use the usual lockfiles: `**/gradle.lockfile`, `**/yarn.lock`,
+          `**/package-lock.json`, `**/pnpm-lock.yaml`, `**/go.sum` and
+          `devbox.lock`. Ignored without `cache-paths`.
+        required: false
+        type: string
+        default: ''
       env-json:
         description: >-
           Extra environment as a JSON object, for repo-specific values the
@@ -673,6 +700,25 @@ jobs:
           endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
           path-style: ${{ inputs.go-cache-path-style || vars.CI_GOCACHE_S3_PATH_STYLE }}
 
+      # The caller's own caches (`cache-paths`), from the CI cache bucket the
+      # way the golangci-lint one is. The key is the OS, the architecture, the
+      # recipe and the hash of `cache-key-files` (the usual lockfiles when
+      # empty), so a change of a dependency starts a new cache and the newest
+      # earlier one of the same recipe warms it. Nothing runs without
+      # `cache-paths`.
+      - uses: truvity/ci-actions/s3-cache/restore@eae9926515d96296eeed99aa358d2957a89647e8 # v3.3.1
+        id: caller-cache
+        if: inputs.cache-paths != ''
+        with:
+          path: ${{ inputs.cache-paths }}
+          key: caller-${{ runner.os }}-${{ runner.arch }}-${{ matrix.recipe }}-${{ inputs.cache-key-files != '' && hashFiles(inputs.cache-key-files) || hashFiles('**/gradle.lockfile', '**/yarn.lock', '**/package-lock.json', '**/pnpm-lock.yaml', '**/go.sum', 'devbox.lock') }}
+          restore-keys: |
+            caller-${{ runner.os }}-${{ runner.arch }}-${{ matrix.recipe }}-
+          bucket: ${{ inputs.go-cache-bucket }}
+          region: ${{ inputs.go-cache-region }}
+          endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
+          path-style: ${{ inputs.go-cache-path-style || vars.CI_GOCACHE_S3_PATH_STYLE }}
+
       # Through env, never spliced into the script: a ${{ }} expression is
       # pasted in before bash parses the line, so a value carrying a quote
       # or $( ) would execute.
@@ -926,6 +972,18 @@ jobs:
         with:
           path: ~/.cache/golangci-lint
           key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
+          bucket: ${{ inputs.go-cache-bucket }}
+          region: ${{ inputs.go-cache-region }}
+          endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
+          path-style: ${{ inputs.go-cache-path-style || vars.CI_GOCACHE_S3_PATH_STYLE }}
+
+      # Saved also when the recipe failed, and only when the exact key was
+      # missing (a restore-keys match is a miss here).
+      - uses: truvity/ci-actions/s3-cache/save@eae9926515d96296eeed99aa358d2957a89647e8 # v3.3.1
+        if: always() && inputs.cache-paths != '' && steps.caller-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ inputs.cache-paths }}
+          key: ${{ steps.caller-cache.outputs.cache-primary-key }}
           bucket: ${{ inputs.go-cache-bucket }}
           region: ${{ inputs.go-cache-region }}
           endpoint: ${{ inputs.go-cache-endpoint || vars.CI_GOCACHE_S3_ENDPOINT }}
