@@ -5,12 +5,14 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v5.5.0
 
 - **A runner's own BuildKit cache (`CI_RUNNER_BUILDX_CACHE`) wins over the `buildx-cache` input.** The preview and the stable tier of an organisation each have a registry cache in their own account, and one organisation variable cannot name both. A runner that exports `CI_RUNNER_BUILDX_CACHE` (the Fargate runners of both tiers do, `runnerEnvironment.buildxCache` in truvity/grun) now decides which cache a job uses; with none exported nothing changes. Either value must be one `<registry>/<repository>` reference with no tag and no space, else the step fails before anything builds.
   - `release-private`, `integration`: a new step "Resolve the BuildKit cache" (before the release or build step) logs the source and hands the winner, as a step output, to `CI_BUILDX_CACHE` of that step (and to the warm-cache report in `integration`).
   - `check`: the step "ECR registry to log into" resolves it first, derives the registry to log into from the winner, and exports the winner as `CI_BUILDX_CACHE` to the later steps of the job (the job-level value is the caller's).
   - The Go build cache and the archive caches need no change here: `go-cache-bucket` and `go-cache-region` are passed to `setup-devbox` and `s3-cache` as before, and a runner that exports `CI_RUNNER_GOCACHE_S3_BUCKET` / `_REGION` wins over them inside truvity/ci-actions (`release-private` passes no cache input at all and now gets the cache from the runner). That needs the ci-actions release that carries it: the pin bump follows it in this repository. A kind-tier lane of `integration` still blanks the bucket it passes; a runner that exports its own bucket is not a kind lane's runner.
+
+- **`truvity/ci-actions` pins move to v3.6.1** (every v3.3.1 pin, one commit): a runner's own cache bucket and BuildKit cache reach `setup-devbox`, `s3-cache` and `setup-remote-builders`.
 
 ## v5.4.0
 
