@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.3.0
+
+- `auto-release`: a new optional `runner` input (default `ubuntu-latest`, so every existing caller is unchanged) sets the runner label of all its jobs (`preflight`, `tag`, `tag-roster`). Until now they were hard-coded to a GitHub-hosted runner, which a private repository on an estate runner could not avoid. The release step runs `gh`, so an estate runner must carry it.
+
 ## v5.2.3
 
 - `canary`: the buildx bootstrap of each builder now passes the certificate name the way the build workflows do. With `CI_BUILDKIT_TLS_DIR` set, the runner's `CI_BUILDKIT_TLS_SERVERNAME` (checked as a plain DNS name, like in `check`, `integration` and `release-private`) is added as the `servername` driver option. Before, the canary verified the server certificate against the endpoint host, so on a runner whose builders are reached through a service name the certificate does not carry, every `CI_REMOTE_BUILDERS[n]` row failed with `context deadline exceeded` while real builds passed. A malformed name is a hard `CI_BUILDKIT_TLS_SERVERNAME` FAIL row; the report format is otherwise unchanged.

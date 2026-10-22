@@ -242,6 +242,18 @@ on:
         required: false
         type: string
         default: ""
+      runner:
+        description: >-
+          Runner label for every job of this workflow (preflight and the
+          tag job of the chosen token source). The default is a GitHub-hosted
+          runner, which callers that need nothing else leave alone. A private
+          repository on an estate runner passes its label (for example
+          vars.CI_RUNNER_LABEL_SMALL). The release step runs `gh`, git, curl
+          and tar, and the job sets up devbox: an estate runner must carry
+          `gh` (or have it on PATH before the step runs).
+        required: false
+        type: string
+        default: ubuntu-latest
     secrets:
       CI_AUTOMATION_PRIVATE_KEY:
         description: The App's private key. Required when token-source is `app-key`.
@@ -254,7 +266,7 @@ jobs:
   # Before either tag job, and outside both: a token-source neither job
   # matches would otherwise skip both and report success.
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 5
     steps:
       - name: Check the token inputs
@@ -276,7 +288,7 @@ jobs:
   tag:
     needs: preflight
     if: inputs.token-source == 'app-key'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -346,7 +358,7 @@ jobs:
   tag-roster:
     needs: preflight
     if: inputs.token-source == 'access-roster'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     permissions:
       contents: read
