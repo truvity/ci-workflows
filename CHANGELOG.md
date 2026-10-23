@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.6.2
+
+- **ci-actions v3.6.3: the release gate ignores GitHub's dependency-graph jobs.** `require-green-checks` (in `release-private.yaml`) refused a tag when the Dependabot graph-submission check run `update-<ecosystem>-graph` (`update-go_modules-graph`, ...) was red, which it is with "Dependabot job token is not set" on any push that touches a manifest; it killed truvity/eudi's `eudi/v1.9.1`. The gate now drops that job (app `github-actions` or `dependabot`, name `update-*-graph`). Every ci-actions pin moves from v3.6.2 to v3.6.3; nothing else changes for callers.
+
 ## v5.6.1
 
 - **ci-actions v3.6.2: the private release gate waits for the tagged commit's checks.** `release-private.yaml`'s `require-green-checks` used to fail at once when a tag was pushed right after its commit, because the commit's own `check` was still running; the release then never published and a re-run was refused once master moved on. It now polls the tagged commit's checks for up to 20 minutes, fails at once on a failure, and fails with a clear message on timeout. Every ci-actions pin moves from v3.6.1 to v3.6.2; nothing else changes for callers, but give release jobs about 20 minutes of extra headroom.
