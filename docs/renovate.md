@@ -92,3 +92,33 @@ snapshots), first proven 2026-08-25:
 The renovate npm version in `renovate-fleet.yaml` is pinned and
 annotated — renovate updates renovate. When bumping majors, re-check
 the Node floor in the upstream release notes before merging.
+
+## Security alerts reach direct dependencies only
+
+`vulnerabilityAlerts` (GitHub's Dependabot alerts) and `osvVulnerabilityAlerts`
+act on a dependency Renovate has **extracted from a manifest**. A package that
+exists only inside a lock file (a transitive one) is never extracted, so an
+alert for it produces no pull request: the debug run of 2026-10-23 on
+truvity/policy listed the alerts for `certifi`, `opentelemetry-api` (both in
+`uv.lock`) and `vite` (under `vitest` in `yarn.lock`) and extracted none of
+them. Renovate 44 has no lock-file-only remediation yet
+(renovatebot/renovate#46377).
+
+`default.json` therefore turns `lockFileMaintenance` on (weekdays before 6am
+UTC, automerged on green `check`). It re-resolves the lock files inside the
+ranges the manifests allow, which moves those packages to their fixed
+versions within a day of a fix being published and installable. When an
+alert still stands after a maintenance run, the fix needs a manifest change
+(a constraint or an override), by hand.
+
+Three things stop a security PR before any of this, and are worth checking
+first when "renovate opened nothing for an alert":
+
+1. The repository is not in the caller's enrolment list, or the App's
+   installation is `selected` and does not include it (the run summary says
+   "enrolled but the App cannot see it").
+2. GitHub holds no alerts for it: `gh api repos/<o>/<r>/vulnerability-alerts`
+   answers 404 until Dependabot alerts are enabled, and Renovate then sees an
+   empty list without saying so.
+3. The App lacks `vulnerability_alerts: read` (the catalogue row in
+   gitops `cfg/access.yaml` carries it for every renovate App).
