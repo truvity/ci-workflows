@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.6.0
+
+- **`canary.yaml` is removed.** The reusable workflow that checked the CI plane from the runner a job lands on (org variables, caches, proxies, registries, AWS identity, remote builders) had one caller, truvity/dms's `canary.yaml`, deleted in truvity/dms#254, and none remain in truvity, trust-form or finttech. A caller still pinned to an earlier tag keeps working at that tag; one that moves to v5.6.0 or later must delete its `uses: truvity/ci-workflows/.github/workflows/canary.yaml` job first. The README row and the mentions in `docs/estate-lifecycle.md` go with it. No other workflow changes.
+
 ## v5.5.0
 
 - **A runner's own BuildKit cache (`CI_RUNNER_BUILDX_CACHE`) wins over the `buildx-cache` input.** The preview and the stable tier of an organisation each have a registry cache in their own account, and one organisation variable cannot name both. A runner that exports `CI_RUNNER_BUILDX_CACHE` (the Fargate runners of both tiers do, `runnerEnvironment.buildxCache` in truvity/grun) now decides which cache a job uses; with none exported nothing changes. Either value must be one `<registry>/<repository>` reference with no tag and no space, else the step fails before anything builds.
