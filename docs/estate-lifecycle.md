@@ -138,8 +138,7 @@ the organisation variable, then the legacy default. The `setup-devbox` and
 bazel-remote and the builders; the npm step and the "Plan the remote
 builders" step of `check`, `integration`, `release-private` and
 `renovate-fleet` apply it for the registry and the builders; `renovate-fleet`
-also for its own GOPROXY probe; `canary` probes the effective values and
-reports the source of each. Each step logs which source won, never a
+also for its own GOPROXY probe. Each step logs which source won, never a
 credential. With no `CI_RUNNER_*` set, nothing changes. The override picks
 WHICH nodes the builders are; whether a job uses builders at all stays the
 caller's choice (a non-empty `remote-builders`).
