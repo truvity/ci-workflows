@@ -270,7 +270,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@07cb4c5f30a23389cda7bd347a75f78f7e8f71b9 # v3.6.1
+      - uses: truvity/ci-actions/public-runners@8831ecd9f943fb4441507ba2d2796acc950e4536 # v3.6.2
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -289,7 +289,7 @@ jobs:
           # clone gives it nothing to derive from.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@07cb4c5f30a23389cda7bd347a75f78f7e8f71b9 # v3.6.1
+      - uses: truvity/ci-actions/setup-devbox@8831ecd9f943fb4441507ba2d2796acc950e4536 # v3.6.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -371,7 +371,7 @@ jobs:
       # registry login step.
       - name: Package and push charts
         if: inputs.charts != '[]'
-        uses: truvity/ci-actions/publish-charts@07cb4c5f30a23389cda7bd347a75f78f7e8f71b9 # v3.6.1
+        uses: truvity/ci-actions/publish-charts@8831ecd9f943fb4441507ba2d2796acc950e4536 # v3.6.2
         with:
           charts: ${{ inputs.charts }}
           chart-root: ${{ inputs.chart-root }}
@@ -427,7 +427,7 @@ jobs:
       # the runner's own.
       - name: Publish Nix flakes
         if: inputs.nix-flakes != '[]'
-        uses: truvity/ci-actions/publish-nix-flakes@07cb4c5f30a23389cda7bd347a75f78f7e8f71b9 # v3.6.1
+        uses: truvity/ci-actions/publish-nix-flakes@8831ecd9f943fb4441507ba2d2796acc950e4536 # v3.6.2
         with:
           flakes: ${{ inputs.nix-flakes }}
           flake-dir: ${{ runner.temp }}/nix-flakes
