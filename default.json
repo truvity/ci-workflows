@@ -21,6 +21,24 @@
     ],
     "automerge": true
   },
+  "lockFileMaintenance": {
+    "description": [
+      "Transitive security fixes. `vulnerabilityAlerts` (and OSV) only act on a dependency Renovate has extracted,",
+      "which is a DIRECT one: a vulnerable package that exists only inside a lock file (certifi and",
+      "opentelemetry-api in uv.lock, vite under vitest in yarn.lock: truvity/policy and truvity/url-shortener,",
+      "2026-10-23) produces no pull request, however many alerts GitHub holds for it, and the fleet's debug run",
+      "listed the alerts and extracted none of them. Lock file maintenance re-resolves the lock files within",
+      "the ranges the manifests already allow, which is what moves those packages to their fixed versions.",
+      "Weekdays, before 6am UTC: the fleet runs every six hours, so a fix lands within a day, and the one",
+      "rolling branch per repository keeps the churn to a single pull request at a time. Automerge, like the",
+      "non-major batch: `check` decides."
+    ],
+    "enabled": true,
+    "schedule": [
+      "before 6am every weekday"
+    ],
+    "automerge": true
+  },
   "rebaseWhen": "behind-base-branch",
   "gomod": {
     "description": [
