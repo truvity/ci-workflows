@@ -104,7 +104,7 @@ truvity/policy listed the alerts for `certifi`, `opentelemetry-api` (both in
 them. Renovate 44 has no lock-file-only remediation yet
 (renovatebot/renovate#46377).
 
-`default.json` therefore turns `lockFileMaintenance` on (weekdays before 6am
+`default.json` therefore turns `lockFileMaintenance` on (daily before 6am
 UTC, automerged on green `check`). It re-resolves the lock files inside the
 ranges the manifests allow, which moves those packages to their fixed
 versions within a day of a fix being published and installable. When an
