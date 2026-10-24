@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.8.1
+
+- **truvity/gitops `vuln` runs on LARGE again** (a `runner-sizes.yaml` row over the `*` MEDIUM row). Its measured peak is 5.8 GiB, 95% of MEDIUM with the 30% headroom, and the caller records 12.5-13 GiB while the Go toolchain had reachable advisories. Every other `vuln` stays MEDIUM.
+
 ## v5.8.0
 
 - **`renovate-fleet` and `parity-fleet` also read an owner's row.** In `runner-sizes.yaml` a fleet job's size is the target repository's row, else its owner's `<owner>/*` row (the caller's `github.repository_owner`), else the `*` row, else MEDIUM. `hack/runner-sizes.sh check` refuses an `<owner>/*` row in a job whose `runs-on` does not look one up.
