@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.6.4
+
+- **ci-actions v3.6.4: the release gate also ignores Dependabot's own update jobs.** `require-green-checks` (in `release-private.yaml`) refused a tag when the check run `Dependabot` (job of the `Dependabot Updates` workflow, app `github-actions`) was red, which it is without a Dependabot token; it refused truvity/docs `v0.42.5`. The gate now drops a check run from `github-actions` or `dependabot` named `Dependabot` or `Dependabot Updates`; the same name from another app still counts. Every ci-actions pin moves from v3.6.3 to v3.6.4; nothing else changes for callers.
+
 ## v5.6.3
 
 - **`renovate-fleet` installs `uv` and `poetry` when the runner has none.** Renovate regenerates `uv.lock` with `uv lock` and `poetry.lock` with `poetry update --lock`; with neither tool on PATH the pull request carried an artifact error (`spawn uv ENOENT`, `spawn poetry ENOENT`), so lock-file-only security fixes never landed (truvity/url-shortener's `uv.lock` files, trust-form/phoenix's `tools/tfmigrate/poetry.lock`). Two new steps, in the style of the devbox one: `uv` is the checksum-verified static release binary from astral-sh/uv (0.13.5), `poetry` (2.5.1) is installed with `uv tool install`. Both go to `$RUNNER_TEMP/bin`, which is on PATH for the renovate step, and each step is skipped when the tool is already on PATH. Both versions carry a `# renovate:` comment so Renovate keeps them current. Nothing changes for callers; a runner needs outbound access to github.com (the uv release) and PyPI (poetry, plus a Python download when it has none that poetry supports).

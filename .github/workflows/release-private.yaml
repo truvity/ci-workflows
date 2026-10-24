@@ -276,11 +276,11 @@ jobs:
       # `require-green-checks` action's.
       - name: Require green checks on the tagged commit
         if: inputs.require-green-checks
-        uses: truvity/ci-actions/require-green-checks@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/require-green-checks@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           token: ${{ github.token }}
 
-      - uses: truvity/ci-actions/setup-devbox@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+      - uses: truvity/ci-actions/setup-devbox@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -367,7 +367,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+      - uses: truvity/ci-actions/setup-buildkit-tls@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         if: inputs.remote-builders != ''
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -527,7 +527,7 @@ jobs:
         id: licence
         if: inputs.goreleaser-licence-path != ''
         continue-on-error: true
-        uses: truvity/ci-actions/openbao-secrets@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/openbao-secrets@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           issuer: ${{ inputs.openbao-issuer }}
           address: ${{ inputs.openbao-address }}

@@ -260,13 +260,13 @@ jobs:
       - name: Read the enrolment list
         id: enrolled
         if: inputs.list != ''
-        uses: truvity/ci-actions/enrolment-list@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/enrolment-list@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           file: ${{ inputs.repositories-file }}
           list: ${{ inputs.list }}
 
       - name: Check the token inputs
-        uses: truvity/ci-actions/token-inputs@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/token-inputs@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           source: ${{ inputs.token-source }}
           access-roster-issuer: ${{ inputs.access-roster-issuer }}
@@ -280,7 +280,7 @@ jobs:
       # is enough: the source is public.
       - name: Resolve the target version
         id: target
-        uses: truvity/ci-actions/pkl-fleet@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/pkl-fleet@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           step: target
           version: ${{ inputs.version }}
@@ -298,14 +298,14 @@ jobs:
 
       # Not narrowed: discovery lists every repository the App can see, and
       # the required-check rule's fallback answers for the viewer.
-      - uses: truvity/ci-actions/token-exchange@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+      - uses: truvity/ci-actions/token-exchange@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
 
-      - uses: truvity/ci-actions/fleet-discover@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+      - uses: truvity/ci-actions/fleet-discover@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         id: discover
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -322,7 +322,7 @@ jobs:
       - name: Find the consumers that need a bump
         id: consumers
         if: steps.discover.outputs.count != '0'
-        uses: truvity/ci-actions/pkl-fleet@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/pkl-fleet@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           step: consumers
           repositories: ${{ steps.discover.outputs.repositories }}
@@ -367,7 +367,7 @@ jobs:
 
       # Push one branch, open and auto-merge one pull request: contents and
       # pull_requests, on this repository. A dry run only reads.
-      - uses: truvity/ci-actions/token-exchange@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+      - uses: truvity/ci-actions/token-exchange@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -379,7 +379,7 @@ jobs:
       - name: Resolve the commit author
         id: author
         if: ${{ !inputs.dry-run }}
-        uses: truvity/ci-actions/fleet-step@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/fleet-step@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           step: commit-author
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -414,7 +414,7 @@ jobs:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
           persist-credentials: false
 
-      - uses: truvity/ci-actions/setup-devbox@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+      - uses: truvity/ci-actions/setup-devbox@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           proto: "false"
           # The job's own read-only token (API rate limits), never the App's:
@@ -424,7 +424,7 @@ jobs:
 
       - name: Rewrite the dependency URIs
         id: rewrite
-        uses: truvity/ci-actions/pkl-fleet@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/pkl-fleet@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           step: rewrite
           target: ${{ needs.discover.outputs.version }}
@@ -436,7 +436,7 @@ jobs:
       # pushes nothing.
       - name: Resolve and regenerate
         if: steps.rewrite.outputs.changed == 'true'
-        uses: truvity/ci-actions/pkl-fleet@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/pkl-fleet@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           step: resolve
           dirs-file: ${{ runner.temp }}/pkl-projects.txt
@@ -445,7 +445,7 @@ jobs:
       - name: Open or update the pull request
         id: pr
         if: steps.rewrite.outputs.changed == 'true'
-        uses: truvity/ci-actions/pkl-fleet@2678f59fd1f2ab1aad438fb4167607712a95ad81 # v3.6.3
+        uses: truvity/ci-actions/pkl-fleet@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
         with:
           step: publish
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
