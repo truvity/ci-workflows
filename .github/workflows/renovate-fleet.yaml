@@ -312,16 +312,18 @@ jobs:
   renovate:
     needs: discover
     if: needs.discover.outputs.count != '0'
-    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule); the
-    # literal is rendered by hack/runner-sizes.sh.
+    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule), with
+    # one more step for the fleets: the target's row, then its owner's
+    # "<owner>/*" row, then "*". The literal is rendered by hack/runner-sizes.sh.
     runs-on: >-
       ${{ (inputs.runner != ''
            && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM"}')[format('{0}:renovate', matrix.repository)]
-                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM"}')['*:renovate']
+                fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM","trust-form/*:renovate":"MEDIUM_SPOT"}')[format('{0}:renovate', matrix.repository)]
+                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM","trust-form/*:renovate":"MEDIUM_SPOT"}')[format('{0}/*:renovate', github.repository_owner)]
+                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM","trust-form/*:renovate":"MEDIUM_SPOT"}')['*:renovate']
                 || 'MEDIUM')])
           || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}

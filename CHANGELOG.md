@@ -5,6 +5,12 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## v5.8.0
+
+- **`renovate-fleet` and `parity-fleet` also read an owner's row.** In `runner-sizes.yaml` a fleet job's size is the target repository's row, else its owner's `<owner>/*` row (the caller's `github.repository_owner`), else the `*` row, else MEDIUM. `hack/runner-sizes.sh check` refuses an `<owner>/*` row in a job whose `runs-on` does not look one up.
+- **A sixth size, `MEDIUM_SPOT`: the MEDIUM shape on Fargate Spot**, label from `CI_RUNNER_LABEL_MEDIUM_SPOT`. It is a trial. A Spot task can be stopped with two minutes' warning, so it is only for work a rerun absorbs, and never for the stable tier. An organisation without the variable keeps the caller's runner.
+- **trust-form's renovate fleet runs on `MEDIUM_SPOT`** (`trust-form/*` row; peak 3.9 GiB). Every other fleet job is unchanged.
+
 ## v5.7.0
 
 - **One table decides each job's runner size: `runner-sizes.yaml`.** On the preview tier (the caller's `runner` is one of its organisation's `CI_RUNNER_LABEL_<SIZE>` labels) `check` (recipes and `pins`), `integration` (lanes), `renovate-fleet` and `parity-fleet` resolve each job's size from the table: the row for the repository and the recipe, lane or job, else the `*` row, else MEDIUM. The label is the organisation variable `CI_RUNNER_LABEL_<SIZE>` for one of XSMALL, SMALL, MEDIUM, LARGE and XLARGE. Callers pass no sizes; a job moves by a row and a release. Job names and required checks do not change.

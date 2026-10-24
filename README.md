@@ -141,8 +141,10 @@ On the preview tier a caller passes one label, `runner:
 ${{ vars.CI_RUNNER_LABEL_LARGE }}`, and nothing about sizes. Which size
 each job gets is one table here, [`runner-sizes.yaml`](runner-sizes.yaml):
 workflow, job, repository (or `*`), recipe or lane, size. The five sizes
-are XSMALL, SMALL, MEDIUM, LARGE and XLARGE, and a job the table does not
-name gets MEDIUM. The label for a size is the caller's organisation
+are XSMALL, SMALL, MEDIUM, LARGE and XLARGE, plus MEDIUM_SPOT, the MEDIUM
+shape on Fargate Spot (a trial, for fleet work a rerun absorbs). A job the
+table does not name gets MEDIUM. The fleets also read an `<owner>/*` row
+between the target repository's row and `*`. The label for a size is the caller's organisation
 variable `CI_RUNNER_LABEL_<SIZE>`, so shapes and labels stay wiring in the
 estate's configuration and only the mapping lives here. The `pins` job is
 XSMALL everywhere.
