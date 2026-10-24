@@ -104,6 +104,18 @@ leak-canary:
 pkl-fleet-cases:
     @./hack/pkl-fleet-cases.sh
 
+# Render runner-sizes.yaml into the workflows' runs-on
+runner-sizes:
+    @./hack/runner-sizes.sh render
+
+# The runner-size table: valid sizes, real jobs, current copies
+runner-sizes-check:
+    @./hack/runner-sizes.sh check
+
+# Each table row's recipe or lane, looked up in its caller (gh session; not CI)
+runner-sizes-audit:
+    @./hack/runner-sizes.sh audit
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary pkl-fleet-cases
+check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check
     @echo "✓ All checks passed"

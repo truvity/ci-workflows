@@ -97,12 +97,20 @@ on:
           Runner label. Hosted repos leave the default; ARC callers pass
           their scale-set name (vars.CI_RUNNER_LABEL_LARGE).
 
-          This is the runner every recipe gets unless it is named in
-          `small-recipes` below. It is deliberately the BIG one: an
-          unlisted recipe, or one whose name is misspelled in that list,
-          lands here and merely costs more, rather than landing on a
-          runner too small for it and being OOM-killed — a failure that
-          uploads no log and reads as a hang.
+          When this is one of the organisation's CI_RUNNER_LABEL_<SIZE>
+          labels (the preview tier), it only says "size me": every recipe
+          and the pins job get the size runner-sizes.yaml names for them
+          (MEDIUM when it names none), as the label in
+          CI_RUNNER_LABEL_<SIZE>. No caller passes sizes; a row in that
+          table, and a release of this library, moves a job.
+
+          Any other label (hosted, the stable tier) is used as it is, and
+          so is this label for a size whose variable the organisation does
+          not have. There the old rule still holds: this is the runner
+          every recipe gets unless it is named in `small-recipes` or
+          `medium-recipes`, and it should be the BIG one, since a recipe
+          too small for its runner is OOM-killed, uploads no log and reads
+          as a hang.
         required: false
         type: string
         default: ubuntu-latest
@@ -118,6 +126,10 @@ on:
           files holds an entire 32Gi node for 34 seconds. The
           peak-memory line each job prints is the evidence for moving
           one here.
+
+          Deprecated: on the preview tier runner-sizes.yaml decides, and
+          this is read only off it (or where the organisation has no
+          variable for the size the table names). Leave it out.
         required: false
         type: string
         default: '[]'
@@ -126,6 +138,10 @@ on:
           Scale-set label for `small-recipes` (vars.CI_RUNNER_LABEL_SMALL).
           Defaults to `runner`, so listing recipes without setting this
           changes nothing.
+
+          Deprecated: on the preview tier runner-sizes.yaml decides, and
+          this is read only off it (or where the organisation has no
+          variable for the size the table names). Leave it out.
         required: false
         type: string
         default: ""
@@ -137,6 +153,10 @@ on:
           rule as small-recipes: measured peaks only, promotion
           evidence is the peak line each job prints. A recipe listed
           in BOTH small and medium goes small (small wins ties).
+
+          Deprecated: on the preview tier runner-sizes.yaml decides, and
+          this is read only off it (or where the organisation has no
+          variable for the size the table names). Leave it out.
         required: false
         type: string
         default: '[]'
@@ -145,6 +165,10 @@ on:
           Scale-set label for `medium-recipes`
           (vars.CI_RUNNER_LABEL_MEDIUM). Defaults to `runner`, so
           listing recipes without setting this changes nothing.
+
+          Deprecated: on the preview tier runner-sizes.yaml decides, and
+          this is read only off it (or where the organisation has no
+          variable for the size the table names). Leave it out.
         required: false
         type: string
         default: ""
@@ -474,7 +498,9 @@ jobs:
   # library is a repository nobody can say the CI version of. The action
   # needs no token (the tag list comes from `git ls-remote` on a public
   # repository) and no toolchain, so it runs on the smallest runner the
-  # caller has and finishes in seconds.
+  # caller has and finishes in seconds: XSMALL in runner-sizes.yaml, and
+  # small-runner (or runner) where the organisation has no XSMALL label
+  # or the caller is not on the preview tier.
   #
   # `uses:` checks the action out for us, which is why there is no second
   # `actions/checkout` here and no reference to `github.job_workflow_sha`
@@ -484,8 +510,17 @@ jobs:
     needs: runners
     # A plain `needs` would skip this whenever the guard is skipped.
     if: ${{ !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped') }}
+    # runner-sizes.yaml; the literal is rendered by hack/runner-sizes.sh.
     runs-on: >-
-      ${{ inputs.small-runner != '' && inputs.small-runner || inputs.runner }}
+      ${{ (inputs.runner != ''
+           && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
+               || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
+               || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
+           && vars[format('CI_RUNNER_LABEL_{0}',
+                fromJSON('{"#":"check/pins","*:pins":"XSMALL"}')[format('{0}:pins', github.repository)]
+                || fromJSON('{"#":"check/pins","*:pins":"XSMALL"}')['*:pins']
+                || 'MEDIUM')])
+          || (inputs.small-runner != '' && inputs.small-runner || inputs.runner) }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -527,8 +562,25 @@ jobs:
     # Resolved per matrix entry, so `name:` stays the recipe and the
     # status contexts do not move. Renaming a job renames the required
     # check and wedges every open PR — twice already.
+    #
+    # On the preview tier (`runner` is one of the organisation's
+    # CI_RUNNER_LABEL_<SIZE> labels) the size comes from runner-sizes.yaml:
+    # the row for this repository and recipe, else the "*" row for the
+    # recipe, else MEDIUM; the label is CI_RUNNER_LABEL_<that size>. Anything
+    # else (a hosted label, the stable tier, an organisation without that
+    # size's variable) keeps the old resolution below: small-recipes,
+    # medium-recipes, then `runner`. The literal is rendered by
+    # hack/runner-sizes.sh; edit the table, not the literal.
     runs-on: >-
-      ${{ (contains(fromJSON(inputs.small-recipes), matrix.recipe)
+      ${{ (inputs.runner != ''
+           && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
+               || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
+               || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
+           && vars[format('CI_RUNNER_LABEL_{0}',
+                fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"LARGE","truvity/gitops:lint":"LARGE","truvity/gitops:ci-verify-guard":"LARGE","truvity/gitops:ci-verify-pins":"LARGE","truvity/dms:test":"LARGE","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"LARGE","truvity/eudi:test":"LARGE","truvity/eudi:lint":"LARGE","truvity/docs:build":"LARGE","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"LARGE","truvity/keycloak:library":"LARGE","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"LARGE","trust-form/cra-ext-front:lint":"LARGE","trust-form/internal-dashboard-backend:build":"LARGE","trust-form/internal-dashboard-backend:test":"LARGE","trust-form/internal-dashboard-backend:lint":"LARGE","trust-form/internal-dashboard-frontend:build":"LARGE","trust-form/internal-dashboard-frontend:typecheck":"LARGE","trust-form/internal-dashboard-frontend:lint":"LARGE","trust-form/openapi-contracts:lint":"LARGE","trust-form/public-api:lint":"LARGE","trust-form/schemas-library:build":"LARGE","trust-form/schemas-library:lint":"LARGE","trust-form/schemas-library:test":"LARGE","trust-form/tf-bughunter:build":"LARGE","trust-form/tf-config:lint":"LARGE","trust-form/wallet-mobile:lint":"LARGE","trust-form/wallet-mobile:test":"LARGE"}')[format('{0}:{1}', github.repository, matrix.recipe)]
+                || fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"LARGE","truvity/gitops:lint":"LARGE","truvity/gitops:ci-verify-guard":"LARGE","truvity/gitops:ci-verify-pins":"LARGE","truvity/dms:test":"LARGE","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"LARGE","truvity/eudi:test":"LARGE","truvity/eudi:lint":"LARGE","truvity/docs:build":"LARGE","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"LARGE","truvity/keycloak:library":"LARGE","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"LARGE","trust-form/cra-ext-front:lint":"LARGE","trust-form/internal-dashboard-backend:build":"LARGE","trust-form/internal-dashboard-backend:test":"LARGE","trust-form/internal-dashboard-backend:lint":"LARGE","trust-form/internal-dashboard-frontend:build":"LARGE","trust-form/internal-dashboard-frontend:typecheck":"LARGE","trust-form/internal-dashboard-frontend:lint":"LARGE","trust-form/openapi-contracts:lint":"LARGE","trust-form/public-api:lint":"LARGE","trust-form/schemas-library:build":"LARGE","trust-form/schemas-library:lint":"LARGE","trust-form/schemas-library:test":"LARGE","trust-form/tf-bughunter:build":"LARGE","trust-form/tf-config:lint":"LARGE","trust-form/wallet-mobile:lint":"LARGE","trust-form/wallet-mobile:test":"LARGE"}')[format('*:{0}', matrix.recipe)]
+                || 'MEDIUM')])
+          || (contains(fromJSON(inputs.small-recipes), matrix.recipe)
            && inputs.small-runner != '')
           && inputs.small-runner
           || ((contains(fromJSON(inputs.medium-recipes), matrix.recipe)
