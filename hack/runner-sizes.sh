@@ -13,15 +13,17 @@
 #   fromJSON('{"#":"check/recipe","truvity/gitops:ci-verify":"LARGE",...}')
 #
 # The "#" key names the section (<workflow>/<job>) and is what `render`
-# finds the literal by. A key is "<repository>:<name>"; "*:<name>" is the
-# row for every repository. No repository is ever named "#" or "*", so
+# finds the literal by. A key is "<repository>:<name>"; "<owner>/*:<name>"
+# is the row for every repository of one owner (only where the job's
+# runs-on looks it up: the fleets), and "*:<name>" the row for every
+# repository. No repository is ever named "#" or "*", so
 # neither key can answer a lookup by accident.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 TABLE=runner-sizes.yaml
-SIZES='XSMALL SMALL MEDIUM LARGE XLARGE'
+SIZES='XSMALL SMALL MEDIUM LARGE XLARGE MEDIUM_SPOT'
 ORGS='truvity trust-form finttech'
 
 die() { echo "runner-sizes: $*" >&2; exit 1; }
@@ -60,8 +62,11 @@ validate() {
     case " $SIZES " in *" $size "*) ;; *) echo "BAD SIZE     $where: '$size' (one of: $SIZES)"; fail=1 ;; esac
     if [ "$repo" != '*' ]; then
       local org=${repo%%/*}
-      if ! [[ "$repo" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || [[ " $ORGS " != *" $org "* ]]; then
-        echo "BAD REPO     $where: '$repo' is not <owner>/<name> in one of: $ORGS"; fail=1
+      if ! [[ "$repo" =~ ^[A-Za-z0-9-]+/([A-Za-z0-9._-]+|\*)$ ]] || [[ " $ORGS " != *" $org "* ]]; then
+        echo "BAD REPO     $where: '$repo' is not <owner>/<name> or <owner>/* in one of: $ORGS"; fail=1
+      elif [[ "$repo" == */\* ]] \
+           && ! yq ".jobs.\"$job\".runs-on // \"\"" ".github/workflows/$wf.yaml" | grep -qF 'github.repository_owner'; then
+        echo "NO OWNER ROW $where: jobs.$job.runs-on has no <owner>/* lookup (github.repository_owner)"; fail=1
       fi
     fi
     if ! [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -156,7 +161,7 @@ case "${1:-check}" in
       fi
     done < <(jq -r '
       to_entries[] | .key as $wf | .value[] | to_entries[]
-      | select(.key != "*") | .key as $repo | .value | keys[]
+      | select(.key != "*" and (.key | endswith("/*") | not)) | .key as $repo | .value | keys[]
       | [$wf, $repo, .] | @tsv' <<<"$json")
     [ "$checked" -gt 0 ] || die "nothing to audit: the table names no repository"
     [ "$fail" = 0 ] || die "a row names a recipe or lane its caller does not run"

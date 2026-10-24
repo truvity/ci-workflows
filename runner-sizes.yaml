@@ -2,16 +2,21 @@
 #
 #   <workflow>:            .github/workflows/<workflow>.yaml
 #     <job>:               a job id in that workflow whose runs-on reads the table
-#       <repository>|"*":  owner/name, or "*" for every repository
+#       <repository>|"*":  owner/name, or "*" for every repository; the fleets
+#                          also take owner/* for every repository of one owner
 #         <name>: <SIZE>   the recipe (check), the lane (integration), or the
 #                          job id itself for a job with one name (pins, renovate, align)
 #
-# A size is a NAME, never a label: XSMALL, SMALL, MEDIUM, LARGE or XLARGE.
+# A size is a NAME, never a label: XSMALL, SMALL, MEDIUM, LARGE or XLARGE,
+# or MEDIUM_SPOT, the MEDIUM shape on Fargate Spot (a trial: a job there
+# can be stopped with two minutes' warning, so only work a rerun absorbs,
+# and never the stable tier).
 # The label comes from the caller's organisation variable
 # CI_RUNNER_LABEL_<SIZE>, so the shapes and labels stay wiring (gitops) and
 # this file stays mechanism. Resolution, per job:
 #
-#   1. the row for (repository, name), else the "*" row for name, else MEDIUM;
+#   1. the row for (repository, name), else (fleets only) the owner/* row,
+#      else the "*" row for name, else MEDIUM;
 #   2. vars.CI_RUNNER_LABEL_<SIZE>; when the organisation has no such
 #      variable (XSMALL and XLARGE arrive later than the other three), the
 #      caller's own `runner` input, exactly as before the table existed.
@@ -110,6 +115,11 @@ renovate-fleet:
   renovate:
     "*":
       renovate: MEDIUM          # 5.3 GiB at most (truvity/dms), was LARGE
+    # The Fargate Spot trial (2026-10-25): trust-form's fleet, 3.9 GiB at
+    # most. An organisation without CI_RUNNER_LABEL_MEDIUM_SPOT keeps the
+    # caller's runner.
+    trust-form/*:
+      renovate: MEDIUM_SPOT
 
 parity-fleet:
   align:

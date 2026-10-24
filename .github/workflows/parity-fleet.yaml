@@ -379,8 +379,9 @@ jobs:
   align:
     needs: discover
     if: needs.discover.outputs.count != '0'
-    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule); the
-    # literal is rendered by hack/runner-sizes.sh.
+    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule), with
+    # one more step for the fleets: the target's row, then its owner's
+    # "<owner>/*" row, then "*". The literal is rendered by hack/runner-sizes.sh.
     runs-on: >-
       ${{ (inputs.runner != ''
            && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
@@ -388,6 +389,7 @@ jobs:
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
                 fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')[format('{0}:align', matrix.repository)]
+                || fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')[format('{0}/*:align', github.repository_owner)]
                 || fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')['*:align']
                 || 'MEDIUM')])
           || inputs.runner }}
