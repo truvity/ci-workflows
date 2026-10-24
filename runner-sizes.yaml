@@ -55,6 +55,9 @@ check:
       lint: LARGE               # 7.1 GiB
       ci-verify-guard: LARGE
       ci-verify-pins: LARGE
+      # 5.8 GiB measured, but 12.5-13 GiB recorded while go1.27.1 had
+      # reachable advisories (gitops security.yaml): 95% of MEDIUM is too tight.
+      vuln: LARGE
     truvity/dms:
       test: LARGE               # 5.7 GiB
       test-sdk-java: MEDIUM     # 1.7 GiB, was LARGE
