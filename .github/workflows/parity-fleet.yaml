@@ -57,6 +57,10 @@ on:
         description: >-
           Where each repository's alignment runs. The private estate wants
           the pool: the repository's pre-push hook compiles the module.
+
+          On the preview tier (one of the organisation's
+          CI_RUNNER_LABEL_<SIZE> labels) each job's size comes from
+          runner-sizes.yaml instead, as in check.yaml's `runner`.
         required: false
         type: string
         default: ubuntu-latest
@@ -375,7 +379,18 @@ jobs:
   align:
     needs: discover
     if: needs.discover.outputs.count != '0'
-    runs-on: ${{ inputs.runner }}
+    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule); the
+    # literal is rendered by hack/runner-sizes.sh.
+    runs-on: >-
+      ${{ (inputs.runner != ''
+           && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
+               || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
+               || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
+           && vars[format('CI_RUNNER_LABEL_{0}',
+                fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')[format('{0}:align', matrix.repository)]
+                || fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')['*:align']
+                || 'MEDIUM')])
+          || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read

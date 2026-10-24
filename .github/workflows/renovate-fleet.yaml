@@ -67,7 +67,7 @@ on:
         required: true
         type: string
       runner:
-        description: Where each repository's job runs. GitHub-hosted for the public estate; the pool label for the private one.
+        description: Where each repository's job runs. GitHub-hosted for the public estate; the pool label for the private one, where runner-sizes.yaml then picks each job's size (one of the organisation's CI_RUNNER_LABEL_<SIZE> labels, as in check.yaml's runner).
         required: false
         type: string
         default: ubuntu-latest
@@ -312,7 +312,18 @@ jobs:
   renovate:
     needs: discover
     if: needs.discover.outputs.count != '0'
-    runs-on: ${{ inputs.runner }}
+    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule); the
+    # literal is rendered by hack/runner-sizes.sh.
+    runs-on: >-
+      ${{ (inputs.runner != ''
+           && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
+               || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
+               || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
+           && vars[format('CI_RUNNER_LABEL_{0}',
+                fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM"}')[format('{0}:renovate', matrix.repository)]
+                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM"}')['*:renovate']
+                || 'MEDIUM')])
+          || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read

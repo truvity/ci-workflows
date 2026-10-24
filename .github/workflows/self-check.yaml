@@ -65,6 +65,16 @@ jobs:
       - name: pkl-fleet cases
         run: ./hack/pkl-fleet-cases.sh
 
+      # runner-sizes.yaml, the one table of which job gets which runner
+      # size: every size is one of the five names, every <workflow>/<job>
+      # is a real job whose runs-on resolves from it, every repository is
+      # <owner>/<name> in an estate organisation, and every copy rendered
+      # into a runs-on matches the table. (The recipe and lane names live in
+      # the callers, private repositories this job cannot read; `just
+      # runner-sizes-audit` looks those up with a maintainer's session.)
+      - name: runner sizes
+        run: ./hack/runner-sizes.sh check
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a

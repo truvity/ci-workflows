@@ -135,6 +135,37 @@ v6.7.0, and GitHub-hosted runners ship it. Checkouts that read only metadata
 checkouts of an enrolment list, and checkouts of a different repository
 (the fleet workflows) set `lfs: false` and have no input.
 
+### Runner sizes
+
+On the preview tier a caller passes one label, `runner:
+${{ vars.CI_RUNNER_LABEL_LARGE }}`, and nothing about sizes. Which size
+each job gets is one table here, [`runner-sizes.yaml`](runner-sizes.yaml):
+workflow, job, repository (or `*`), recipe or lane, size. The five sizes
+are XSMALL, SMALL, MEDIUM, LARGE and XLARGE, and a job the table does not
+name gets MEDIUM. The label for a size is the caller's organisation
+variable `CI_RUNNER_LABEL_<SIZE>`, so shapes and labels stay wiring in the
+estate's configuration and only the mapping lives here. The `pins` job is
+XSMALL everywhere.
+
+The table applies only when `runner` is one of the organisation's
+`CI_RUNNER_LABEL_<SIZE>` labels. A hosted label (every public
+repository), the stable tier's `CI_RUNNER_LABEL_STABLE` and any other
+label are used as given, so neither the public fence nor the stable
+fence depends on the table. Where the organisation has no variable for
+the size a row names, the job keeps its old runner: `small-recipes`,
+`medium-recipes` (both deprecated), then `runner`. Job names, and so
+required checks, do not change.
+
+A row is memory first: a job goes up a size only when its measured peak
+working set x 1.3 does not fit the smaller one (S 4, M 8, L 12, XL 16
+GiB). Moving a job is a pull request to the table and a release. The
+workflows carry rendered copies of their rows in `runs-on`, because an
+expression cannot read a file: edit the table, run `just runner-sizes`,
+and CI (`hack/runner-sizes.sh check`) refuses a bad size, a job that does
+not exist, or a copy that differs. `just runner-sizes-audit` looks each
+named recipe and lane up in its caller; it needs a session that can read
+the private callers, so it is not part of CI.
+
 ## Consumers
 
 As of 2026-09-29, by a code search of each organisation's workflow
@@ -279,6 +310,9 @@ The recipes are:
 - `just pins` — verify all pins point to release tags.
 - `just runners` — verify the repository uses public runners.
 - `just leak-canary` — scan for secrets and sensitive data.
+- `just runner-sizes-check` — the runner-size table and its rendered copies;
+  `just runner-sizes` renders them, `just runner-sizes-audit` checks names
+  against the callers.
 - `just check` — run all recipes (the merge gate).
 
 `check` green is the whole merge gate: no approving review is required,
