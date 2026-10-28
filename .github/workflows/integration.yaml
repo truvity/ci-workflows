@@ -334,7 +334,7 @@ jobs:
     outputs:
       tier: ${{ steps.resolve.outputs.tier }}
     steps:
-      - uses: truvity/ci-actions/public-runners@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/public-runners@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -426,7 +426,7 @@ jobs:
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/setup-devbox@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -452,7 +452,7 @@ jobs:
       # Install, which DOES need the whole box.
       - name: "cluster (mode: kind, background)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+        uses: truvity/ci-actions/cluster@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           mode: kind
           background: "true"
@@ -470,7 +470,7 @@ jobs:
       - name: Cache the yarn fetch cache
         id: yarn-cache
         if: inputs.node-cache && hashFiles('yarn.lock') != ''
-        uses: truvity/ci-actions/s3-cache/restore@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+        uses: truvity/ci-actions/s3-cache/restore@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           path: .yarn/cache
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
@@ -586,7 +586,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/setup-buildkit-tls@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         if: env.LANE_IMAGES == 'true' && needs.tier.outputs.tier != 'kind'
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -815,7 +815,7 @@ jobs:
       # installs land on real Services), not just the registry.
       - name: "cluster (mode: wait)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+        uses: truvity/ci-actions/cluster@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           mode: wait
 
@@ -871,7 +871,7 @@ jobs:
 
       - name: Save the yarn fetch cache
         if: success() && inputs.node-cache && hashFiles('yarn.lock') != '' && steps.yarn-cache.outputs.cache-hit != 'true'
-        uses: truvity/ci-actions/s3-cache/save@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+        uses: truvity/ci-actions/s3-cache/save@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
