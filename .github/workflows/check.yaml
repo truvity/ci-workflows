@@ -500,7 +500,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/public-runners@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -563,7 +563,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/policy-conformance@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -642,10 +642,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/stable-mtimes@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/setup-devbox@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -752,7 +752,7 @@ jobs:
       # when the caller passes go-cache-bucket (traffic stays inside the
       # region, none of it through the NAT) and GitHub's cache everywhere
       # else.
-      - uses: truvity/ci-actions/s3-cache/restore@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/s3-cache/restore@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
@@ -771,7 +771,7 @@ jobs:
       # empty), so a change of a dependency starts a new cache and the newest
       # earlier one of the same recipe warms it. Nothing runs without
       # `cache-paths`.
-      - uses: truvity/ci-actions/s3-cache/restore@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/s3-cache/restore@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         id: caller-cache
         if: inputs.cache-paths != ''
         with:
@@ -852,7 +852,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/setup-buildkit-tls@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -991,7 +991,7 @@ jobs:
             esac
           done
 
-      - uses: truvity/ci-actions/recipe@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/recipe@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -1078,7 +1078,7 @@ jobs:
       # someone is iterating and most wants it warm. cache-hit is true only
       # on an exact key, so the save runs when the devbox.lock + go.sum key
       # is missing and not otherwise (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/s3-cache/save@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
@@ -1090,7 +1090,7 @@ jobs:
 
       # Saved also when the recipe failed, and only when the exact key was
       # missing (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@4ac94844ffaf6f09829478979e61f421fe28d38a # v3.6.4
+      - uses: truvity/ci-actions/s3-cache/save@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
         if: always() && inputs.cache-paths != '' && steps.caller-cache.outputs.cache-hit != 'true'
         with:
           path: ${{ inputs.cache-paths }}
