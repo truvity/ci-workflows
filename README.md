@@ -159,7 +159,7 @@ the size a row names, the job keeps its old runner: `small-recipes`,
 required checks, do not change.
 
 A row is memory first: a job goes up a size only when its measured peak
-working set x 1.3 does not fit the smaller one (S 4, M 8, L 12, XL 16
+working set x 1.3 does not fit the smaller one (S 8, M 8, L 12, XL 20
 GiB). Moving a job is a pull request to the table and a release. The
 workflows carry rendered copies of their rows in `runs-on`, because an
 expression cannot read a file: edit the table, run `just runner-sizes`,

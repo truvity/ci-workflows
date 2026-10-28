@@ -388,9 +388,9 @@ jobs:
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')[format('{0}:align', matrix.repository)]
-                || fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')[format('{0}/*:align', github.repository_owner)]
-                || fromJSON('{"#":"parity-fleet/align","*:align":"SMALL"}')['*:align']
+                fromJSON('{"#":"parity-fleet/align","*:align":"MEDIUM"}')[format('{0}:align', matrix.repository)]
+                || fromJSON('{"#":"parity-fleet/align","*:align":"MEDIUM"}')[format('{0}/*:align', github.repository_owner)]
+                || fromJSON('{"#":"parity-fleet/align","*:align":"MEDIUM"}')['*:align']
                 || 'MEDIUM')])
           || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
