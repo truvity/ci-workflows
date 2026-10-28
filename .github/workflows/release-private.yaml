@@ -131,6 +131,18 @@ on:
         required: false
         type: string
         default: ""
+      builder-wake-timeout:
+        description: >-
+          ARC only, with `remote-builders`. Seconds a builder that does not
+          answer is retried (every 10 s) before the job fails, naming it.
+          Builders may be stopped while idle and started on demand by a TCP
+          wake proxy that holds the connection while they boot (35-60 s);
+          buildx gives up after about 40 s, so the first job after an idle
+          period needs the retry. A builder that is up answers the first
+          try, with no wait. 0 is a single attempt.
+        required: false
+        type: number
+        default: 240
       buildx-cache:
         description: >-
           Registry reference of the BuildKit warm cache, e.g. the
@@ -459,22 +471,50 @@ jobs:
           platforms: ${{ steps.builders.outputs.platforms }}
           driver-opts: ${{ steps.builders.outputs.driver-opts }}
           append: ${{ steps.builders.outputs.append }}
+          # No bootstrap here: a stopped builder is started on demand by a wake
+          # proxy and buildx gives up after ~40 s, so the next step boots the
+          # builders itself, retrying until builder-wake-timeout.
+          boot: false
 
       # Later steps (and the recipes' own `docker build`) reach the builder
-      # through BUILDX_BUILDER. Fail here, with the reason, when a node does
-      # not offer the platform it was declared for.
-      - name: Check the builders offer their platforms
+      # through BUILDX_BUILDER. Boot the builders, waiting for one that is
+      # still waking (retry every 10 s until builder-wake-timeout, each
+      # attempt and the total wait logged; a builder that is up answers the
+      # first try with no sleep). Fail here, with the reason, when a node
+      # does not answer in time or does not offer the platform it was
+      # declared for.
+      - name: Boot the builders and check they offer their platforms
         if: inputs.remote-builders != ''
         env:
           WANT: ${{ steps.builders.outputs.want }}
-          GOT: ${{ steps.buildx.outputs.platforms }}
+          WAKE_TIMEOUT: ${{ inputs.builder-wake-timeout }}
         run: |
           set -euo pipefail
           echo "BUILDX_BUILDER=ci" >> "$GITHUB_ENV"
+          interval=10
+          start=$SECONDS
+          attempt=1
+          while :; do
+            if GOT="$(docker buildx inspect --bootstrap ci 2>&1)"; then
+              break
+            fi
+            waited=$((SECONDS - start))
+            if [ $((waited + interval)) -ge "$WAKE_TIMEOUT" ] || [ "$WAKE_TIMEOUT" -le 0 ]; then
+              printf '%s\n' "$GOT"
+              echo "::error::builder ci did not answer within ${WAKE_TIMEOUT}s ($attempt attempt(s)); a stopped builder may still be booting"
+              exit 1
+            fi
+            echo "builder ci not ready (attempt $attempt, waited ${waited}s of ${WAKE_TIMEOUT}s); retrying in ${interval}s"
+            printf '%s\n' "$GOT" | tail -n 3
+            sleep "$interval"
+            attempt=$((attempt + 1))
+          done
+          printf '%s\n' "$GOT"
+          [ "$attempt" -eq 1 ] || echo "builder ci answered on attempt $attempt after $((SECONDS - start))s"
           for p in ${WANT//,/ }; do
-            case ",$GOT," in
-              *",$p,"*) ;;
-              *) echo "::error::builder ci does not offer $p (offers: $GOT)"; exit 1 ;;
+            case "$GOT" in
+              *"$p"*) ;;
+              *) echo "::error::builder ci does not offer $p"; exit 1 ;;
             esac
           done
 
