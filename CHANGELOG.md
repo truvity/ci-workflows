@@ -12,6 +12,8 @@ those tags have no GitHub release; v3.14.0 on do.
 - **renovate-fleet runs on SMALL** (4.65 GiB at most on 1 vCPU), was MEDIUM. The `trust-form/*` `MEDIUM_SPOT` row is gone: no row uses `MEDIUM_SPOT` any more, though the name stays valid until gitops drops the shape.
 - **parity-fleet `align` runs on MEDIUM**, was SMALL: one vCPU throttled it 35% of the time.
 
+- **`release-private` waits for a waking builder.** Builders may be stopped while idle and started on demand by a TCP wake proxy that holds the first connection while they boot (35-60 s), longer than buildx waits (about 40 s; `--timeout` does not change it). The buildx step no longer bootstraps; the step after it runs `docker buildx inspect --bootstrap ci` every 10 s until the new input `builder-wake-timeout` (seconds, default 240; 0 is a single attempt) runs out, logs each attempt and the total wait, and fails naming the builder. A builder that is up answers the first try, with no sleep. The platform check now reads the same inspect output.
+
 ## v5.8.1
 
 - **truvity/gitops `vuln` runs on LARGE again** (a `runner-sizes.yaml` row over the `*` MEDIUM row). Its measured peak is 5.8 GiB, 95% of MEDIUM with the 30% headroom, and the caller records 12.5-13 GiB while the Go toolchain had reachable advisories. Every other `vuln` stays MEDIUM.
