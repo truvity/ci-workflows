@@ -321,9 +321,9 @@ jobs:
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM","trust-form/*:renovate":"MEDIUM_SPOT"}')[format('{0}:renovate', matrix.repository)]
-                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM","trust-form/*:renovate":"MEDIUM_SPOT"}')[format('{0}/*:renovate', github.repository_owner)]
-                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"MEDIUM","trust-form/*:renovate":"MEDIUM_SPOT"}')['*:renovate']
+                fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"SMALL"}')[format('{0}:renovate', matrix.repository)]
+                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"SMALL"}')[format('{0}/*:renovate', github.repository_owner)]
+                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"SMALL"}')['*:renovate']
                 || 'MEDIUM')])
           || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}

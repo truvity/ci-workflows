@@ -5,6 +5,13 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **Jobs right-sized to the five devel shapes** (owner D109; measured peaks over five days of `grun.job.peak`). The table's sizes are now S 1 vCPU / 8 GiB (was 1/4) and XL 8 / 20 (was 8/16) on the preview tier; deploy truvity/gitops's `feat(grun): five devel runner shapes` first, or a SMALL job runs on the old 1/4 GiB.
+- **LARGE to MEDIUM:** eudi `build`/`test`/`lint`, dms `test` (5.9 GiB at most, the tightest row: watch it), docs `build`, keycloak `charts`/`library`, and trust-form's cra-ext-front, internal-dashboard-backend/-frontend, openapi-contracts, public-api, schemas-library, tf-bughunter, tf-config and wallet-mobile rows. gitops, the dms and eudi suites stay LARGE; wallet `ci` stays XLARGE (12.9 GiB at most, now 8/20).
+- **renovate-fleet runs on SMALL** (4.65 GiB at most on 1 vCPU), was MEDIUM. The `trust-form/*` `MEDIUM_SPOT` row is gone: no row uses `MEDIUM_SPOT` any more, though the name stays valid until gitops drops the shape.
+- **parity-fleet `align` runs on MEDIUM**, was SMALL: one vCPU throttled it 35% of the time.
+
 ## v5.8.1
 
 - **truvity/gitops `vuln` runs on LARGE again** (a `runner-sizes.yaml` row over the `*` MEDIUM row). Its measured peak is 5.8 GiB, 95% of MEDIUM with the 30% headroom, and the caller records 12.5-13 GiB while the Go toolchain had reachable advisories. Every other `vuln` stays MEDIUM.

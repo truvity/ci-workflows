@@ -7,10 +7,12 @@
 #         <name>: <SIZE>   the recipe (check), the lane (integration), or the
 #                          job id itself for a job with one name (pins, renovate, align)
 #
-# A size is a NAME, never a label: XSMALL, SMALL, MEDIUM, LARGE or XLARGE,
-# or MEDIUM_SPOT, the MEDIUM shape on Fargate Spot (a trial: a job there
-# can be stopped with two minutes' warning, so only work a rerun absorbs,
-# and never the stable tier).
+# A size is a NAME, never a label: XSMALL, SMALL, MEDIUM, LARGE or XLARGE.
+# MEDIUM_SPOT, the MEDIUM shape on Fargate Spot (a trial: a job there can
+# be stopped with two minutes' warning, so only work a rerun absorbs, and
+# never the stable tier), is still a valid name but no row uses it (the
+# trial ended 2026-10-28, D109: its one user, trust-form's renovate fleet,
+# is on SMALL).
 # The label comes from the caller's organisation variable
 # CI_RUNNER_LABEL_<SIZE>, so the shapes and labels stay wiring (gitops) and
 # this file stays mechanism. Resolution, per job:
@@ -29,9 +31,10 @@
 #
 # The rule for a row (2026-10-24, the owner's sizing decisions): sizes
 # are memory first. A job moves to a bigger size only when its measured
-# peak working set x 1.3 does not fit the smaller one (S 4, M 8, L 12,
-# XL 16 GiB); never for speed. Jobs on LARGE before the table stay there
-# until their measurements say otherwise. The evidence is the
+# peak working set x 1.3 does not fit the smaller one (S 8, M 8, L 12,
+# XL 20 GiB; S is 1 vCPU, M 2, L 4, XL 8); never for speed. Jobs on LARGE before the table stay there
+# until their measurements say otherwise (D109, 2026-10-28, moved the ones
+# whose peaks fit MEDIUM). The evidence is the
 # `grun.job.peak` record every Fargate job writes (and the peak line it
 # prints); `hack/runner-sizes.sh` checks this file, and `just
 # runner-sizes-audit` checks each name against its caller.
@@ -59,50 +62,51 @@ check:
       # reachable advisories (gitops security.yaml): 95% of MEDIUM is too tight.
       vuln: LARGE
     truvity/dms:
-      test: LARGE               # 5.7 GiB
+      test: MEDIUM              # 5.7 GiB peak (5.9 max): x 1.3 = 7.6 of 8, watch it; was LARGE
       test-sdk-java: MEDIUM     # 1.7 GiB, was LARGE
       # build (5.1) and lint (4.9) are MEDIUM, the default.
     truvity/eudi:
-      build: LARGE
-      test: LARGE
-      lint: LARGE
+      build: MEDIUM             # 5.1 GiB at most, was LARGE
+      test: MEDIUM
+      lint: MEDIUM
     truvity/docs:
-      build: LARGE              # 4.9 GiB
+      build: MEDIUM             # 5.1 GiB at most, was LARGE
       lint: MEDIUM              # 2.8 GiB, was LARGE
       test: MEDIUM              # 2.8 GiB, was LARGE
     truvity/keycloak:
-      charts: LARGE
-      library: LARGE
+      charts: MEDIUM            # 2.3 GiB at most, was LARGE
+      library: MEDIUM
     trust-form/wallet:
-      ci: XLARGE                # 10.9 GiB: x 1.3 is over LARGE's 12
+      ci: XLARGE                # 12.9 GiB at most (p95 11.5): x 1.3 is over LARGE's 12 and XL's old 16; XL is 8/20 since D109
     trust-form/trustform-front:
       build: XLARGE             # 9.1 GiB, was MEDIUM
+    # The small trust-form repositories below were LARGE: peaks 0.8-2.4 GiB, no throttling.
     trust-form/cra-ext-front:
-      build: LARGE
-      lint: LARGE
+      build: MEDIUM
+      lint: MEDIUM
     trust-form/internal-dashboard-backend:
-      build: LARGE
-      test: LARGE
-      lint: LARGE
+      build: MEDIUM
+      test: MEDIUM
+      lint: MEDIUM
     trust-form/internal-dashboard-frontend:
-      build: LARGE
-      typecheck: LARGE
-      lint: LARGE
+      build: MEDIUM
+      typecheck: MEDIUM
+      lint: MEDIUM
     trust-form/openapi-contracts:
-      lint: LARGE
+      lint: MEDIUM
     trust-form/public-api:
-      lint: LARGE
+      lint: MEDIUM
     trust-form/schemas-library:
-      build: LARGE
-      lint: LARGE
-      test: LARGE
+      build: MEDIUM
+      lint: MEDIUM
+      test: MEDIUM
     trust-form/tf-bughunter:
-      build: LARGE
+      build: MEDIUM
     trust-form/tf-config:
-      lint: LARGE
+      lint: MEDIUM
     trust-form/wallet-mobile:
-      lint: LARGE
-      test: LARGE
+      lint: MEDIUM
+      test: MEDIUM
 
 integration:
   suite:
@@ -117,14 +121,12 @@ integration:
 renovate-fleet:
   renovate:
     "*":
-      renovate: MEDIUM          # 5.3 GiB at most (truvity/dms), was LARGE
-    # The Fargate Spot trial (2026-10-25): trust-form's fleet, 3.9 GiB at
-    # most. An organisation without CI_RUNNER_LABEL_MEDIUM_SPOT keeps the
-    # caller's runner.
-    trust-form/*:
-      renovate: MEDIUM_SPOT
+      renovate: SMALL           # 4.65 GiB at most on 1 vCPU / 8 GiB (CPU average 0.5-0.9), was MEDIUM
+    # trust-form's fleet was on MEDIUM_SPOT (the Spot trial, 2026-10-25, 5.2 GiB
+    # at most, no throttling); it takes the "*" row since D109: on-demand SMALL
+    # costs about what the Spot discount saved.
 
 parity-fleet:
   align:
     "*":
-      align: SMALL              # 2.0 GiB at most, was LARGE
+      align: MEDIUM             # 2.8 GiB at most; SMALL's one vCPU throttled it 35% of the time (was SMALL, before that LARGE)
