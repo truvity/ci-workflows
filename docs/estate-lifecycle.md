@@ -11,7 +11,7 @@ The three systems, and where their docs live:
 | --- | --- | --- |
 | [github-structure](https://github.com/truvity/github-structure) | What the repo IS: settings, protection, rulesets, teams, Apps | `docs/{registry,safety,adoption,doctrine}.md` |
 | ci-workflows (this repo) | What the repo DOES on push/PR/schedule: check, release, auto-release — and, for the whole estate at once, renovate and version parity | `docs/` here |
-| [ci-plane](https://github.com/truvity/ci-plane) | Where CI RUNS: ARC runners and the warm builders | `docs/{architecture,day-1-install,day-2-operations}.md` |
+| [ci-plane](https://github.com/truvity/ci-plane) | Where CI RUNS: self-hosted runners and the remote BuildKit builders | `docs/{architecture,day-1-install,day-2-operations}.md` |
 | [ci-cache](https://github.com/truvity/ci-cache) | The cache engine and the go-cache-plugin client releases (archived; the `setup-cache` action that wires a job lives in ci-actions) | `docs/` there |
 
 What every public component repository must look like is not in any of
@@ -47,7 +47,7 @@ Thin callers, pinned by SHA with the version in a comment (renovate
 keeps the pin current; a drifting pin is a defect):
 
 - `ci.yaml` → `check.yaml` — the one required context, running your
-  Justfile recipes on the ARC pool
+  Justfile recipes on the self-hosted runner pool
 - `security.yaml` → `check.yaml` (daily schedule, non-blocking scans)
 
 That is the whole list. **Dependency updates and version parity are not
@@ -59,7 +59,7 @@ triple is `docs/devbox-update.md`; how the renovate engine itself is
 run is `docs/renovate.md`.
 
 `node-cache` defaults to `true` in `check.yaml` and `integration.yaml`
-(no need to pass it): on a self-hosted (ARC) runner the job probes the
+(no need to pass it): on a self-hosted runner the job probes the
 CI plane's in-cluster npm read-through cache and points npm/yarn at it
 when it answers. A down cache degrades the job to *slow* (direct npmjs
 with a warning), never to *broken*. GitHub-hosted runners skip the probe,

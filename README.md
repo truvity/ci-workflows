@@ -12,7 +12,7 @@ also carries the shared renovate preset, `github>truvity/ci-workflows`.
 | [`check.yaml`](.github/workflows/check.yaml) | Runs the caller's task-runner recipes, one parallel job per recipe, after refusing self-hosted runners in a public repository (`runners`, skipped for a private caller) and untagged library pins (`pins`); opt-in `policy-conformance` | `contents: read`; `id-token: write` only if recipes reach AWS or Kubernetes; `packages: read` only for GitHub Packages | `recipes` | each repository's `ci.yaml`, and its `security.yaml` with `recipes: '["vuln"]'` |
 | [`integration.yaml`](.github/workflows/integration.yaml) | Integration suites for a gemaal-shaped project, one job per lane: build, install, test, logs, uninstall. Picks a kind tier (public repositories) or the shared development cluster (private) | `contents: read`, `id-token: write` | `lanes`; `policy-version` on the kind tier; `gemaal-namespace` and the cluster inputs on the shared tier | an `integration` caller beside `ci.yaml` |
 | [`release-public.yaml`](.github/workflows/release-public.yaml) | On a tag: goreleaser binaries and ko images to GHCR, then charts packaged deterministically with helmctl and pushed to `oci://ghcr.io/truvity/charts` | `contents: write`, `packages: write` | none; `charts` (names under `chart-root`, or repository-root paths containing a `/`), `ko-docker-repo`, `nix-flakes`, `sourcemaps-image` (+ `sourcemaps-dir`, `sourcemaps-app`: push a web app's source maps with smctl after goreleaser) as the repository ships them | a public repository's `release.yaml` |
-| [`release-private.yaml`](.github/workflows/release-private.yaml) | On a tag: the release command with tag-scoped GitHub OIDC into an ECR account, optionally on the CI plane's warm builders, gated on the tagged commit's checks being green | `contents: read`, `id-token: write`, `checks: read` | `role-to-assume`, `ecr-registries`, `command`; secret `goreleaser-key` for goreleaser-pro | a private repository's `release.yaml` |
+| [`release-private.yaml`](.github/workflows/release-private.yaml) | On a tag: the release command with tag-scoped GitHub OIDC into an ECR account, optionally on the remote BuildKit builders, gated on the tagged commit's checks being green | `contents: read`, `id-token: write`, `checks: read` | `role-to-assume`, `ecr-registries`, `command`; secret `goreleaser-key` for goreleaser-pro | a private repository's `release.yaml` |
 | [`release-pkl.yaml`](.github/workflows/release-pkl.yaml) | On a tag: refuses unless the tag is `v` plus the declared version and the CHANGELOG has its heading, runs the caller's `just` recipe, checks every asset is checksummed and named for the version, publishes the GitHub Release with the assets under their exact names (resumable, never overwriting), then resolves the packages from github.com | `contents: write` | none; `package-recipe`, `output-dir`, `version-command`, `pkl-command`, `smoke-import` as the repository needs them | a public repository's `release.yaml` for Pkl packages |
 | [`auto-release.yaml`](.github/workflows/auto-release.yaml) | Cuts the next patch tag weekly when `master` has moved past the latest release, and at once for a merged `security`-labelled pull request or a hand-written conventional `fix:` (renovate's never), first giving the CHANGELOG its `## vX.Y.Z` heading by pull request (`changelog-heading: never` opts out); an optional `version-bump-command` (run in devbox with `VERSION` and `TAG`) lands a version declared in files in that same pull request, before the tag | `contents: read`; `id-token: write` with `token-source: access-roster` | `token-source: access-roster` needs `access-roster-issuer` and `github-app`; `app-key` needs `app-id` and secret `CI_AUTOMATION_PRIVATE_KEY` | a repository's `auto-release.yaml`, guarded by `vars.AUTO_RELEASE` |
 | [`pkl-fleet.yaml`](.github/workflows/pkl-fleet.yaml) | Moves every repository that consumes a Pkl contracts library to its newest release: rewrites the `PklProject` dependency URIs, runs `pkl project resolve` and the repository's `generate` recipe, opens one pull request per repository on a stable branch, auto-merge armed only for a non-breaking bump (a new 0.x minor is breaking) | `contents: read`, `id-token: write` | `estate`, `git-user`; the token inputs, or secret `RENOVATE_APP_PRIVATE_KEY`; `version` (default: latest release), `dry-run`, `source` | an estate's `ci-caller` repository, on a schedule and `workflow_dispatch` |
@@ -94,7 +94,7 @@ On the next pull request the checks read `recipes / runners`,
 `recipes / lint`, and `check`. Each recipe runs inside the repository's
 devbox and fails if it leaves the working tree modified. With `runner`
 unset every job runs on `ubuntu-latest`, which is what a public
-repository must use; a private repository passes its scale set in
+repository must use; a private repository passes its runner label in
 `runner` (and, for measured recipes, `small-recipes`/`medium-recipes`).
 
 To hold a component repository to the component contract as well:
@@ -129,7 +129,7 @@ The workflows that check out the caller's repository (`check` recipe jobs,
 LFS objects: the input `lfs` (boolean) defaults to `true`. Without it a
 repository that tracks images or other binaries in LFS builds from pointer
 files. Set `lfs: false` for a repository whose LFS objects are not needed by
-the job. The runner needs `git-lfs`: the ARC image has it since ci-plane
+the job. The runner needs `git-lfs`: the self-hosted runner image has it since ci-plane
 v6.7.0, and GitHub-hosted runners ship it. Checkouts that read only metadata
 (`pins`, `policy-conformance`, the `auto-release` tag jobs), sparse
 checkouts of an enrolment list, and checkouts of a different repository
@@ -193,7 +193,7 @@ files:
   [ci-cache](https://github.com/truvity/ci-cache) (archived) held the cache
   engine; cache wiring is ci-actions' `setup-cache`, called from `setup-devbox`;
   [ci-plane](https://github.com/truvity/ci-plane) is where work executes
-  (runner and nix-worker images, `arc-runners`, `ci-builders`).
+  (runner and nix-worker images, `ci-builders`).
 - **[policy](https://github.com/truvity/policy)**: the component contract
   every public repository is held to, and the `hack/kind/` box the kind
   tier of `integration.yaml` runs.

@@ -398,7 +398,7 @@ jobs:
         # No runner test: the step asks the registry. A configured
         # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
         # unset the legacy in-cluster address is probed silently, which
-        # answers on an ARC runner and is a quiet no-op anywhere else.
+        # answers on a self-hosted runner and is a quiet no-op anywhere else.
         env:
           CI_GOPROXY: ${{ vars.CI_GOPROXY }}
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}

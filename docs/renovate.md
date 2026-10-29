@@ -17,7 +17,7 @@ enrolled repository it cannot reach, in the run summary, individually —
 
 Every repository's job runs Renovate via `npx renovate@<pinned>`, NOT the
 `renovatebot/github-action` — that action runs renovate as a **docker
-container**, and the ARC runners are daemonless by doctrine; every
+container**, and the self-hosted runners are daemonless by doctrine; every
 containerized run dies on the missing socket. Direct node execution
 behaves identically on hosted runners and is also what makes
 postUpgradeTasks usable at all (in container mode they execute inside
@@ -41,7 +41,7 @@ rather than which repositories it sees:
 
 | Input | Purpose |
 |---|---|
-| `runner` | Scale-set label. The private estate uses the ARC pool (hosted minutes bill); the public estate keeps the hosted default (free). An estate whose postUpgradeTasks build heavy toolchains needs the LARGE profile. |
+| `runner` | Runner label. The private estate uses the self-hosted runner pool (hosted minutes bill); the public estate keeps the hosted default (free). An estate whose postUpgradeTasks build heavy toolchains needs the LARGE profile. |
 | `allowed-commands` | JSON array allowlisting postUpgradeTasks commands (`RENOVATE_ALLOWED_COMMANDS`). Must match the repositories' renovate.json commands EXACTLY — this is a security allowlist, renovate refuses anything else. Default `[]`. |
 | `log-level` | `debug` to diagnose silent runs. |
 

@@ -2,7 +2,7 @@
 # Helm charts, both to GHCR.
 #
 # "public" is in the name because the private half is a different
-# workflow, not a flag on this one — ECR instead of GHCR, ARC runners
+# workflow, not a flag on this one — ECR instead of GHCR, self-hosted runners
 # instead of hosted, and a different identity to reach either. A repo
 # publishing to ECR shares almost nothing with this but the word
 # "release". That workflow arrives when it has a consumer; writing it
@@ -65,7 +65,7 @@ on:
       lfs:
         description: >-
           Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
-          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          self-hosted runner image has it since ci-plane v6.7.0; GitHub-hosted runners have
           it). Set false for a repository whose LFS objects are not needed by
           this job.
         required: false

@@ -15,7 +15,7 @@
 # every recipe's peak CPU and peak memory at once, and six narrow
 # runners pack onto nodes far better than one wide one.
 #
-# The counter-argument — six runners is six NODES — holds only while ARC
+# The counter-argument — six runners is six NODES — holds only while a runner
 # is one-runner-per-node. It stops holding the moment density
 # lands, which is why this is the shape to build toward.
 #
@@ -30,7 +30,7 @@ on:
       lfs:
         description: >-
           Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
-          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          self-hosted runner image has it since ci-plane v6.7.0; GitHub-hosted runners have
           it). Set false for a repository whose LFS objects are not needed by
           this job.
         required: false
@@ -85,7 +85,7 @@ on:
           or `vars.CI_NPM_REGISTRY`) and point npm and yarn at
           it for the job when it answers; when it does not, leave the
           defaults so a down cache degrades CI to slow, never to
-          broken. Acts only on self-hosted (ARC) runners: on a
+          broken. Acts only on self-hosted runners: on a
           GitHub-hosted runner the in-cluster name cannot resolve, so
           the probe is skipped there. Default true, which makes it a
           no-op for repositories without Node and for hosted runners.
@@ -94,8 +94,8 @@ on:
         default: true
       runner:
         description: >-
-          Runner label. Hosted repos leave the default; ARC callers pass
-          their scale-set name (vars.CI_RUNNER_LABEL_LARGE).
+          Runner label. Hosted repos leave the default; self-hosted callers pass
+          their runner label (vars.CI_RUNNER_LABEL_LARGE).
 
           When this is one of the organisation's CI_RUNNER_LABEL_<SIZE>
           labels (the preview tier), it only says "size me": every recipe
@@ -135,7 +135,7 @@ on:
         default: '[]'
       small-runner:
         description: >-
-          Scale-set label for `small-recipes` (vars.CI_RUNNER_LABEL_SMALL).
+          Runner label for `small-recipes` (vars.CI_RUNNER_LABEL_SMALL).
           Defaults to `runner`, so listing recipes without setting this
           changes nothing.
 
@@ -162,7 +162,7 @@ on:
         default: '[]'
       medium-runner:
         description: >-
-          Scale-set label for `medium-recipes`
+          Runner label for `medium-recipes`
           (vars.CI_RUNNER_LABEL_MEDIUM). Defaults to `runner`, so
           listing recipes without setting this changes nothing.
 
@@ -204,8 +204,8 @@ on:
         default: ''
       go-cache-bucket:
         description: >-
-          ARC only — from the caller's org variable, never hard-coded here.
-          Pass it only together with an ARC runner label: on a
+          Self-hosted runners only — from the caller's org variable, never hard-coded here.
+          Pass it only together with a self-hosted runner label: on a
           GitHub-hosted runner it must be empty, or the cache is tried
           there for nothing. The CALLER passes every cache input, and there is deliberately
           NO fallback to an org variable inside this workflow: a caller's
@@ -308,7 +308,7 @@ on:
           `ecr-registries`, and CI_BUILDX_CACHE in its environment; the
           recipe's own `docker build` adds `--cache-from/--cache-to`
           from it. CI-PLANE RUNNERS ONLY: the builders resolve nowhere else,
-          so the caller passes `remote-builders` together with an ARC
+          so the caller passes `remote-builders` together with a self-hosted
           runner label, and a listed recipe with no `remote-builders`
           fails loudly, before anything is built. Validation only -- nothing here pushes an
           image; the cache push is the only registry write.
@@ -330,7 +330,7 @@ on:
         default: ''
       builder-wake-timeout:
         description: >-
-          ARC only, with `remote-builders`. Seconds a builder that does not
+          Self-hosted runners only, with `remote-builders`. Seconds a builder that does not
           answer is retried (every 10 s) before the job fails, naming it.
           Builders may be stopped while idle and started on demand by a TCP
           wake proxy that holds the connection while they boot (35-60 s);
@@ -627,12 +627,12 @@ jobs:
       # Opted in to the remote builders with no builders given: refuse
       # now, with the reason, instead of failing later in a `docker build`
       # with no daemon. The builders are only reachable from the CI
-      # plane's runners, so the caller passes them together with an ARC
+      # plane's runners, so the caller passes them together with a self-hosted
       # runner label.
       - name: Remote builders need remote-builders
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe) && inputs.remote-builders == ''
         run: |
-          echo "::error::recipe '$RECIPE' is listed in remote-builder-recipes but remote-builders is empty; pass vars.CI_REMOTE_BUILDERS together with an ARC runner label as runner/small-runner/medium-runner."
+          echo "::error::recipe '$RECIPE' is listed in remote-builder-recipes but remote-builders is empty; pass vars.CI_REMOTE_BUILDERS together with a self-hosted runner label as runner/small-runner/medium-runner."
           exit 1
         env:
           RECIPE: ${{ matrix.recipe }}
@@ -676,7 +676,7 @@ jobs:
         # No runner test: the step asks the registry. A configured
         # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
         # unset the legacy in-cluster address is probed silently, which
-        # answers on an ARC runner and is a quiet no-op anywhere else.
+        # answers on a self-hosted runner and is a quiet no-op anywhere else.
         if: inputs.node-cache
         env:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
@@ -1013,7 +1013,7 @@ jobs:
         continue-on-error: true
         run: |
           # The cgroup v2 root, which is the job's own wherever the runner
-          # has a private cgroup namespace (ARC pods).
+          # has a private cgroup namespace (self-hosted runners).
           cg=/sys/fs/cgroup
           peak=$cg/memory.peak
           max=$cg/memory.max

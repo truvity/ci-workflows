@@ -33,7 +33,7 @@ on:
       lfs:
         description: >-
           Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
-          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          self-hosted runner image has it since ci-plane v6.7.0; GitHub-hosted runners have
           it). Set false for a repository whose LFS objects are not needed by
           this job.
         required: false
@@ -76,7 +76,7 @@ on:
       strip-local-tools:
         description: >-
           Strip npm-backed local tooling (the cubic CLI) from a repo's
-          .prototools before devbox materializes. Default true: on an ARC
+          .prototools before devbox materializes. Default true: on a self-hosted
           runner there is no npm until proto installs node, and the
           tool's proto plugin execs npm from devbox's init hook — a
           private caller's first two stable-tier tags died there. The
@@ -94,9 +94,9 @@ on:
       runner:
         description: >-
           Runner label. Hosted by default; the heavy private multi-arch
-          releases pass the stable tier's scale set
-          (vars.CI_RUNNER_LABEL_STABLE). On an ARC runner the
-          image builds go to the CI plane's warm builders
+          releases pass the stable tier's runner label
+          (vars.CI_RUNNER_LABEL_STABLE). On a self-hosted runner the
+          image builds go to the remote BuildKit builders
           (remote-builders) instead of QEMU: a non-empty `remote-builders`
           selects the builders, an empty one the hosted buildx and QEMU.
         required: false
@@ -118,7 +118,7 @@ on:
         default: ''
       remote-builders:
         description: >-
-          ARC only. The CI plane's BuildKit nodes to register as the
+          Self-hosted runners only. The remote BuildKit builders to register as the
           buildx builder, `platforms=endpoint` entries separated by
           whitespace — from the caller's org variable
           (vars.CI_REMOTE_BUILDERS_STABLE), never a literal here. See
@@ -133,7 +133,7 @@ on:
         default: ""
       builder-wake-timeout:
         description: >-
-          ARC only, with `remote-builders`. Seconds a builder that does not
+          Self-hosted runners only, with `remote-builders`. Seconds a builder that does not
           answer is retried (every 10 s) before the job fails, naming it.
           Builders may be stopped while idle and started on demand by a TCP
           wake proxy that holds the connection while they boot (35-60 s);
@@ -177,7 +177,7 @@ on:
           GHC, CodeQL) before building. For GitHub-hosted runners whose
           ~14GB free no longer fits a multi-arch goreleaser publish —
           two releases died on `no space left on device` on
-          2026-08-26. Leave false on ARC runners: their images carry
+          2026-08-26. Leave false on self-hosted runners: their images carry
           none of those directories.
         required: false
         type: boolean
@@ -270,7 +270,7 @@ jobs:
 
       - name: Reclaim runner disk
         # Only where the hosted image's directories exist and sudo needs
-        # no password; an ARC runner has neither, and the step says so.
+        # no password; a self-hosted runner has neither, and the step says so.
         if: inputs.reclaim-disk
         run: |
           set -euo pipefail
@@ -308,7 +308,7 @@ jobs:
         # No runner test: the step asks the registry. A configured
         # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
         # unset the legacy in-cluster address is probed silently, which
-        # answers on an ARC runner and is a quiet no-op anywhere else.
+        # answers on a self-hosted runner and is a quiet no-op anywhere else.
         env:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}
         run: |
@@ -372,7 +372,7 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: inputs.remote-builders == ''
 
-      # ARC only (the hosted steps above skip themselves on ARC).
+      # Self-hosted runners only (the hosted steps above skip themselves there).
       # A runner that gets the BuildKit client certificate as environment
       # variables (CI_BUILDKIT_TLS_CA_PEM, CI_BUILDKIT_TLS_CERT_PEM and
       # CI_BUILDKIT_TLS_KEY_PEM, e.g. container-task secrets) gets it written
@@ -549,7 +549,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/goreleaser-pro"
           curl -fsSL "https://github.com/goreleaser/goreleaser-pro/releases/download/${GORELEASER_VERSION}/goreleaser-pro_Linux_${arch}.tar.gz" \
             | tar -xz -C "$RUNNER_TEMP/goreleaser-pro" goreleaser
-          # PATH, not /usr/local/bin: ARC runners have no sudo, and the
+          # PATH, not /usr/local/bin: self-hosted runners have no sudo, and the
           # devbox-run Release step inherits the job PATH.
           echo "$RUNNER_TEMP/goreleaser-pro" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/goreleaser-pro/goreleaser" --version
