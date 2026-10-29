@@ -63,7 +63,7 @@ on:
       lfs:
         description: >-
           Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
-          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          self-hosted runner image has it since ci-plane v6.7.0; GitHub-hosted runners have
           it). Set false for a repository whose LFS objects are not needed by
           this job.
         required: false
@@ -84,7 +84,7 @@ on:
         type: string
       runner:
         description: >-
-          Scale-set label for the lane jobs (vars.CI_RUNNER_LABEL_LARGE).
+          Runner label for the lane jobs (vars.CI_RUNNER_LABEL_LARGE).
           Ignored on the kind tier, which always runs on `ubuntu-latest`
           (a disposable kind cluster has no reason to run anywhere else,
           and a public repository could not use a self-hosted label
@@ -181,7 +181,7 @@ on:
         default: ""
       builder-wake-timeout:
         description: >-
-          ARC only, with `remote-builders`. Seconds a builder that does not
+          Self-hosted runners only, with `remote-builders`. Seconds a builder that does not
           answer is retried (every 10 s) before the job fails, naming it.
           Builders may be stopped while idle and started on demand by a TCP
           wake proxy that holds the connection while they boot (35-60 s);
@@ -488,7 +488,7 @@ jobs:
         # No runner test: the step asks the registry. A configured
         # `CI_NPM_REGISTRY` is probed wherever the job runs; while it is
         # unset the legacy in-cluster address is probed silently, which
-        # answers on an ARC runner and is a quiet no-op anywhere else.
+        # answers on a self-hosted runner and is a quiet no-op anywhere else.
         if: inputs.node-cache
         env:
           NPM_REGISTRY: ${{ inputs.npm-registry || vars.CI_NPM_REGISTRY }}

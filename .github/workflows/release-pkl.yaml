@@ -75,7 +75,7 @@ on:
       lfs:
         description: >-
           Fetch Git LFS objects at checkout (needs git-lfs on the runner: the
-          ARC image has it since ci-plane v6.7.0; GitHub-hosted runners have
+          self-hosted runner image has it since ci-plane v6.7.0; GitHub-hosted runners have
           it). Set false for a repository whose LFS objects are not needed by
           this job.
         required: false

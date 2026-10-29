@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- Docs: descriptions no longer name ARC; behaviour unchanged.
+
 ## v5.9.0
 
 - **ci-actions v3.7.0**: every workflow pins it. `setup-remote-builders` waits for a waking builder (`wake-timeout`), which the `builder-wake-timeout` input below passes on.

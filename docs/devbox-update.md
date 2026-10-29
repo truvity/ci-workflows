@@ -183,7 +183,7 @@ deliberate decision).
     unarmed. A permission gap in the *probe* fails toward manual
     merging, which looks like policy, not like a bug — which is exactly
     why it went unnoticed for so long.
-12. **The ARC runner image has no `gh`.** Hosted runners preinstall the
+12. **The self-hosted runner image has no `gh`.** Hosted runners preinstall the
     GitHub CLI; the pool image bakes nix, devbox and build tools only.
     parity-fleet.yaml installs a pinned `gh` when absent (gate on detection,
     the setup-devbox doctrine). The private estate's parity caller SHOULD
