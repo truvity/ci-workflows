@@ -231,14 +231,14 @@ jobs:
       - name: Read the enrolment list
         id: enrolled
         if: inputs.list != ''
-        uses: truvity/ci-actions/enrolment-list@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/enrolment-list@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           file: ${{ inputs.repositories-file }}
           list: ${{ inputs.list }}
 
       # Once, here: every other job needs this one.
       - name: Check the token inputs
-        uses: truvity/ci-actions/token-inputs@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/token-inputs@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           source: ${{ inputs.token-source }}
           access-roster-issuer: ${{ inputs.access-roster-issuer }}
@@ -254,7 +254,7 @@ jobs:
       # its claims are printed.
       - name: Print this job's OIDC claims
         if: inputs.debug-oidc-claims
-        uses: truvity/ci-actions/fleet-step@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/fleet-step@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           step: oidc-claims
 
@@ -270,14 +270,14 @@ jobs:
       # and the required-check rule's fallback (GraphQL's refUpdateRule)
       # answers for the viewer, so a weaker token than the matrix jobs'
       # could miss a required check they have.
-      - uses: truvity/ci-actions/token-exchange@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/token-exchange@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
           issuer: ${{ inputs.access-roster-issuer }}
           github-app: ${{ inputs.github-app }}
 
-      - uses: truvity/ci-actions/fleet-discover@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/fleet-discover@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: discover
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -325,7 +325,7 @@ jobs:
       - name: Read the enrolment list
         id: enrolled
         if: inputs.list != '' || inputs.caller-parity-list != ''
-        uses: truvity/ci-actions/enrolment-list@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/enrolment-list@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           file: ${{ inputs.repositories-file }}
           list: ${{ inputs.caller-parity-list || inputs.list }}
@@ -341,7 +341,7 @@ jobs:
       # Every enrolled repository, because one table covers the estate —
       # but reading is all this job does, so `contents:read` is all it
       # asks the issuer for.
-      - uses: truvity/ci-actions/token-exchange@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/token-exchange@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -358,7 +358,7 @@ jobs:
       #   require-file   the subject here is the caller workflows
       #                  themselves; a repository that carries no
       #                  devbox.json still carries them.
-      - uses: truvity/ci-actions/fleet-discover@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/fleet-discover@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: discover-callers
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -368,7 +368,7 @@ jobs:
           require-check: "false"
           require-file: ""
 
-      - uses: truvity/ci-actions/caller-parity@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/caller-parity@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         if: steps.discover-callers.outputs.count != '0'
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -423,7 +423,7 @@ jobs:
 
       # Push one branch, open and auto-merge one PR: contents and
       # pull_requests, on this repository.
-      - uses: truvity/ci-actions/token-exchange@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/token-exchange@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: roster-token
         if: inputs.token-source == 'access-roster'
         with:
@@ -434,7 +434,7 @@ jobs:
 
       - name: Resolve the commit author
         id: author
-        uses: truvity/ci-actions/fleet-step@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/fleet-step@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           step: commit-author
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -444,7 +444,7 @@ jobs:
 
       - name: Read the default branch and parity settings
         id: repo
-        uses: truvity/ci-actions/fleet-step@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/fleet-step@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           step: parity-settings
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
@@ -460,12 +460,12 @@ jobs:
           ref: ${{ steps.repo.outputs.base }}
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-actions/setup-devbox@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           proto: "false"
           github-token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}
 
-      - uses: truvity/ci-actions/devbox-parity@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/devbox-parity@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: parity
         with:
           token: ${{ steps.key-token.outputs.token || steps.roster-token.outputs.github-token }}

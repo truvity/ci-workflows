@@ -238,7 +238,7 @@ on:
       go-private:
         description: >-
           Module path prefix to fetch directly over git rather than
-          through the proxy — e.g. "github.com/truvity". Requires the
+          through the proxy — e.g. "github.com/truvity". Requires the module-app input, or the
           module-app-client-id input and module-app-private-key
           secret.
         required: false
@@ -262,6 +262,27 @@ on:
           Region the domain lives in — not necessarily the build's own
           region. truvity domain is eu-west-1 while the cluster is
           eu-central-1.
+        required: false
+        type: string
+        default: ''
+      module-app:
+        description: >-
+          A roster catalogue App to read private repositories with, by
+          id: the job exchanges its identity token for a short-lived,
+          read-only token instead of using module-app-client-id and its
+          key. Give one or the other. The caller grants `id-token: write`.
+        required: false
+        type: string
+        default: ''
+      module-app-repositories:
+        description: >-
+          The repositories of the App's organization the module-app token
+          is narrowed to, by name, space or comma separated.
+        required: false
+        type: string
+        default: ''
+      access-roster-issuer:
+        description: The roster issuer module-app is exchanged at.
         required: false
         type: string
         default: ''
@@ -500,7 +521,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/public-runners@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -563,7 +584,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/policy-conformance@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -642,10 +663,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/stable-mtimes@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -661,6 +682,9 @@ jobs:
           codeartifact-region: ${{ inputs.codeartifact-region }}
           module-app-client-id: ${{ inputs.module-app-client-id }}
           module-app-private-key: ${{ secrets.module-app-private-key }}
+          module-app: ${{ inputs.module-app }}
+          module-app-repositories: ${{ inputs.module-app-repositories }}
+          access-roster-issuer: ${{ inputs.access-roster-issuer }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Registry override only when the cache answers a 2s ping —
@@ -752,7 +776,7 @@ jobs:
       # when the caller passes go-cache-bucket (traffic stays inside the
       # region, none of it through the NAT) and GitHub's cache everywhere
       # else.
-      - uses: truvity/ci-actions/s3-cache/restore@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/s3-cache/restore@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
@@ -771,7 +795,7 @@ jobs:
       # empty), so a change of a dependency starts a new cache and the newest
       # earlier one of the same recipe warms it. Nothing runs without
       # `cache-paths`.
-      - uses: truvity/ci-actions/s3-cache/restore@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/s3-cache/restore@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         id: caller-cache
         if: inputs.cache-paths != ''
         with:
@@ -852,7 +876,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/setup-buildkit-tls@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -991,7 +1015,7 @@ jobs:
             esac
           done
 
-      - uses: truvity/ci-actions/recipe@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/recipe@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -1078,7 +1102,7 @@ jobs:
       # someone is iterating and most wants it warm. cache-hit is true only
       # on an exact key, so the save runs when the devbox.lock + go.sum key
       # is missing and not otherwise (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/s3-cache/save@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
@@ -1090,7 +1114,7 @@ jobs:
 
       # Saved also when the recipe failed, and only when the exact key was
       # missing (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/s3-cache/save@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         if: always() && inputs.cache-paths != '' && steps.caller-cache.outputs.cache-hit != 'true'
         with:
           path: ${{ inputs.cache-paths }}
