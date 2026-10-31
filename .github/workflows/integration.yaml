@@ -205,6 +205,27 @@ on:
         required: false
         type: string
         default: ""
+      module-app:
+        description: >-
+          A roster catalogue App to read private repositories with, by
+          id: the job exchanges its identity token for a short-lived,
+          read-only token instead of using module-app-client-id and its
+          key. Give one or the other. The caller grants `id-token: write`.
+        required: false
+        type: string
+        default: ''
+      module-app-repositories:
+        description: >-
+          The repositories of the App's organization the module-app token
+          is narrowed to, by name, space or comma separated.
+        required: false
+        type: string
+        default: ''
+      access-roster-issuer:
+        description: The roster issuer module-app is exchanged at.
+        required: false
+        type: string
+        default: ''
       module-app-client-id:
         required: false
         type: string
@@ -334,7 +355,7 @@ jobs:
     outputs:
       tier: ${{ steps.resolve.outputs.tier }}
     steps:
-      - uses: truvity/ci-actions/public-runners@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/public-runners@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           runners: ${{ inputs.runner }}
           visibility: ${{ github.event.repository.visibility }}
@@ -426,7 +447,7 @@ jobs:
           # goreleaser derives the snapshot version from history.
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/setup-devbox@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           proto: ${{ inputs.proto }}
@@ -434,6 +455,9 @@ jobs:
           go-private: ${{ inputs.go-private }}
           module-app-client-id: ${{ inputs.module-app-client-id }}
           module-app-private-key: ${{ secrets.module-app-private-key }}
+          module-app: ${{ inputs.module-app }}
+          module-app-repositories: ${{ inputs.module-app-repositories }}
+          access-roster-issuer: ${{ inputs.access-roster-issuer }}
           # The kind tier always runs on a GitHub-hosted runner, where the
           # cache bucket is unreachable: the bucket is dropped there, so a
           # caller that passes it on every lane does not pay a lookup.
@@ -452,7 +476,7 @@ jobs:
       # Install, which DOES need the whole box.
       - name: "cluster (mode: kind, background)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/cluster@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           mode: kind
           background: "true"
@@ -470,7 +494,7 @@ jobs:
       - name: Cache the yarn fetch cache
         id: yarn-cache
         if: inputs.node-cache && hashFiles('yarn.lock') != ''
-        uses: truvity/ci-actions/s3-cache/restore@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/s3-cache/restore@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           path: .yarn/cache
           key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
@@ -586,7 +610,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+      - uses: truvity/ci-actions/setup-buildkit-tls@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         if: env.LANE_IMAGES == 'true' && needs.tier.outputs.tier != 'kind'
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -815,7 +839,7 @@ jobs:
       # installs land on real Services), not just the registry.
       - name: "cluster (mode: wait)"
         if: needs.tier.outputs.tier == 'kind'
-        uses: truvity/ci-actions/cluster@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/cluster@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           mode: wait
 
@@ -871,7 +895,7 @@ jobs:
 
       - name: Save the yarn fetch cache
         if: success() && inputs.node-cache && hashFiles('yarn.lock') != '' && steps.yarn-cache.outputs.cache-hit != 'true'
-        uses: truvity/ci-actions/s3-cache/save@1cb80aafbf111e79a09c202651c3865e09c964d9 # v3.7.0
+        uses: truvity/ci-actions/s3-cache/save@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
         with:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
