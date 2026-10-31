@@ -7,6 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v5.10.0
+
 - ci-actions v3.9.0 everywhere (was v3.7.0): `setup-devbox`'s `module-app` exchange.
 - **`check` and `integration` take `module-app`, `module-app-repositories` and `access-roster-issuer`** and hand them to `setup-devbox`: the job reads private repositories with a short-lived, read-only token of a roster catalogue App, exchanged with its own identity token, instead of an App key passed as `module-app-private-key`. The caller grants `id-token: write`. The key inputs keep working for callers not yet moved.
 - Docs: descriptions no longer name ARC; behaviour unchanged.
