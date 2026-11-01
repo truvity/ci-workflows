@@ -163,11 +163,6 @@ on:
         required: false
         type: string
         default: ""
-      go-modules-client-id:
-        description: Client id of an App that may read private Go modules, for go.sum regeneration. Empty skips it.
-        required: false
-        type: string
-        default: ""
       filter:
         description: RE2 over `owner/name`; only matches are processed.
         required: false
@@ -213,9 +208,6 @@ on:
         required: false
       APPROVER_APP_PRIVATE_KEY:
         description: The approver App's private key. Required when approver-client-id is set.
-        required: false
-      GO_MODULES_APP_PRIVATE_KEY:
-        description: The go-modules App's private key. Required when go-modules-client-id is set.
         required: false
 
 permissions:
@@ -263,10 +255,9 @@ jobs:
           has-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY != '' }}
           extra-keys: |
             approver-client-id|APPROVER_APP_PRIVATE_KEY|${{ secrets.APPROVER_APP_PRIVATE_KEY != '' }}|${{ inputs.approver-client-id }}
-            go-modules-client-id|GO_MODULES_APP_PRIVATE_KEY|${{ secrets.GO_MODULES_APP_PRIVATE_KEY != '' }}|${{ inputs.go-modules-client-id }}
           warn-app-key-if: ${{ format('{0}{1}{2}', inputs.github-app, inputs.approver-github-app, inputs.go-modules-github-app) }}
           warn-app-key: the *-github-app inputs are read only with token-source access-roster
-          warn-access-roster-if: ${{ format('{0}{1}', inputs.approver-client-id, inputs.go-modules-client-id) }}
+          warn-access-roster-if: ${{ inputs.approver-client-id }}
           warn-access-roster: the *-client-id inputs are read only with token-source app-key
 
       # What an issuer's `github` matchers compare, as GitHub put it in
@@ -585,15 +576,6 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
           echo "poetry ${POETRY_VERSION} installed to $RUNNER_TEMP/bin"
 
-      - name: Mint a token for reading private Go modules
-        id: module-key-token
-        if: inputs.token-source == 'app-key' && inputs.go-modules-client-id != ''
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ inputs.go-modules-client-id }}
-          private-key: ${{ secrets.GO_MODULES_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       # Any module of the organisation may be required, so not narrowed to
       # repositories; read-only is the narrowing.
       - name: Exchange a token for reading private Go modules
@@ -606,9 +588,9 @@ jobs:
           permissions: contents:read
 
       - name: Let go reach private modules
-        if: steps.module-key-token.outputs.token != '' || steps.module-roster-token.outputs.github-token != ''
+        if: steps.module-roster-token.outputs.github-token != ''
         env:
-          MODULE_TOKEN: ${{ steps.module-key-token.outputs.token || steps.module-roster-token.outputs.github-token }}
+          MODULE_TOKEN: ${{ steps.module-roster-token.outputs.github-token }}
         run: |
           set -euo pipefail
           git config --global \
