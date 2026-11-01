@@ -283,7 +283,6 @@ gives a green PR a run that finds it green.
 | `go-modules-github-app` | `""` | an App whose `contents:read` token reads private Go modules (`access-roster`), often the renovate App |
 | `client-id` | `""` | the renovate App's client id (`app-key`) |
 | `approver-client-id` | `""` | the approver App's client id (`app-key`); empty disables the approval sweep |
-| `go-modules-client-id` | `""` | an App that may read private Go modules, for `go.sum` regeneration (`app-key`) |
 | `debug-oidc-claims` | `false` | print the `discover` job's OIDC claims, not the token |
 | `require-check` | `true` | skip repositories with no required status check, from [either source](#what-counts-as-a-required-status-check); `false` only for an estate whose repositories do not automerge |
 | `filter` | `""` | RE2 over `owner/name`; only matches are processed — use it to shard a large estate across schedules |
@@ -292,7 +291,7 @@ gives a green PR a run that finds it green.
 | `timeout-minutes` | `30` | per repository |
 
 Secrets, all optional and read only with `app-key`: `RENOVATE_APP_PRIVATE_KEY`
-(needed there), `APPROVER_APP_PRIVATE_KEY`, `GO_MODULES_APP_PRIVATE_KEY`.
+(needed there), `APPROVER_APP_PRIVATE_KEY`.
 `discover` checks the combination before anything runs.
 
 ## `parity-fleet.yaml`

@@ -7,6 +7,10 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v5.11.0
+
+- **renovate-fleet drops the key-held private-module token path:** the `go-modules-client-id` input and the `GO_MODULES_APP_PRIVATE_KEY` secret are removed. Private Go modules are read with the `go-modules-github-app` token exchange (`access-roster`) only. No caller passed either, so this is a minor release.
+
 ## v5.10.0
 
 - ci-actions v3.9.0 everywhere (was v3.7.0): `setup-devbox`'s `module-app` exchange.
