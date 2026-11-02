@@ -7,6 +7,10 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+## v5.12.0
+
+- **`release-public` pushes charts with helmctl 0.12.0 (was 0.8.0) and source maps with smctl 0.12.0 (was 0.7.1).** Two behaviours come with it, neither needing an input change. Since ocictl 0.11.0, `chart push` and `sourcemaps push` refuse to overwrite a tag that holds different content (exit 1, both digests named); the same content is a no-op. Since 0.12.0 every layer is compressed with a pinned compressor, so a chart's layer digests change once: a chart published by an older helmctl and pushed again at the same version is refused. A release pushes the tag's own new version, so none does; a rerun of a release run uses the workflow pin of that run, so it keeps the old helmctl. Publish a new version, or check the content and leave the tag, if one is refused. `--allow-overwrite` is not wired in. `helmctl` and `smctl` are deprecated aliases of `ocictl chart` and `ocictl sourcemaps`, still published for two more ocictl releases; a later change moves this workflow and ci-actions' `publish-charts` to the `ocictl` binary.
+
 ## v5.11.0
 
 - **renovate-fleet drops the key-held private-module token path:** the `go-modules-client-id` input and the `GO_MODULES_APP_PRIVATE_KEY` secret are removed. Private Go modules are read with the `go-modules-github-app` token exchange (`access-roster`) only. No caller passed either, so this is a minor release.
