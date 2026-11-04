@@ -95,11 +95,28 @@ on:
           this changes nothing for them.
 
           On the preview tier (one of the organisation's
-          CI_RUNNER_LABEL_<SIZE> labels) each job's size comes from
-          runner-sizes.yaml instead, as in check.yaml's `runner`.
+          CI_RUNNER_LABEL_<SIZE> labels) each lane's size comes from
+          `runner-sizes`, else runner-sizes.yaml (deprecated), else
+          MEDIUM, as in check.yaml's `runner`.
         required: false
         type: string
         default: ubuntu-latest
+      runner-sizes:
+        description: >-
+          JSON object from lane name to size, owned by the caller:
+          '{"api":"LARGE"}'. A size is a NAME: XSMALL, SMALL, MEDIUM,
+          LARGE, XLARGE or MEDIUM_SPOT. Read only on the preview tier and
+          never on the kind tier; a lane it does not name falls through
+          to runner-sizes.yaml, then MEDIUM. A value that is not a size
+          fails that lane's job, naming the lane.
+
+          The default, '{}', keeps every lane where runner-sizes.yaml puts
+          it today. That table's rows for named repositories are
+          deprecated: a repository passes its own sizes here instead, and
+          a later major release removes the rows.
+        required: false
+        type: string
+        default: '{}'
       tier:
         description: >-
           Force the tier instead of deriving it from the caller's
@@ -398,15 +415,17 @@ jobs:
   suite:
     needs: tier
     name: integration-${{ matrix.name }}
-    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule); the
-    # literal is rendered by hack/runner-sizes.sh.
+    # The caller's `runner-sizes` entry for the lane, else runner-sizes.yaml
+    # (see check.yaml's `recipe` job for the rule); the literal is rendered
+    # by hack/runner-sizes.sh.
     runs-on: >-
       ${{ (needs.tier.outputs.tier != 'kind' && inputs.runner != ''
            && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('{0}:{1}', github.repository, matrix.name)]
+                fromJSON(inputs.runner-sizes || '{}')[matrix.name]
+                || fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('{0}:{1}', github.repository, matrix.name)]
                 || fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('*:{0}', matrix.name)]
                 || 'MEDIUM')])
           || (needs.tier.outputs.tier == 'kind' && 'ubuntu-latest' || inputs.runner) }}
@@ -441,6 +460,19 @@ jobs:
       # on the first run of every caller.
       LANE_IMAGES: ${{ format('{0}', matrix.images) == 'false' && 'false' || 'true' }}
     steps:
+      # As in check.yaml: a named size that is not a size is refused here,
+      # naming the lane, rather than landing on the fallback runner.
+      - name: Runner size is a size
+        if: >-
+          ${{ !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'),
+                    fromJSON(inputs.runner-sizes || '{}')[matrix.name] || 'MEDIUM') }}
+        run: |
+          echo "::error::runner-sizes names '$SIZE' for lane '$LANE'; a size is one of XSMALL, SMALL, MEDIUM, LARGE, XLARGE, MEDIUM_SPOT."
+          exit 1
+        env:
+          LANE: ${{ matrix.name }}
+          SIZE: ${{ fromJSON(inputs.runner-sizes || '{}')[matrix.name] }}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: ${{ inputs.lfs }}

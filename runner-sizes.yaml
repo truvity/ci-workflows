@@ -1,4 +1,13 @@
-# Which runner size each job of the shared workflows gets: the ONE table.
+# Which runner size each job of the shared workflows gets, where the caller
+# does not say.
+#
+# DEPRECATED for rows that name a repository (owner/name): the caller owns
+# its sizes and passes them in the `runner-sizes` input of check.yaml and
+# integration.yaml, which is read before this table. The named rows stay
+# for this major version so a caller that passes nothing keeps its sizes;
+# the next major release removes them, leaving only "*" rows (and the
+# fleets' owner/* rows). `hack/runner-sizes.sh check` refuses a new named
+# row: move a size to its caller instead.
 #
 #   <workflow>:            .github/workflows/<workflow>.yaml
 #     <job>:               a job id in that workflow whose runs-on reads the table
@@ -17,8 +26,9 @@
 # CI_RUNNER_LABEL_<SIZE>, so the shapes and labels stay wiring (gitops) and
 # this file stays mechanism. Resolution, per job:
 #
-#   1. the row for (repository, name), else (fleets only) the owner/* row,
-#      else the "*" row for name, else MEDIUM;
+#   1. the caller's `runner-sizes` entry for name (check, integration),
+#      else the row for (repository, name), else (fleets only) the owner/*
+#      row, else the "*" row for name, else MEDIUM;
 #   2. vars.CI_RUNNER_LABEL_<SIZE>; when the organisation has no such
 #      variable (XSMALL and XLARGE arrive later than the other three), the
 #      caller's own `runner` input, exactly as before the table existed.
@@ -39,7 +49,8 @@
 # prints); `hack/runner-sizes.sh` checks this file, and `just
 # runner-sizes-audit` checks each name against its caller.
 #
-# Changing a row: edit here, run `just runner-sizes`, and cut a release.
+# Changing a "*" row: edit here, run `just runner-sizes`, and cut a release.
+# Changing one repository's size: its caller's `runner-sizes` input.
 # The workflows carry a rendered copy of their own rows in runs-on (an
 # expression cannot read a file); CI fails when a copy differs from this
 # file.

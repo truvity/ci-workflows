@@ -138,35 +138,58 @@ checkouts of an enrolment list, and checkouts of a different repository
 ### Runner sizes
 
 On the preview tier a caller passes one label, `runner:
-${{ vars.CI_RUNNER_LABEL_LARGE }}`, and nothing about sizes. Which size
-each job gets is one table here, [`runner-sizes.yaml`](runner-sizes.yaml):
-workflow, job, repository (or `*`), recipe or lane, size. The five sizes
-are XSMALL, SMALL, MEDIUM, LARGE and XLARGE, plus MEDIUM_SPOT, the MEDIUM
-shape on Fargate Spot (a trial, for fleet work a rerun absorbs). A job the
-table does not name gets MEDIUM. The fleets also read an `<owner>/*` row
-between the target repository's row and `*`. The label for a size is the caller's organisation
-variable `CI_RUNNER_LABEL_<SIZE>`, so shapes and labels stay wiring in the
-estate's configuration and only the mapping lives here. The `pins` job is
-XSMALL everywhere.
+${{ vars.CI_RUNNER_LABEL_LARGE }}`, and names the size of each job that
+needs more (or less) than MEDIUM in `runner-sizes`, a JSON object from
+recipe (`check`) or lane (`integration`) to size:
 
-The table applies only when `runner` is one of the organisation's
+```yaml
+with:
+  recipes: '["build","lint","test"]'
+  runner: ${{ vars.CI_RUNNER_LABEL_LARGE }}
+  runner-sizes: '{"build":"XLARGE","lint":"LARGE"}'
+```
+
+The sizes are XSMALL, SMALL, MEDIUM, LARGE and XLARGE, plus MEDIUM_SPOT,
+the MEDIUM shape on Fargate Spot (a trial, for fleet work a rerun
+absorbs). A size is a name; the label for it is the caller's organisation
+variable `CI_RUNNER_LABEL_<SIZE>`, so shapes and labels stay wiring in the
+estate's configuration and only the mapping lives with the caller. A
+value that is not a size fails that job, naming the recipe or lane. The
+`pins` job is XSMALL everywhere.
+
+A job `runner-sizes` does not name gets its size from
+[`runner-sizes.yaml`](runner-sizes.yaml): the row for the repository and
+the recipe, lane or job, else the `*` row, else MEDIUM. The fleets
+(`renovate-fleet`, `parity-fleet`) read only this table, and also an
+`<owner>/*` row between the target repository's row and `*`.
+
+**The table's rows for named repositories are deprecated.** They stay in
+this major version, so a caller that passes no `runner-sizes` keeps the
+sizes it has today, and the next major release removes them. A caller
+moves by copying its rows into its own `runner-sizes` before it bumps to
+that release. `hack/runner-sizes.sh check` refuses a new named row, and
+the count of the remaining ones may only fall.
+
+The sizes apply only when `runner` is one of the organisation's
 `CI_RUNNER_LABEL_<SIZE>` labels. A hosted label (every public
 repository), the stable tier's `CI_RUNNER_LABEL_STABLE` and any other
 label are used as given, so neither the public fence nor the stable
-fence depends on the table. Where the organisation has no variable for
-the size a row names, the job keeps its old runner: `small-recipes`,
+fence depends on them. Where the organisation has no variable for the
+size named, the job keeps its old runner: `small-recipes`,
 `medium-recipes` (both deprecated), then `runner`. Job names, and so
 required checks, do not change.
 
-A row is memory first: a job goes up a size only when its measured peak
+A size is memory first: a job goes up a size only when its measured peak
 working set x 1.3 does not fit the smaller one (S 8, M 8, L 12, XL 20
-GiB). Moving a job is a pull request to the table and a release. The
-workflows carry rendered copies of their rows in `runs-on`, because an
-expression cannot read a file: edit the table, run `just runner-sizes`,
-and CI (`hack/runner-sizes.sh check`) refuses a bad size, a job that does
-not exist, or a copy that differs. `just runner-sizes-audit` looks each
-named recipe and lane up in its caller; it needs a session that can read
-the private callers, so it is not part of CI.
+GiB). The workflows carry rendered copies of the table's rows in
+`runs-on`, because an expression cannot read a file: edit the table, run
+`just runner-sizes`, and CI (`hack/runner-sizes.sh check`) refuses a bad
+size, a job that does not exist, a copy that differs, a job that stops
+reading `runner-sizes` first, and a new named row;
+`hack/runner-sizes-cases.sh` proves each of the last refusals by breaking
+a copy. `just runner-sizes-audit` looks each named recipe and lane up in
+its caller; it needs a session that can read the private callers, so it
+is not part of CI.
 
 ## Consumers
 
@@ -315,6 +338,8 @@ The recipes are:
 - `just runner-sizes-check` — the runner-size table and its rendered copies;
   `just runner-sizes` renders them, `just runner-sizes-audit` checks names
   against the callers.
+- `just runner-sizes-cases` — each guard of the caller's `runner-sizes`
+  input, broken on a copy and expected to refuse.
 - `just check` — run all recipes (the merge gate).
 
 `check` green is the whole merge gate: no approving review is required,

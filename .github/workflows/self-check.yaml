@@ -75,6 +75,12 @@ jobs:
       - name: runner sizes
         run: ./hack/runner-sizes.sh check
 
+      # Each guard above that protects the caller's `runner-sizes` input
+      # (read first, default '{}', the size list, no new named rows),
+      # broken on a copy and expected to refuse.
+      - name: runner sizes cases
+        run: ./hack/runner-sizes-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a

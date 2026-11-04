@@ -99,10 +99,9 @@ on:
 
           When this is one of the organisation's CI_RUNNER_LABEL_<SIZE>
           labels (the preview tier), it only says "size me": every recipe
-          and the pins job get the size runner-sizes.yaml names for them
-          (MEDIUM when it names none), as the label in
-          CI_RUNNER_LABEL_<SIZE>. No caller passes sizes; a row in that
-          table, and a release of this library, moves a job.
+          gets the size `runner-sizes` names for it, else the size
+          runner-sizes.yaml names (deprecated), else MEDIUM, as the label
+          in CI_RUNNER_LABEL_<SIZE>. The pins job is XSMALL.
 
           Any other label (hosted, the stable tier) is used as it is, and
           so is this label for a size whose variable the organisation does
@@ -114,6 +113,23 @@ on:
         required: false
         type: string
         default: ubuntu-latest
+      runner-sizes:
+        description: >-
+          JSON object from recipe to size, owned by the caller:
+          '{"build":"LARGE","lint":"XLARGE"}'. A size is a NAME: XSMALL,
+          SMALL, MEDIUM, LARGE, XLARGE or MEDIUM_SPOT. Read only on the
+          preview tier (see `runner`); a recipe it does not name falls
+          through to runner-sizes.yaml, then MEDIUM. A value that is not
+          a size fails that recipe's job, naming the recipe, instead of
+          landing on the wrong runner.
+
+          The default, '{}', keeps every job where runner-sizes.yaml puts
+          it today. That table's rows for named repositories are
+          deprecated: a repository passes its own sizes here instead, and
+          a later major release removes the rows.
+        required: false
+        type: string
+        default: '{}'
       small-recipes:
         description: >-
           JSON array of recipes that run on `small-runner` instead. Opt
@@ -597,8 +613,9 @@ jobs:
     # check and wedges every open PR — twice already.
     #
     # On the preview tier (`runner` is one of the organisation's
-    # CI_RUNNER_LABEL_<SIZE> labels) the size comes from runner-sizes.yaml:
-    # the row for this repository and recipe, else the "*" row for the
+    # CI_RUNNER_LABEL_<SIZE> labels) the size is the caller's own
+    # `runner-sizes` entry for the recipe, else runner-sizes.yaml's row for
+    # this repository and recipe (deprecated), else its "*" row for the
     # recipe, else MEDIUM; the label is CI_RUNNER_LABEL_<that size>. Anything
     # else (a hosted label, the stable tier, an organisation without that
     # size's variable) keeps the old resolution below: small-recipes,
@@ -610,7 +627,8 @@ jobs:
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"XLARGE","truvity/gitops:lint":"XLARGE","truvity/gitops:ci-verify-guard":"XLARGE","truvity/gitops:ci-verify-pins":"XLARGE","truvity/gitops:vuln":"XLARGE","truvity/dms:test":"MEDIUM","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"MEDIUM","truvity/eudi:test":"MEDIUM","truvity/eudi:lint":"MEDIUM","truvity/docs:build":"MEDIUM","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"MEDIUM","truvity/keycloak:library":"MEDIUM","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"MEDIUM","trust-form/cra-ext-front:lint":"MEDIUM","trust-form/internal-dashboard-backend:build":"MEDIUM","trust-form/internal-dashboard-backend:test":"MEDIUM","trust-form/internal-dashboard-backend:lint":"MEDIUM","trust-form/internal-dashboard-frontend:build":"MEDIUM","trust-form/internal-dashboard-frontend:typecheck":"MEDIUM","trust-form/internal-dashboard-frontend:lint":"MEDIUM","trust-form/openapi-contracts:lint":"MEDIUM","trust-form/public-api:lint":"MEDIUM","trust-form/schemas-library:build":"MEDIUM","trust-form/schemas-library:lint":"MEDIUM","trust-form/schemas-library:test":"MEDIUM","trust-form/tf-bughunter:build":"MEDIUM","trust-form/tf-config:lint":"MEDIUM","trust-form/wallet-mobile:lint":"MEDIUM","trust-form/wallet-mobile:test":"MEDIUM"}')[format('{0}:{1}', github.repository, matrix.recipe)]
+                fromJSON(inputs.runner-sizes || '{}')[matrix.recipe]
+                || fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"XLARGE","truvity/gitops:lint":"XLARGE","truvity/gitops:ci-verify-guard":"XLARGE","truvity/gitops:ci-verify-pins":"XLARGE","truvity/gitops:vuln":"XLARGE","truvity/dms:test":"MEDIUM","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"MEDIUM","truvity/eudi:test":"MEDIUM","truvity/eudi:lint":"MEDIUM","truvity/docs:build":"MEDIUM","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"MEDIUM","truvity/keycloak:library":"MEDIUM","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"MEDIUM","trust-form/cra-ext-front:lint":"MEDIUM","trust-form/internal-dashboard-backend:build":"MEDIUM","trust-form/internal-dashboard-backend:test":"MEDIUM","trust-form/internal-dashboard-backend:lint":"MEDIUM","trust-form/internal-dashboard-frontend:build":"MEDIUM","trust-form/internal-dashboard-frontend:typecheck":"MEDIUM","trust-form/internal-dashboard-frontend:lint":"MEDIUM","trust-form/openapi-contracts:lint":"MEDIUM","trust-form/public-api:lint":"MEDIUM","trust-form/schemas-library:build":"MEDIUM","trust-form/schemas-library:lint":"MEDIUM","trust-form/schemas-library:test":"MEDIUM","trust-form/tf-bughunter:build":"MEDIUM","trust-form/tf-config:lint":"MEDIUM","trust-form/wallet-mobile:lint":"MEDIUM","trust-form/wallet-mobile:test":"MEDIUM"}')[format('{0}:{1}', github.repository, matrix.recipe)]
                 || fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"XLARGE","truvity/gitops:lint":"XLARGE","truvity/gitops:ci-verify-guard":"XLARGE","truvity/gitops:ci-verify-pins":"XLARGE","truvity/gitops:vuln":"XLARGE","truvity/dms:test":"MEDIUM","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"MEDIUM","truvity/eudi:test":"MEDIUM","truvity/eudi:lint":"MEDIUM","truvity/docs:build":"MEDIUM","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"MEDIUM","truvity/keycloak:library":"MEDIUM","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"MEDIUM","trust-form/cra-ext-front:lint":"MEDIUM","trust-form/internal-dashboard-backend:build":"MEDIUM","trust-form/internal-dashboard-backend:test":"MEDIUM","trust-form/internal-dashboard-backend:lint":"MEDIUM","trust-form/internal-dashboard-frontend:build":"MEDIUM","trust-form/internal-dashboard-frontend:typecheck":"MEDIUM","trust-form/internal-dashboard-frontend:lint":"MEDIUM","trust-form/openapi-contracts:lint":"MEDIUM","trust-form/public-api:lint":"MEDIUM","trust-form/schemas-library:build":"MEDIUM","trust-form/schemas-library:lint":"MEDIUM","trust-form/schemas-library:test":"MEDIUM","trust-form/tf-bughunter:build":"MEDIUM","trust-form/tf-config:lint":"MEDIUM","trust-form/wallet-mobile:lint":"MEDIUM","trust-form/wallet-mobile:test":"MEDIUM"}')[format('*:{0}', matrix.recipe)]
                 || 'MEDIUM')])
           || (contains(fromJSON(inputs.small-recipes), matrix.recipe)
@@ -645,6 +663,21 @@ jobs:
       matrix:
         recipe: ${{ fromJSON(inputs.recipes) }}
     steps:
+      # A size the caller named that is not a size resolves to no
+      # organisation variable, and the job would land quietly on the
+      # fallback runner. Refuse it instead, naming the recipe. The list is
+      # hack/runner-sizes.sh's SIZES; its check keeps the two equal.
+      - name: Runner size is a size
+        if: >-
+          ${{ !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'),
+                    fromJSON(inputs.runner-sizes || '{}')[matrix.recipe] || 'MEDIUM') }}
+        run: |
+          echo "::error::runner-sizes names '$SIZE' for recipe '$RECIPE'; a size is one of XSMALL, SMALL, MEDIUM, LARGE, XLARGE, MEDIUM_SPOT."
+          exit 1
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          SIZE: ${{ fromJSON(inputs.runner-sizes || '{}')[matrix.recipe] }}
+
       # Opted in to the remote builders with no builders given: refuse
       # now, with the reason, instead of failing later in a `docker build`
       # with no daemon. The builders are only reachable from the CI
