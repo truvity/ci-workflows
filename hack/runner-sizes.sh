@@ -21,10 +21,12 @@
 #
 # Rows for a named repository are DEPRECATED: a caller names its own sizes
 # in the `runner-sizes` input of check.yaml and integration.yaml, which
-# those jobs read before the literal. `check` refuses a new named row (the
-# count may only fall), a job in CALLER_JOBS whose runs-on does not read
-# the input first, and a "Runner size is a size" list that differs from
-# SIZES. A later major release drops the named rows and ORGS with them.
+# those jobs read before the literal. `check` refuses a named row that is
+# not in NAMED_FROZEN (and a line there whose row is gone), a job in
+# CALLER_JOBS whose runs-on does not read the input first, and a copy of
+# the size list (in runs-on, in the "Runner size is a size" step's `if`
+# and in its message) that differs from SIZES. A later major release drops
+# the named rows, NAMED_FROZEN and ORGS with them.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -32,9 +34,9 @@ cd "$(dirname "$0")/.."
 TABLE=runner-sizes.yaml
 SIZES='XSMALL SMALL MEDIUM LARGE XLARGE MEDIUM_SPOT'
 ORGS='truvity trust-form finttech'
-# The named rows left when they were deprecated. Lower it as rows move to
-# their callers' `runner-sizes`; never raise it.
-NAMED_ROWS_MAX=38
+# The named rows left when they were deprecated, one per line. A row may
+# leave (from both files); none may join.
+NAMED_FROZEN=hack/runner-sizes-named.txt
 # <workflow>/<job>=<matrix key>: the jobs that read the caller's
 # `runner-sizes` input before the table.
 CALLER_JOBS='check/recipe=matrix.recipe integration/suite=matrix.name'
@@ -114,42 +116,67 @@ validate() {
       || { echo "NOT IN JOB   $wf/$job: the literal is not in jobs.$job.runs-on"; fail=1; }
   done < <(sections)
 
-  # Deprecated rows: the named ones may go, never come.
-  local named
-  named=$(named_rows)
-  if [ "$named" -gt "$NAMED_ROWS_MAX" ]; then
-    echo "NEW NAMED    $named rows name a repository, over NAMED_ROWS_MAX=$NAMED_ROWS_MAX: such rows are deprecated; the caller passes its own runner-sizes input instead"
+  # Deprecated rows: the named ones may go, never come. Compared as keys,
+  # not counted, so a row swapped for another is refused too.
+  local frozen row
+  [ -f "$NAMED_FROZEN" ] || die "$NAMED_FROZEN does not exist"
+  frozen=$(grep -v '^#' "$NAMED_FROZEN" | LC_ALL=C sort)
+  while read -r row; do
+    [ -n "$row" ] || continue
+    echo "NEW NAMED    $row: a row naming a repository is deprecated and not in $NAMED_FROZEN; the caller passes its own runner-sizes input instead"
     fail=1
-  fi
+  done < <(LC_ALL=C comm -23 <(named_keys) <(cat <<<"$frozen"))
+  while read -r row; do
+    [ -n "$row" ] || continue
+    echo "GONE NAMED   $row: in $NAMED_FROZEN but not in $TABLE; drop the line too, so the row cannot come back"
+    fail=1
+  done < <(LC_ALL=C comm -13 <(named_keys) <(cat <<<"$frozen"))
 
-  # The caller's input comes first, in the job that the table resolves.
-  local pair key input want_list
+  # The caller's input comes first, in the job that the table resolves,
+  # and only when it is a size.
+  local pair key input want_list want_text c
   want_list=$(printf '"%s",' $SIZES); want_list="[${want_list%,}]"
+  want_text="a size is one of $(sed 's/ /, /g' <<<"$SIZES")."
   for pair in $CALLER_JOBS; do
     wf=${pair%%/*}; job=${pair#*/}; job=${job%%=*}; key=${pair#*=}
-    local f=".github/workflows/$wf.yaml" ro
+    local f=".github/workflows/$wf.yaml" ro step
     input=$(yq ".on.workflow_call.inputs.\"runner-sizes\" | [.type, .default] | join(\" \")" "$f")
     [ "$input" = "string {}" ] \
       || { echo "NO INPUT     $wf: no string input runner-sizes with default '{}' (have: '$input')"; fail=1; }
-    ro=$(yq ".jobs.\"$job\".runs-on // \"\"" "$f")
-    # The caller's lookup, then the first literal: in that order.
-    if ! tr -d ' \n' <<<"$ro" \
-         | grep -qF "vars[format('CI_RUNNER_LABEL_{0}',fromJSON(inputs.runner-sizes||'{}')[$key]||fromJSON('{\"#\":\"$wf/$job\""; then
-      echo "NOT CALLER   $wf/$job: runs-on does not read fromJSON(inputs.runner-sizes || '{}')[$key] before the table"; fail=1
+    ro=$(yq ".jobs.\"$job\".runs-on // \"\"" "$f" | tr -d ' \n')
+    step=$(yq ".jobs.\"$job\".steps[] | select(.name == \"Runner size is a size\")" "$f")
+    c="fromJSON(inputs.runner-sizes||'{}')[$key]"
+    # The caller's lookup, gated on the size list, then the first literal:
+    # in that order. The list itself is SIZE LIST's business, so any list
+    # matches here.
+    if ! sed -E "s/fromJSON\('\[[^]]*\]'\)/SIZES/g" <<<"$ro" \
+         | grep -qF "vars[format('CI_RUNNER_LABEL_{0}',(contains(SIZES,$c)&&$c)||fromJSON('{\"#\":\"$wf/$job\""; then
+      echo "NOT CALLER   $wf/$job: runs-on does not read fromJSON(inputs.runner-sizes || '{}')[$key], only when it is a size, before the table"; fail=1
     fi
-    local have_list
-    have_list=$(yq ".jobs.\"$job\".steps[] | select(.name == \"Runner size is a size\") | .if" "$f" \
-      | tr -d ' \n' | grep -oE "fromJSON\('\[[^]]*\]'\)" | sed -E "s/^fromJSON\('//; s/'\)$//" || true)
-    [ "$have_list" = "$want_list" ] \
-      || { echo "SIZE LIST    $wf/$job: the 'Runner size is a size' step checks '${have_list:-nothing}', SIZES is '$want_list'"; fail=1; }
+    # Every copy of the list: one in runs-on, one in the step's `if`, and
+    # the step's message.
+    local where have_list
+    for where in runs-on if; do
+      if [ "$where" = runs-on ]; then have_list=$ro
+      else have_list=$(yq '.if // ""' <<<"$step" | tr -d ' \n'); fi
+      have_list=$(grep -oE "fromJSON\('\[[^]]*\]'\)" <<<"$have_list" | sed -E "s/^fromJSON\('//; s/'\)$//" || true)
+      [ "$have_list" = "$want_list" ] \
+        || { echo "SIZE LIST    $wf/$job: the list in $where is '${have_list:-nothing}', SIZES is '$want_list'"; fail=1; }
+    done
+    yq '.run // ""' <<<"$step" | grep -qF "$want_text" \
+      || { echo "SIZE LIST    $wf/$job: the 'Runner size is a size' step's message does not say '$want_text'"; fail=1; }
   done
 
   return $fail
 }
 
-# Rows that name one repository (not "*", not "<owner>/*").
-named_rows() {
-  jq '[.[][] | to_entries[] | select(.key != "*" and (.key | endswith("/*") | not)) | .value | length] | add // 0' <<<"$json"
+# Rows that name one repository (not "*", not "<owner>/*"), one per line:
+# <workflow>/<job> <repository>:<name>, sorted.
+named_keys() {
+  jq -r '
+    to_entries[] | .key as $wf | .value | to_entries[] | .key as $job
+    | .value | to_entries[] | select(.key != "*" and (.key | endswith("/*") | not))
+    | .key as $repo | .value | keys[] | "\($wf)/\($job) \($repo):\(.)"' <<<"$json" | LC_ALL=C sort
 }
 
 render() {
@@ -182,7 +209,7 @@ case "${1:-check}" in
     [ "$fail" = 0 ] || die "the table and its copies disagree (above)"
     rows=$(jq "[.[][][] | length] | add" <<<"$json")
     echo "runner-sizes: $rows rows in $(sections | wc -l) sections, every size valid, every job present, every copy current"
-    echo "runner-sizes: $(named_rows) of them name a repository (deprecated; at most $NAMED_ROWS_MAX)"
+    echo "runner-sizes: $(named_keys | wc -l) of them name a repository (deprecated; each frozen in $NAMED_FROZEN)"
     ;;
   audit)
     command -v gh >/dev/null || die "gh is not on PATH"

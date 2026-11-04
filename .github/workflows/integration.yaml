@@ -105,9 +105,11 @@ on:
         description: >-
           JSON object from lane name to size, owned by the caller:
           '{"api":"LARGE"}'. A size is a NAME: XSMALL, SMALL, MEDIUM,
-          LARGE, XLARGE or MEDIUM_SPOT. Read only on the preview tier and
-          never on the kind tier; a lane it does not name falls through
-          to runner-sizes.yaml, then MEDIUM. A value that is not a size
+          LARGE, XLARGE or MEDIUM_SPOT. It sizes lanes only on the
+          preview tier, never on the kind tier; a lane it does not name
+          (absent or null) falls through to runner-sizes.yaml, then
+          MEDIUM. It is validated on every tier: a value that is not a
+          size ("", false and typos included) is ignored by runs-on and
           fails that lane's job, naming the lane.
 
           The default, '{}', keeps every lane where runner-sizes.yaml puts
@@ -424,7 +426,8 @@ jobs:
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON(inputs.runner-sizes || '{}')[matrix.name]
+                (contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')[matrix.name])
+                 && fromJSON(inputs.runner-sizes || '{}')[matrix.name])
                 || fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('{0}:{1}', github.repository, matrix.name)]
                 || fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('*:{0}', matrix.name)]
                 || 'MEDIUM')])
@@ -460,12 +463,12 @@ jobs:
       # on the first run of every caller.
       LANE_IMAGES: ${{ format('{0}', matrix.images) == 'false' && 'false' || 'true' }}
     steps:
-      # As in check.yaml: a named size that is not a size is refused here,
-      # naming the lane, rather than landing on the fallback runner.
+      # As in check.yaml: runs-on ignores a caller entry that is not a
+      # size, and this step fails the job on every tier, naming the lane.
       - name: Runner size is a size
         if: >-
-          ${{ !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'),
-                    fromJSON(inputs.runner-sizes || '{}')[matrix.name] || 'MEDIUM') }}
+          ${{ toJSON(fromJSON(inputs.runner-sizes || '{}')[matrix.name]) != 'null'
+                    && !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')[matrix.name]) }}
         run: |
           echo "::error::runner-sizes names '$SIZE' for lane '$LANE'; a size is one of XSMALL, SMALL, MEDIUM, LARGE, XLARGE, MEDIUM_SPOT."
           exit 1

@@ -153,9 +153,14 @@ The sizes are XSMALL, SMALL, MEDIUM, LARGE and XLARGE, plus MEDIUM_SPOT,
 the MEDIUM shape on Fargate Spot (a trial, for fleet work a rerun
 absorbs). A size is a name; the label for it is the caller's organisation
 variable `CI_RUNNER_LABEL_<SIZE>`, so shapes and labels stay wiring in the
-estate's configuration and only the mapping lives with the caller. A
-value that is not a size fails that job, naming the recipe or lane. The
+estate's configuration and only the mapping lives with the caller. The
 `pins` job is XSMALL everywhere.
+
+An absent or null entry means "not named". Any other value that is not
+a size (a typo, `""`, `false`) is never looked up: `runs-on` treats it
+as not named, and the job then fails with an error that names the recipe
+or lane. That check runs on every tier, so a typo cannot hide in a caller
+that is only sized on the preview tier.
 
 A job `runner-sizes` does not name gets its size from
 [`runner-sizes.yaml`](runner-sizes.yaml): the row for the repository and
@@ -167,8 +172,11 @@ the recipe, lane or job, else the `*` row, else MEDIUM. The fleets
 this major version, so a caller that passes no `runner-sizes` keeps the
 sizes it has today, and the next major release removes them. A caller
 moves by copying its rows into its own `runner-sizes` before it bumps to
-that release. `hack/runner-sizes.sh check` refuses a new named row, and
-the count of the remaining ones may only fall.
+that release. The remaining rows are frozen, by key, in
+[`hack/runner-sizes-named.txt`](hack/runner-sizes-named.txt).
+`hack/runner-sizes.sh check` refuses a named row that is not listed
+there, a row swapped for another included, and a listed row that is gone
+from the table. So a moved row leaves both files at once.
 
 The sizes apply only when `runner` is one of the organisation's
 `CI_RUNNER_LABEL_<SIZE>` labels. A hosted label (every public
@@ -185,7 +193,8 @@ GiB). The workflows carry rendered copies of the table's rows in
 `runs-on`, because an expression cannot read a file: edit the table, run
 `just runner-sizes`, and CI (`hack/runner-sizes.sh check`) refuses a bad
 size, a job that does not exist, a copy that differs, a job that stops
-reading `runner-sizes` first, and a new named row;
+reading `runner-sizes` first (or reads a value that is not a size), a copy
+of the size list that differs, and a new named row;
 `hack/runner-sizes-cases.sh` proves each of the last refusals by breaking
 a copy. `just runner-sizes-audit` looks each named recipe and lane up in
 its caller; it needs a session that can read the private callers, so it

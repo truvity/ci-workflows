@@ -6,8 +6,9 @@
 # integration.yaml, which is read before this table. The named rows stay
 # for this major version so a caller that passes nothing keeps its sizes;
 # the next major release removes them, leaving only "*" rows (and the
-# fleets' owner/* rows). `hack/runner-sizes.sh check` refuses a new named
-# row: move a size to its caller instead.
+# fleets' owner/* rows). `hack/runner-sizes.sh check` refuses a named row
+# that is not frozen in hack/runner-sizes-named.txt: move a size to its
+# caller instead, and drop its line there when its row leaves.
 #
 #   <workflow>:            .github/workflows/<workflow>.yaml
 #     <job>:               a job id in that workflow whose runs-on reads the table
