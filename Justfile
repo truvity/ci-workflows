@@ -112,10 +112,14 @@ runner-sizes:
 runner-sizes-check:
     @./hack/runner-sizes.sh check
 
+# The caller-input guards of runner-sizes-check, each proved to refuse
+runner-sizes-cases:
+    @./hack/runner-sizes-cases.sh
+
 # Each table row's recipe or lane, looked up in its caller (gh session; not CI)
 runner-sizes-audit:
     @./hack/runner-sizes.sh audit
 
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check
+check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases
     @echo "✓ All checks passed"

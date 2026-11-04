@@ -7,6 +7,9 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
+- **`check` and `integration` take `runner-sizes`: the caller owns its sizes.** A JSON object from recipe (or lane) to size, e.g. `'{"build":"XLARGE","lint":"LARGE"}'`, read on the preview tier before `runner-sizes.yaml`. A value that is not one of the six sizes fails that job, naming the recipe or lane, instead of landing on the fallback runner. The default, `'{}'`, changes nothing: a caller that passes nothing keeps the size the table gives it today.
+- **`runner-sizes.yaml`'s rows for named repositories are deprecated** and leave in the next major release; only `*` rows (and the fleets' `<owner>/*` rows) stay. Copy your rows into your caller's `runner-sizes` before that bump. `hack/runner-sizes.sh check` refuses a new named row and a job that stops reading the input first; `hack/runner-sizes-cases.sh` (in CI) proves those refusals.
+
 ## v5.12.0
 
 - **`release-public` pushes charts with helmctl 0.12.0 (was 0.8.0) and source maps with smctl 0.12.0 (was 0.7.1).** Two behaviours come with it, neither needing an input change. Since ocictl 0.11.0, `chart push` and `sourcemaps push` refuse to overwrite a tag that holds different content (exit 1, both digests named); the same content is a no-op. Since 0.12.0 every layer is compressed with a pinned compressor, so a chart's layer digests change once: a chart published by an older helmctl and pushed again at the same version is refused. A release pushes the tag's own new version, so none does; a rerun of a release run uses the workflow pin of that run, so it keeps the old helmctl. Publish a new version, or check the content and leave the tag, if one is refused. `--allow-overwrite` is not wired in. `helmctl` and `smctl` are deprecated aliases of `ocictl chart` and `ocictl sourcemaps`, still published for two more ocictl releases; a later change moves this workflow and ci-actions' `publish-charts` to the `ocictl` binary.
