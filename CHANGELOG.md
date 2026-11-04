@@ -7,8 +7,8 @@ those tags have no GitHub release; v3.14.0 on do.
 
 ## Unreleased
 
-- **`check` and `integration` take `runner-sizes`: the caller owns its sizes.** A JSON object from recipe (or lane) to size, e.g. `'{"build":"XLARGE","lint":"LARGE"}'`, read on the preview tier before `runner-sizes.yaml`. A value that is not one of the six sizes fails that job, naming the recipe or lane, instead of landing on the fallback runner. The default, `'{}'`, changes nothing: a caller that passes nothing keeps the size the table gives it today.
-- **`runner-sizes.yaml`'s rows for named repositories are deprecated** and leave in the next major release; only `*` rows (and the fleets' `<owner>/*` rows) stay. Copy your rows into your caller's `runner-sizes` before that bump. `hack/runner-sizes.sh check` refuses a new named row and a job that stops reading the input first; `hack/runner-sizes-cases.sh` (in CI) proves those refusals.
+- **`check` and `integration` take `runner-sizes`: the caller owns its sizes.** A JSON object from recipe (or lane) to size, e.g. `'{"build":"XLARGE","lint":"LARGE"}'`, read on the preview tier before `runner-sizes.yaml`. A value that is not one of the six sizes is never looked up (`runs-on` falls through to the table, then MEDIUM), and the job fails on every tier with an error naming the recipe or lane; an absent or null entry means "not named". The default, `'{}'`, changes nothing: a caller that passes nothing keeps the size the table gives it today.
+- **`runner-sizes.yaml`'s rows for named repositories are deprecated** and leave in the next major release; only `*` rows (and the fleets' `<owner>/*` rows) stay. Copy your rows into your caller's `runner-sizes` before that bump. The remaining rows are frozen by key in `hack/runner-sizes-named.txt`: `hack/runner-sizes.sh check` refuses a named row not listed there (a swap included), a listed row that is gone, a job that stops reading the input first, and a copy of the size list that differs; `hack/runner-sizes-cases.sh` (in CI) proves those refusals.
 
 ## v5.12.0
 

@@ -117,11 +117,13 @@ on:
         description: >-
           JSON object from recipe to size, owned by the caller:
           '{"build":"LARGE","lint":"XLARGE"}'. A size is a NAME: XSMALL,
-          SMALL, MEDIUM, LARGE, XLARGE or MEDIUM_SPOT. Read only on the
-          preview tier (see `runner`); a recipe it does not name falls
-          through to runner-sizes.yaml, then MEDIUM. A value that is not
-          a size fails that recipe's job, naming the recipe, instead of
-          landing on the wrong runner.
+          SMALL, MEDIUM, LARGE, XLARGE or MEDIUM_SPOT. It sizes jobs only
+          on the preview tier (see `runner`); a recipe it does not name
+          (absent or null) falls through to runner-sizes.yaml, then
+          MEDIUM. It is validated on every tier: a value that is not a
+          size ("", false and typos included) is ignored by runs-on, which
+          falls through the same way, and fails that recipe's job, naming
+          the recipe.
 
           The default, '{}', keeps every job where runner-sizes.yaml puts
           it today. That table's rows for named repositories are
@@ -627,7 +629,8 @@ jobs:
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON(inputs.runner-sizes || '{}')[matrix.recipe]
+                (contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')[matrix.recipe])
+                 && fromJSON(inputs.runner-sizes || '{}')[matrix.recipe])
                 || fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"XLARGE","truvity/gitops:lint":"XLARGE","truvity/gitops:ci-verify-guard":"XLARGE","truvity/gitops:ci-verify-pins":"XLARGE","truvity/gitops:vuln":"XLARGE","truvity/dms:test":"MEDIUM","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"MEDIUM","truvity/eudi:test":"MEDIUM","truvity/eudi:lint":"MEDIUM","truvity/docs:build":"MEDIUM","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"MEDIUM","truvity/keycloak:library":"MEDIUM","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"MEDIUM","trust-form/cra-ext-front:lint":"MEDIUM","trust-form/internal-dashboard-backend:build":"MEDIUM","trust-form/internal-dashboard-backend:test":"MEDIUM","trust-form/internal-dashboard-backend:lint":"MEDIUM","trust-form/internal-dashboard-frontend:build":"MEDIUM","trust-form/internal-dashboard-frontend:typecheck":"MEDIUM","trust-form/internal-dashboard-frontend:lint":"MEDIUM","trust-form/openapi-contracts:lint":"MEDIUM","trust-form/public-api:lint":"MEDIUM","trust-form/schemas-library:build":"MEDIUM","trust-form/schemas-library:lint":"MEDIUM","trust-form/schemas-library:test":"MEDIUM","trust-form/tf-bughunter:build":"MEDIUM","trust-form/tf-config:lint":"MEDIUM","trust-form/wallet-mobile:lint":"MEDIUM","trust-form/wallet-mobile:test":"MEDIUM"}')[format('{0}:{1}', github.repository, matrix.recipe)]
                 || fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM","truvity/gitops:ci-verify":"XLARGE","truvity/gitops:lint":"XLARGE","truvity/gitops:ci-verify-guard":"XLARGE","truvity/gitops:ci-verify-pins":"XLARGE","truvity/gitops:vuln":"XLARGE","truvity/dms:test":"MEDIUM","truvity/dms:test-sdk-java":"MEDIUM","truvity/eudi:build":"MEDIUM","truvity/eudi:test":"MEDIUM","truvity/eudi:lint":"MEDIUM","truvity/docs:build":"MEDIUM","truvity/docs:lint":"MEDIUM","truvity/docs:test":"MEDIUM","truvity/keycloak:charts":"MEDIUM","truvity/keycloak:library":"MEDIUM","trust-form/wallet:ci":"XLARGE","trust-form/trustform-front:build":"XLARGE","trust-form/cra-ext-front:build":"MEDIUM","trust-form/cra-ext-front:lint":"MEDIUM","trust-form/internal-dashboard-backend:build":"MEDIUM","trust-form/internal-dashboard-backend:test":"MEDIUM","trust-form/internal-dashboard-backend:lint":"MEDIUM","trust-form/internal-dashboard-frontend:build":"MEDIUM","trust-form/internal-dashboard-frontend:typecheck":"MEDIUM","trust-form/internal-dashboard-frontend:lint":"MEDIUM","trust-form/openapi-contracts:lint":"MEDIUM","trust-form/public-api:lint":"MEDIUM","trust-form/schemas-library:build":"MEDIUM","trust-form/schemas-library:lint":"MEDIUM","trust-form/schemas-library:test":"MEDIUM","trust-form/tf-bughunter:build":"MEDIUM","trust-form/tf-config:lint":"MEDIUM","trust-form/wallet-mobile:lint":"MEDIUM","trust-form/wallet-mobile:test":"MEDIUM"}')[format('*:{0}', matrix.recipe)]
                 || 'MEDIUM')])
@@ -663,14 +666,17 @@ jobs:
       matrix:
         recipe: ${{ fromJSON(inputs.recipes) }}
     steps:
-      # A size the caller named that is not a size resolves to no
-      # organisation variable, and the job would land quietly on the
-      # fallback runner. Refuse it instead, naming the recipe. The list is
-      # hack/runner-sizes.sh's SIZES; its check keeps the two equal.
+      # runs-on ignores a caller entry that is not a size (it falls
+      # through to the table, then MEDIUM), so the entry never reaches a
+      # variable outside the list. This step then fails the job, on every
+      # tier, naming the recipe. An absent or null entry is "not named";
+      # any other value that is not a size ("", false, 0, a typo) is
+      # refused. The list is hack/runner-sizes.sh's SIZES; its check keeps
+      # every copy (runs-on, this `if`, the message) equal to it.
       - name: Runner size is a size
         if: >-
-          ${{ !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'),
-                    fromJSON(inputs.runner-sizes || '{}')[matrix.recipe] || 'MEDIUM') }}
+          ${{ toJSON(fromJSON(inputs.runner-sizes || '{}')[matrix.recipe]) != 'null'
+                    && !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')[matrix.recipe]) }}
         run: |
           echo "::error::runner-sizes names '$SIZE' for recipe '$RECIPE'; a size is one of XSMALL, SMALL, MEDIUM, LARGE, XLARGE, MEDIUM_SPOT."
           exit 1

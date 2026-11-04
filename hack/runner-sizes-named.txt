@@ -1,0 +1,44 @@
+# The rows of runner-sizes.yaml that name one repository, frozen when they
+# were deprecated: <workflow>/<job> <repository>:<recipe or lane>, sorted
+# (LC_ALL=C). `hack/runner-sizes.sh check` refuses a named row that is not
+# here (NEW NAMED) and a line here whose row is gone (GONE NAMED), so a
+# row can only leave, both places at once. Never add a line: the caller
+# names its own size in its `runner-sizes` input instead.
+check/recipe trust-form/cra-ext-front:build
+check/recipe trust-form/cra-ext-front:lint
+check/recipe trust-form/internal-dashboard-backend:build
+check/recipe trust-form/internal-dashboard-backend:lint
+check/recipe trust-form/internal-dashboard-backend:test
+check/recipe trust-form/internal-dashboard-frontend:build
+check/recipe trust-form/internal-dashboard-frontend:lint
+check/recipe trust-form/internal-dashboard-frontend:typecheck
+check/recipe trust-form/openapi-contracts:lint
+check/recipe trust-form/public-api:lint
+check/recipe trust-form/schemas-library:build
+check/recipe trust-form/schemas-library:lint
+check/recipe trust-form/schemas-library:test
+check/recipe trust-form/tf-bughunter:build
+check/recipe trust-form/tf-config:lint
+check/recipe trust-form/trustform-front:build
+check/recipe trust-form/wallet-mobile:lint
+check/recipe trust-form/wallet-mobile:test
+check/recipe trust-form/wallet:ci
+check/recipe truvity/dms:test
+check/recipe truvity/dms:test-sdk-java
+check/recipe truvity/docs:build
+check/recipe truvity/docs:lint
+check/recipe truvity/docs:test
+check/recipe truvity/eudi:build
+check/recipe truvity/eudi:lint
+check/recipe truvity/eudi:test
+check/recipe truvity/gitops:ci-verify
+check/recipe truvity/gitops:ci-verify-guard
+check/recipe truvity/gitops:ci-verify-pins
+check/recipe truvity/gitops:lint
+check/recipe truvity/gitops:vuln
+check/recipe truvity/keycloak:charts
+check/recipe truvity/keycloak:library
+integration/suite truvity/dms:dms
+integration/suite truvity/dms:lib
+integration/suite truvity/eudi:eudi-vci
+integration/suite truvity/eudi:eudi-vp
