@@ -1,19 +1,15 @@
 # Which runner size each job of the shared workflows gets, where the caller
 # does not say.
 #
-# DEPRECATED for rows that name a repository (owner/name): the caller owns
-# its sizes and passes them in the `runner-sizes` input of check.yaml and
-# integration.yaml, which is read before this table. The named rows stay
-# for this major version so a caller that passes nothing keeps its sizes;
-# the next major release removes them, leaving only "*" rows (and the
-# fleets' owner/* rows). `hack/runner-sizes.sh check` refuses a named row
-# that is not frozen in hack/runner-sizes-named.txt: move a size to its
-# caller instead, and drop its line there when its row leaves.
+# The table names no repository. A caller of check.yaml or integration.yaml
+# names the size of each recipe or lane that needs more (or less) in its
+# `runner-sizes` input, which is read before this table.
+# `hack/runner-sizes.sh check` refuses a row that names one repository.
 #
 #   <workflow>:            .github/workflows/<workflow>.yaml
 #     <job>:               a job id in that workflow whose runs-on reads the table
-#       <repository>|"*":  owner/name, or "*" for every repository; the fleets
-#                          also take owner/* for every repository of one owner
+#       "*" | <owner>/*:   "*" for every repository; the fleets also take
+#                          <owner>/* for every repository of the caller's owner
 #         <name>: <SIZE>   the recipe (check), the lane (integration), or the
 #                          job id itself for a job with one name (pins, renovate, align)
 #
@@ -21,15 +17,14 @@
 # MEDIUM_SPOT, the MEDIUM shape on Fargate Spot (a trial: a job there can
 # be stopped with two minutes' warning, so only work a rerun absorbs, and
 # never the stable tier), is still a valid name but no row uses it (the
-# trial ended 2026-10-28, D109: its one user, trust-form's renovate fleet,
-# is on SMALL).
+# trial ended 2026-10-28).
 # The label comes from the caller's organisation variable
-# CI_RUNNER_LABEL_<SIZE>, so the shapes and labels stay wiring (gitops) and
-# this file stays mechanism. Resolution, per job:
+# CI_RUNNER_LABEL_<SIZE>, so the shapes and labels stay wiring and this
+# file stays mechanism. Resolution, per job:
 #
 #   1. the caller's `runner-sizes` entry for name (check, integration),
-#      else the row for (repository, name), else (fleets only) the owner/*
-#      row, else the "*" row for name, else MEDIUM;
+#      else (fleets only) the <owner>/* row, else the "*" row for name,
+#      else MEDIUM;
 #   2. vars.CI_RUNNER_LABEL_<SIZE>; when the organisation has no such
 #      variable (XSMALL and XLARGE arrive later than the other three), the
 #      caller's own `runner` input, exactly as before the table existed.
@@ -40,15 +35,12 @@
 # tier's CI_RUNNER_LABEL_STABLE and any other label pass through untouched,
 # so the public fence and the stable fence do not depend on this file.
 #
-# The rule for a row (2026-10-24, the owner's sizing decisions): sizes
-# are memory first. A job moves to a bigger size only when its measured
-# peak working set x 1.3 does not fit the smaller one (S 8, M 8, L 12,
-# XL 20 GiB; S is 1 vCPU, M 2, L 4, XL 8); never for speed. Jobs on LARGE before the table stay there
-# until their measurements say otherwise (D109, 2026-10-28, moved the ones
-# whose peaks fit MEDIUM). The evidence is the
-# `grun.job.peak` record every Fargate job writes (and the peak line it
-# prints); `hack/runner-sizes.sh` checks this file, and `just
-# runner-sizes-audit` checks each name against its caller.
+# The rule for a row (2026-10-24): sizes are memory first. A job moves to a
+# bigger size only when its measured peak working set x 1.3 does not fit
+# the smaller one (S 8, M 8, L 12, XL 20 GiB; S is 1 vCPU, M 2, L 4, XL 8);
+# never for speed. The evidence is the `grun.job.peak` record every Fargate
+# job writes (and the peak line it prints); `hack/runner-sizes.sh` checks
+# this file.
 #
 # Changing a "*" row: edit here, run `just runner-sizes`, and cut a release.
 # Changing one repository's size: its caller's `runner-sizes` input.
@@ -62,82 +54,19 @@ check:
     "*":
       pins: XSMALL
   recipe:
-    # The weekly security caller, everywhere: gitops 5.8 GiB, phoenix 4.9.
+    # The weekly security caller, everywhere: 5.8 GiB at most measured.
     "*":
       vuln: MEDIUM
-    truvity/gitops:
-      # XL for good (owner Q8 a, 2026-10-28): a cold compile of the big Pulumi
-      # SDKs (pulumi-cloudflare, after any x/net bump invalidates its cached
-      # build) was OOM-killed on 12 GiB in truvity/gitops#4178; XL is 8 / 20.
-      ci-verify: XLARGE
-      lint: XLARGE
-      ci-verify-guard: XLARGE
-      ci-verify-pins: XLARGE
-      vuln: XLARGE
-    truvity/dms:
-      test: MEDIUM              # 5.7 GiB peak (5.9 max): x 1.3 = 7.6 of 8, watch it; was LARGE
-      test-sdk-java: MEDIUM     # 1.7 GiB, was LARGE
-      # build (5.1) and lint (4.9) are MEDIUM, the default.
-    truvity/eudi:
-      build: MEDIUM             # 5.1 GiB at most, was LARGE
-      test: MEDIUM
-      lint: MEDIUM
-    truvity/docs:
-      build: MEDIUM             # 5.1 GiB at most, was LARGE
-      lint: MEDIUM              # 2.8 GiB, was LARGE
-      test: MEDIUM              # 2.8 GiB, was LARGE
-    truvity/keycloak:
-      charts: MEDIUM            # 2.3 GiB at most, was LARGE
-      library: MEDIUM
-    trust-form/wallet:
-      ci: XLARGE                # 12.9 GiB at most (p95 11.5): x 1.3 is over LARGE's 12 and XL's old 16; XL is 8/20 since D109
-    trust-form/trustform-front:
-      build: XLARGE             # 9.1 GiB, was MEDIUM
-    # The small trust-form repositories below were LARGE: peaks 0.8-2.4 GiB, no throttling.
-    trust-form/cra-ext-front:
-      build: MEDIUM
-      lint: MEDIUM
-    trust-form/internal-dashboard-backend:
-      build: MEDIUM
-      test: MEDIUM
-      lint: MEDIUM
-    trust-form/internal-dashboard-frontend:
-      build: MEDIUM
-      typecheck: MEDIUM
-      lint: MEDIUM
-    trust-form/openapi-contracts:
-      lint: MEDIUM
-    trust-form/public-api:
-      lint: MEDIUM
-    trust-form/schemas-library:
-      build: MEDIUM
-      lint: MEDIUM
-      test: MEDIUM
-    trust-form/tf-bughunter:
-      build: MEDIUM
-    trust-form/tf-config:
-      lint: MEDIUM
-    trust-form/wallet-mobile:
-      lint: MEDIUM
-      test: MEDIUM
 
 integration:
-  suite:
-    truvity/dms:
-      dms: LARGE                # 7.0 GiB
-      lib: LARGE
-    truvity/eudi:
-      eudi-vci: LARGE
-      eudi-vp: LARGE
+  # No "*" row: every lane is MEDIUM unless its caller names a size.
+  suite: {}
 
-# The fleets key on the repository a matrix job works on, not the caller.
+# The fleets key on the caller's owner, not the caller.
 renovate-fleet:
   renovate:
     "*":
       renovate: SMALL           # 4.65 GiB at most on 1 vCPU / 8 GiB (CPU average 0.5-0.9), was MEDIUM
-    # trust-form's fleet was on MEDIUM_SPOT (the Spot trial, 2026-10-25, 5.2 GiB
-    # at most, no throttling); it takes the "*" row since D109: on-demand SMALL
-    # costs about what the Spot discount saved.
 
 parity-fleet:
   align:

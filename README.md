@@ -163,20 +163,10 @@ or lane. That check runs on every tier, so a typo cannot hide in a caller
 that is only sized on the preview tier.
 
 A job `runner-sizes` does not name gets its size from
-[`runner-sizes.yaml`](runner-sizes.yaml): the row for the repository and
-the recipe, lane or job, else the `*` row, else MEDIUM. The fleets
+[`runner-sizes.yaml`](runner-sizes.yaml): the `*` row for the recipe,
+lane or job, else MEDIUM. The table names no repository. The fleets
 (`renovate-fleet`, `parity-fleet`) read only this table, and also an
-`<owner>/*` row between the target repository's row and `*`.
-
-**The table's rows for named repositories are deprecated.** They stay in
-this major version, so a caller that passes no `runner-sizes` keeps the
-sizes it has today, and the next major release removes them. A caller
-moves by copying its rows into its own `runner-sizes` before it bumps to
-that release. The remaining rows are frozen, by key, in
-[`hack/runner-sizes-named.txt`](hack/runner-sizes-named.txt).
-`hack/runner-sizes.sh check` refuses a named row that is not listed
-there, a row swapped for another included, and a listed row that is gone
-from the table. So a moved row leaves both files at once.
+`<owner>/*` row (the caller's owner) before `*`.
 
 The sizes apply only when `runner` is one of the organisation's
 `CI_RUNNER_LABEL_<SIZE>` labels. A hosted label (every public
@@ -194,11 +184,9 @@ GiB). The workflows carry rendered copies of the table's rows in
 `just runner-sizes`, and CI (`hack/runner-sizes.sh check`) refuses a bad
 size, a job that does not exist, a copy that differs, a job that stops
 reading `runner-sizes` first (or reads a value that is not a size), a copy
-of the size list that differs, and a new named row;
+of the size list that differs, and a row that names one repository;
 `hack/runner-sizes-cases.sh` proves each of the last refusals by breaking
-a copy. `just runner-sizes-audit` looks each named recipe and lane up in
-its caller; it needs a session that can read the private callers, so it
-is not part of CI.
+a copy.
 
 ## Consumers
 
@@ -345,8 +333,7 @@ The recipes are:
 - `just runners` — verify the repository uses public runners.
 - `just leak-canary` — scan for secrets and sensitive data.
 - `just runner-sizes-check` — the runner-size table and its rendered copies;
-  `just runner-sizes` renders them, `just runner-sizes-audit` checks names
-  against the callers.
+  `just runner-sizes` renders them.
 - `just runner-sizes-cases` — each guard of the caller's `runner-sizes`
   input, broken on a copy and expected to refuse.
 - `just check` — run all recipes (the merge gate).

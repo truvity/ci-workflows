@@ -3,40 +3,30 @@
 #
 #   hack/runner-sizes.sh render   rewrite every rendered copy from the table
 #   hack/runner-sizes.sh check    refuse a bad table, or a copy that differs
-#   hack/runner-sizes.sh audit    look each named recipe and lane up in its
-#                                 caller's workflows (needs a gh session that
-#                                 can read those repositories; not in CI)
 #
 # An expression cannot read a file, so each job that resolves a size
 # carries its own rows as a JSON literal:
 #
-#   fromJSON('{"#":"check/recipe","truvity/gitops:ci-verify":"LARGE",...}')
+#   fromJSON('{"#":"check/recipe","*:vuln":"MEDIUM",...}')
 #
 # The "#" key names the section (<workflow>/<job>) and is what `render`
-# finds the literal by. A key is "<repository>:<name>"; "<owner>/*:<name>"
-# is the row for every repository of one owner (only where the job's
-# runs-on looks it up: the fleets), and "*:<name>" the row for every
-# repository. No repository is ever named "#" or "*", so
-# neither key can answer a lookup by accident.
+# finds the literal by. A key is "*:<name>", the row for every repository,
+# or "<owner>/*:<name>", the row for every repository of one owner (only
+# where the job's runs-on looks it up: the fleets). No owner is ever named
+# "#" or "*", so neither key can answer a lookup by accident.
 #
-# Rows for a named repository are DEPRECATED: a caller names its own sizes
-# in the `runner-sizes` input of check.yaml and integration.yaml, which
-# those jobs read before the literal. `check` refuses a named row that is
-# not in NAMED_FROZEN (and a line there whose row is gone), a job in
-# CALLER_JOBS whose runs-on does not read the input first, and a copy of
-# the size list (in runs-on, in the "Runner size is a size" step's `if`
-# and in its message) that differs from SIZES. A later major release drops
-# the named rows, NAMED_FROZEN and ORGS with them.
+# The table names no repository: a caller names its own sizes in the
+# `runner-sizes` input of check.yaml and integration.yaml, which those jobs
+# read before the literal. `check` refuses a row that names one repository,
+# a job in CALLER_JOBS whose runs-on does not read the input first, and a
+# copy of the size list (in runs-on, in the "Runner size is a size" step's
+# `if` and in its message) that differs from SIZES.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 TABLE=runner-sizes.yaml
 SIZES='XSMALL SMALL MEDIUM LARGE XLARGE MEDIUM_SPOT'
-ORGS='truvity trust-form finttech'
-# The named rows left when they were deprecated, one per line. A row may
-# leave (from both files); none may join.
-NAMED_FROZEN=hack/runner-sizes-named.txt
 # <workflow>/<job>=<matrix key>: the jobs that read the caller's
 # `runner-sizes` input before the table.
 CALLER_JOBS='check/recipe=matrix.recipe integration/suite=matrix.name'
@@ -76,11 +66,11 @@ validate() {
     fi
     case " $SIZES " in *" $size "*) ;; *) echo "BAD SIZE     $where: '$size' (one of: $SIZES)"; fail=1 ;; esac
     if [ "$repo" != '*' ]; then
-      local org=${repo%%/*}
-      if ! [[ "$repo" =~ ^[A-Za-z0-9-]+/([A-Za-z0-9._-]+|\*)$ ]] || [[ " $ORGS " != *" $org "* ]]; then
-        echo "BAD REPO     $where: '$repo' is not <owner>/<name> or <owner>/* in one of: $ORGS"; fail=1
-      elif [[ "$repo" == */\* ]] \
-           && ! yq ".jobs.\"$job\".runs-on // \"\"" ".github/workflows/$wf.yaml" | grep -qF 'github.repository_owner'; then
+      if [[ "$repo" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]; then
+        echo "NAMED ROW    $where: the table names no repository; the caller passes its own runner-sizes input instead"; fail=1
+      elif ! [[ "$repo" =~ ^[A-Za-z0-9-]+/\*$ ]]; then
+        echo "BAD REPO     $where: '$repo' is not \"*\" or <owner>/*"; fail=1
+      elif ! yq ".jobs.\"$job\".runs-on // \"\"" ".github/workflows/$wf.yaml" | grep -qF 'github.repository_owner'; then
         echo "NO OWNER ROW $where: jobs.$job.runs-on has no <owner>/* lookup (github.repository_owner)"; fail=1
       fi
     fi
@@ -115,22 +105,6 @@ validate() {
     grep -qF "fromJSON('{\"#\":\"$wf/$job\"" <<<"$ro" \
       || { echo "NOT IN JOB   $wf/$job: the literal is not in jobs.$job.runs-on"; fail=1; }
   done < <(sections)
-
-  # Deprecated rows: the named ones may go, never come. Compared as keys,
-  # not counted, so a row swapped for another is refused too.
-  local frozen row
-  [ -f "$NAMED_FROZEN" ] || die "$NAMED_FROZEN does not exist"
-  frozen=$(grep -v '^#' "$NAMED_FROZEN" | LC_ALL=C sort)
-  while read -r row; do
-    [ -n "$row" ] || continue
-    echo "NEW NAMED    $row: a row naming a repository is deprecated and not in $NAMED_FROZEN; the caller passes its own runner-sizes input instead"
-    fail=1
-  done < <(LC_ALL=C comm -23 <(named_keys) <(cat <<<"$frozen"))
-  while read -r row; do
-    [ -n "$row" ] || continue
-    echo "GONE NAMED   $row: in $NAMED_FROZEN but not in $TABLE; drop the line too, so the row cannot come back"
-    fail=1
-  done < <(LC_ALL=C comm -13 <(named_keys) <(cat <<<"$frozen"))
 
   # The caller's input comes first, in the job that the table resolves,
   # and only when it is a size.
@@ -170,15 +144,6 @@ validate() {
   return $fail
 }
 
-# Rows that name one repository (not "*", not "<owner>/*"), one per line:
-# <workflow>/<job> <repository>:<name>, sorted.
-named_keys() {
-  jq -r '
-    to_entries[] | .key as $wf | .value | to_entries[] | .key as $job
-    | .value | to_entries[] | select(.key != "*" and (.key | endswith("/*") | not))
-    | .key as $repo | .value | keys[] | "\($wf)/\($job) \($repo):\(.)"' <<<"$json" | LC_ALL=C sort
-}
-
 render() {
   local wf job lit f
   while read -r wf job lit; do
@@ -207,43 +172,10 @@ case "${1:-check}" in
       fail=1
     fi
     [ "$fail" = 0 ] || die "the table and its copies disagree (above)"
-    rows=$(jq "[.[][][] | length] | add" <<<"$json")
-    echo "runner-sizes: $rows rows in $(sections | wc -l) sections, every size valid, every job present, every copy current"
-    echo "runner-sizes: $(named_keys | wc -l) of them name a repository (deprecated; each frozen in $NAMED_FROZEN)"
-    ;;
-  audit)
-    command -v gh >/dev/null || die "gh is not on PATH"
-    fail=0 checked=0
-    while IFS=$'\t' read -r wf repo name; do
-      dir="${TMPDIR:-/tmp}/runner-sizes-audit/${repo//\//__}"
-      if [ ! -d "$dir" ]; then
-        mkdir -p "$dir"
-        gh api "repos/$repo/contents/.github/workflows" --jq '.[] | select(.type == "file") | .path' \
-          | while read -r p; do
-              gh api "repos/$repo/contents/$p" --jq .content | base64 -d > "$dir/$(basename "$p")"
-            done
-      fi
-      if [ "$wf" = integration ]; then
-        pat="\"name\"[[:space:]]*:[[:space:]]*\"$name\""
-      else
-        pat="(^|[^A-Za-z0-9_-])$name([^A-Za-z0-9_-]|$)"
-      fi
-      checked=$((checked + 1))
-      if grep -qE "$pat" "$dir"/* 2>/dev/null; then
-        printf 'ok        %-16s %-40s %s\n' "$wf" "$repo" "$name"
-      else
-        printf 'MISSING   %-16s %-40s %s  (no such recipe or lane in its workflows)\n' "$wf" "$repo" "$name"
-        fail=1
-      fi
-    done < <(jq -r '
-      to_entries[] | .key as $wf | .value[] | to_entries[]
-      | select(.key != "*" and (.key | endswith("/*") | not)) | .key as $repo | .value | keys[]
-      | [$wf, $repo, .] | @tsv' <<<"$json")
-    [ "$checked" -gt 0 ] || die "nothing to audit: the table names no repository"
-    [ "$fail" = 0 ] || die "a row names a recipe or lane its caller does not run"
-    echo "runner-sizes audit: $checked named rows, each found in its caller"
+    rows=$(jq "[.[][][] | length] | add // 0" <<<"$json")
+    echo "runner-sizes: $rows rows in $(sections | wc -l) sections, no repository named, every size valid, every job present, every copy current"
     ;;
   *)
-    die "usage: $0 render|check|audit"
+    die "usage: $0 render|check"
     ;;
 esac
