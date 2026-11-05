@@ -96,8 +96,8 @@ on:
 
           On the preview tier (one of the organisation's
           CI_RUNNER_LABEL_<SIZE> labels) each lane's size comes from
-          `runner-sizes`, else runner-sizes.yaml (deprecated), else
-          MEDIUM, as in check.yaml's `runner`.
+          `runner-sizes`, else runner-sizes.yaml's "*" row, else MEDIUM,
+          as in check.yaml's `runner`.
         required: false
         type: string
         default: ubuntu-latest
@@ -107,15 +107,14 @@ on:
           '{"api":"LARGE"}'. A size is a NAME: XSMALL, SMALL, MEDIUM,
           LARGE, XLARGE or MEDIUM_SPOT. It sizes lanes only on the
           preview tier, never on the kind tier; a lane it does not name
-          (absent or null) falls through to runner-sizes.yaml, then
-          MEDIUM. It is validated on every tier: a value that is not a
-          size ("", false and typos included) is ignored by runs-on and
+          (absent or null) falls through to runner-sizes.yaml's "*" row,
+          then MEDIUM. It is validated on every tier: a value that is not
+          a size ("", false and typos included) is ignored by runs-on and
           fails that lane's job, naming the lane.
 
-          The default, '{}', keeps every lane where runner-sizes.yaml puts
-          it today. That table's rows for named repositories are
-          deprecated: a repository passes its own sizes here instead, and
-          a later major release removes the rows.
+          The default, '{}', leaves every lane on the "*" row or MEDIUM.
+          runner-sizes.yaml names no repository: a lane that needs
+          another size is named here.
         required: false
         type: string
         default: '{}'
@@ -417,9 +416,9 @@ jobs:
   suite:
     needs: tier
     name: integration-${{ matrix.name }}
-    # The caller's `runner-sizes` entry for the lane, else runner-sizes.yaml
-    # (see check.yaml's `recipe` job for the rule); the literal is rendered
-    # by hack/runner-sizes.sh.
+    # The caller's `runner-sizes` entry for the lane, else runner-sizes.yaml's
+    # "*" row (see check.yaml's `recipe` job for the rule); the literal is
+    # rendered by hack/runner-sizes.sh.
     runs-on: >-
       ${{ (needs.tier.outputs.tier != 'kind' && inputs.runner != ''
            && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
@@ -428,8 +427,7 @@ jobs:
            && vars[format('CI_RUNNER_LABEL_{0}',
                 (contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')[matrix.name])
                  && fromJSON(inputs.runner-sizes || '{}')[matrix.name])
-                || fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('{0}:{1}', github.repository, matrix.name)]
-                || fromJSON('{"#":"integration/suite","truvity/dms:dms":"LARGE","truvity/dms:lib":"LARGE","truvity/eudi:eudi-vci":"LARGE","truvity/eudi:eudi-vp":"LARGE"}')[format('*:{0}', matrix.name)]
+                || fromJSON('{"#":"integration/suite"}')[format('*:{0}', matrix.name)]
                 || 'MEDIUM')])
           || (needs.tier.outputs.tier == 'kind' && 'ubuntu-latest' || inputs.runner) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}

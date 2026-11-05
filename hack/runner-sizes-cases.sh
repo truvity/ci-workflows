@@ -63,26 +63,21 @@ for wk in check.yaml:recipe integration.yaml:name; do
     "perl -pi -e 's/XLARGE, MEDIUM_SPOT\./XLARGE./ if /::error::runner-sizes/' .github/workflows/$wf"
 done
 
-# A new row naming a repository (in the first organisation the script
-# accepts), rendered: deprecated, so refused.
-org=$(sed -n "s/^ORGS='\([^ ']*\).*/\1/p" "$root/hack/runner-sizes.sh")
-case_ new-named-row "NEW NAMED" \
-  "yq -i '.check.recipe.\"$org/example\".build = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
+# A row naming one repository, rendered: the table names none, so refused.
+case_ named-row "NAMED ROW" \
+  "yq -i '.check.recipe.\"example/example\".build = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
 
-# One named row swapped for another: the count stays, the keys do not.
-first=$(grep -v '^#' "$root/hack/runner-sizes-named.txt" | grep '^check/recipe ' | head -1)
-frepo=${first#* }; frepo=${frepo%%:*}; fname=${first##*:}
-case_ swapped-named-row "NEW NAMED" \
-  "yq -i 'del(.check.recipe.\"$frepo\".\"$fname\") | .check.recipe.\"$org/example\".build = \"LARGE\"' runner-sizes.yaml && sed -i '\\|^$first\$|d' hack/runner-sizes-named.txt && ./hack/runner-sizes.sh render >/dev/null"
+# The same in a fleet, whose runs-on still looks rows up by owner.
+case_ named-fleet-row "NAMED ROW" \
+  "yq -i '.\"renovate-fleet\".renovate.\"example/example\".renovate = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
 
-# A named row moved to its caller, its frozen line left behind: the row
-# could come back unnoticed.
-case_ stale-frozen-line "GONE NAMED" \
-  "yq -i 'del(.check.recipe.\"$frepo\".\"$fname\")' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
+# An owner row where runs-on has no owner lookup: it could never answer.
+case_ owner-row-in-check "NO OWNER ROW" \
+  "yq -i '.check.recipe.\"example/*\".build = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
 
-# The same move with the line dropped too passes.
-case_ moved-named-row "" \
-  "yq -i 'del(.check.recipe.\"$frepo\".\"$fname\")' runner-sizes.yaml && sed -i '\\|^$first\$|d' hack/runner-sizes-named.txt && ./hack/runner-sizes.sh render >/dev/null"
+# An owner row in a fleet passes.
+case_ owner-row-in-fleet "" \
+  "yq -i '.\"renovate-fleet\".renovate.\"example/*\".renovate = \"MEDIUM\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
 
 [ "$fail" = 0 ] || { echo "runner-sizes cases: a guard did not hold (above)" >&2; exit 1; }
 echo "runner-sizes cases passed"

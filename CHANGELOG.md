@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **Breaking: `runner-sizes.yaml` names no repository.** Its rows for named repositories, deprecated in v5.13.0, are gone, and so are the per-repository lookups in the `runs-on` of `check`, `integration`, `renovate-fleet` and `parity-fleet`. A job that its caller's `runner-sizes` does not name gets the `*` row (the fleets: the caller's `<owner>/*` row, then `*`), else MEDIUM. Adoption: before you bump, put every size your repository had from a named row (other than MEDIUM, which is the default) into the `runner-sizes` input of your `check.yaml` and `integration.yaml` calls. `hack/runner-sizes.sh check` now refuses any row that names one repository; `hack/runner-sizes-named.txt` and `just runner-sizes-audit` are removed.
+
 ## v5.13.0
 
 - **`check` and `integration` take `runner-sizes`: the caller owns its sizes.** A JSON object from recipe (or lane) to size, e.g. `'{"build":"XLARGE","lint":"LARGE"}'`, read on the preview tier before `runner-sizes.yaml`. A value that is not one of the six sizes is never looked up (`runs-on` falls through to the table, then MEDIUM), and the job fails on every tier with an error naming the recipe or lane; an absent or null entry means "not named". The default, `'{}'`, changes nothing: a caller that passes nothing keeps the size the table gives it today.
