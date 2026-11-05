@@ -144,9 +144,10 @@ on:
           peak-memory line each job prints is the evidence for moving
           one here.
 
-          Deprecated: on the preview tier runner-sizes.yaml decides, and
-          this is read only off it (or where the organisation has no
-          variable for the size the table names). Leave it out.
+          Deprecated: on the preview tier the caller's `runner-sizes`
+          input, then runner-sizes.yaml's "*" row, decide, and this is
+          read only off it (or where the organisation has no variable for
+          the size they name). Leave it out.
         required: false
         type: string
         default: '[]'
@@ -156,9 +157,10 @@ on:
           Defaults to `runner`, so listing recipes without setting this
           changes nothing.
 
-          Deprecated: on the preview tier runner-sizes.yaml decides, and
-          this is read only off it (or where the organisation has no
-          variable for the size the table names). Leave it out.
+          Deprecated: on the preview tier the caller's `runner-sizes`
+          input, then runner-sizes.yaml's "*" row, decide, and this is
+          read only off it (or where the organisation has no variable for
+          the size they name). Leave it out.
         required: false
         type: string
         default: ""
@@ -171,9 +173,10 @@ on:
           evidence is the peak line each job prints. A recipe listed
           in BOTH small and medium goes small (small wins ties).
 
-          Deprecated: on the preview tier runner-sizes.yaml decides, and
-          this is read only off it (or where the organisation has no
-          variable for the size the table names). Leave it out.
+          Deprecated: on the preview tier the caller's `runner-sizes`
+          input, then runner-sizes.yaml's "*" row, decide, and this is
+          read only off it (or where the organisation has no variable for
+          the size they name). Leave it out.
         required: false
         type: string
         default: '[]'
@@ -183,9 +186,10 @@ on:
           (vars.CI_RUNNER_LABEL_MEDIUM). Defaults to `runner`, so
           listing recipes without setting this changes nothing.
 
-          Deprecated: on the preview tier runner-sizes.yaml decides, and
-          this is read only off it (or where the organisation has no
-          variable for the size the table names). Leave it out.
+          Deprecated: on the preview tier the caller's `runner-sizes`
+          input, then runner-sizes.yaml's "*" row, decide, and this is
+          read only off it (or where the organisation has no variable for
+          the size they name). Leave it out.
         required: false
         type: string
         default: ""

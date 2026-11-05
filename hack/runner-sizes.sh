@@ -18,7 +18,9 @@
 # The table names no repository: a caller names its own sizes in the
 # `runner-sizes` input of check.yaml and integration.yaml, which those jobs
 # read before the literal. `check` refuses a row that names one repository,
-# a job in CALLER_JOBS whose runs-on does not read the input first, and a
+# an <owner>/* row whose owner is not in ORGS (a misspelt owner can never
+# match github.repository_owner, so it would fall through to "*" unseen), a
+# job in CALLER_JOBS whose runs-on does not read the input first, and a
 # copy of the size list (in runs-on, in the "Runner size is a size" step's
 # `if` and in its message) that differs from SIZES.
 set -euo pipefail
@@ -27,6 +29,8 @@ cd "$(dirname "$0")/.."
 
 TABLE=runner-sizes.yaml
 SIZES='XSMALL SMALL MEDIUM LARGE XLARGE MEDIUM_SPOT'
+# The owners an <owner>/* row may name.
+ORGS='truvity trust-form finttech'
 # <workflow>/<job>=<matrix key>: the jobs that read the caller's
 # `runner-sizes` input before the table.
 CALLER_JOBS='check/recipe=matrix.recipe integration/suite=matrix.name'
@@ -70,6 +74,8 @@ validate() {
         echo "NAMED ROW    $where: the table names no repository; the caller passes its own runner-sizes input instead"; fail=1
       elif ! [[ "$repo" =~ ^[A-Za-z0-9-]+/\*$ ]]; then
         echo "BAD REPO     $where: '$repo' is not \"*\" or <owner>/*"; fail=1
+      elif [[ " $ORGS " != *" ${repo%/\*} "* ]]; then
+        echo "BAD OWNER    $where: '${repo%/\*}' is not one of: $ORGS"; fail=1
       elif ! yq ".jobs.\"$job\".runs-on // \"\"" ".github/workflows/$wf.yaml" | grep -qF 'github.repository_owner'; then
         echo "NO OWNER ROW $where: jobs.$job.runs-on has no <owner>/* lookup (github.repository_owner)"; fail=1
       fi
