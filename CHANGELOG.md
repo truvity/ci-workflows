@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **ci-actions v3.10.0 everywhere** (was v3.9.0; `tagged-pins` stays at v1.8.0). Two `setup-devbox` changes reach every job that runs it, with no input to set. A runner that exports `CI_RUNNER_GRADLE_BUILD_CACHE_TOKEN` has its Gradle builds send it as build cache credentials, only to the runner's own https build cache (`CI_RUNNER_GRADLE_BUILD_CACHE`, never a caller's `gradle-build-cache`); it is masked before anything is printed. A repository with `.moon` whose bazel-remote address is `grpcs://` gets moon's remote cache mTLS (`MOON_REMOTE_MTLS_*`) from the runner's BuildKit client certificate; any other case logs `moon remote mTLS: off (<reason>)` and changes nothing. A runner with neither sees no difference.
+
 ## v6.0.0
 
 - **Breaking: `runner-sizes.yaml` names no repository.** Its rows for named repositories, deprecated in v5.13.0, are gone, and so are the per-repository lookups in the `runs-on` of `check`, `integration`, `renovate-fleet` and `parity-fleet`. A job that its caller's `runner-sizes` does not name gets the `*` row (the fleets: the caller's `<owner>/*` row, then `*`), else MEDIUM. Adoption: before you bump, put every size your repository had from a named row (other than MEDIUM, which is the default) into the `runner-sizes` input of your `check.yaml` and `integration.yaml` calls. `hack/runner-sizes.sh check` now refuses any row that names one repository, and still refuses an `<owner>/*` row whose owner is not in its `ORGS`; `hack/runner-sizes-named.txt` and `just runner-sizes-audit` are removed.
