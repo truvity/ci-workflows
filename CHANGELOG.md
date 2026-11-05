@@ -5,7 +5,7 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v6.0.0
 
 - **Breaking: `runner-sizes.yaml` names no repository.** Its rows for named repositories, deprecated in v5.13.0, are gone, and so are the per-repository lookups in the `runs-on` of `check`, `integration`, `renovate-fleet` and `parity-fleet`. A job that its caller's `runner-sizes` does not name gets the `*` row (the fleets: the caller's `<owner>/*` row, then `*`), else MEDIUM. Adoption: before you bump, put every size your repository had from a named row (other than MEDIUM, which is the default) into the `runner-sizes` input of your `check.yaml` and `integration.yaml` calls. `hack/runner-sizes.sh check` now refuses any row that names one repository, and still refuses an `<owner>/*` row whose owner is not in its `ORGS`; `hack/runner-sizes-named.txt` and `just runner-sizes-audit` are removed.
 
