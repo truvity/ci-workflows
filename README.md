@@ -184,7 +184,9 @@ GiB). The workflows carry rendered copies of the table's rows in
 `just runner-sizes`, and CI (`hack/runner-sizes.sh check`) refuses a bad
 size, a job that does not exist, a copy that differs, a job that stops
 reading `runner-sizes` first (or reads a value that is not a size), a copy
-of the size list that differs, and a row that names one repository;
+of the size list that differs, a row that names one repository, and an
+`<owner>/*` row whose owner is not in the script's `ORGS` (a misspelt
+owner never matches, so it would fall through to `*` unseen);
 `hack/runner-sizes-cases.sh` proves each of the last refusals by breaking
 a copy.
 

@@ -73,11 +73,16 @@ case_ named-fleet-row "NAMED ROW" \
 
 # An owner row where runs-on has no owner lookup: it could never answer.
 case_ owner-row-in-check "NO OWNER ROW" \
-  "yq -i '.check.recipe.\"example/*\".build = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
+  "yq -i '.check.recipe.\"trust-form/*\".build = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
 
 # An owner row in a fleet passes.
 case_ owner-row-in-fleet "" \
-  "yq -i '.\"renovate-fleet\".renovate.\"example/*\".renovate = \"MEDIUM\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
+  "yq -i '.\"renovate-fleet\".renovate.\"trust-form/*\".renovate = \"MEDIUM\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
+
+# A misspelt owner in a fleet: it can never match github.repository_owner
+# and would fall through to "*" unseen, so refused.
+case_ unknown-owner-in-fleet "BAD OWNER" \
+  "yq -i '.\"renovate-fleet\".renovate.\"trustfrom/*\".renovate = \"LARGE\"' runner-sizes.yaml && ./hack/runner-sizes.sh render >/dev/null"
 
 [ "$fail" = 0 ] || { echo "runner-sizes cases: a guard did not hold (above)" >&2; exit 1; }
 echo "runner-sizes cases passed"
