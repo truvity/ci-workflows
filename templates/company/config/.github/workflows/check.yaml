@@ -1,0 +1,56 @@
+# The check caller of a company CONFIGURATION repository: the one that holds the company's authored
+# `tenant/` tree,
+# carried as `.github/workflows/check.yaml`. Copy it verbatim into a new
+# repository; docs/company.md says what to set up around it.
+#
+# Its substance is the truvity/ci-actions caller-parity kit `company-config-check.yaml`:
+# comment lines, blank lines and the pinned ref of the shared workflow are
+# ignored by that check, so this prose is yours to rewrite and the pin is
+# renovate's to move. hack/templates-cases.sh holds this file to the kit.
+#
+# The company's own settings are repository VARIABLES, not text in this
+# file, so every company's copy is the same:
+#
+#   TENANT_INPUTS  the digest-pinned artifact the platform publishes for this
+#                  company, `<registry>/<name>@sha256:<hex>`
+#   CHART_PROFILE  the `aws:<account>:<role>` audience of a role that may read
+#                  the private charts, and nothing else
+#
+# The trigger is `pull_request`, never `pull_request_target`: nothing here
+# dispatches to another repository or needs a token that can, so a candidate
+# runs with the read-only token of its own pull request. A pull request from
+# a fork FAILS the shared workflow's company jobs; it is not skipped,
+# because a skipped required check is green.
+#
+# NOT YET USABLE: the pin below is v6.2.0, which predates the company inputs
+# (`company-kind`, `tenant-inputs`, `chart-profile`), so a copy used today
+# fails workflow validation. Move the pin to the first release whose
+# CHANGELOG entry names them, and nothing else changes.
+#
+# The fan-in job `check` is the context a branch ruleset requires: a
+# reusable workflow cannot supply one, and a skipped call must not hand
+# anyone a green required check, so it is strict "success".
+name: check
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  company:
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@f4191da8878c2f3e5f84d0e3962ca23e3377941d # v6.2.0
+    with:
+      company-kind: config
+      tenant-inputs: ${{ vars.TENANT_INPUTS }}
+      chart-profile: ${{ vars.CHART_PROFILE }}
+
+  check:
+    needs: company
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.company.result }}" = "success" ]'
