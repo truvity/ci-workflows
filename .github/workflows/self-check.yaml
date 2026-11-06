@@ -79,6 +79,14 @@ jobs:
       - name: runner sizes cases
         run: ./hack/runner-sizes-cases.sh
 
+      # check.yaml's company inputs: the guards of the two company jobs
+      # (a pull request from a fork, an unknown kind, a recipe asked for
+      # without its inputs), each refused and each rule removed in turn,
+      # and the job graph of a caller that opts into nothing against
+      # v6.2.0's.
+      - name: company cases
+        run: ./hack/company-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a
