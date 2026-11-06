@@ -242,6 +242,8 @@ files:
   to each release.
 - [docs/renovate.md](docs/renovate.md): running the renovate engine,
   and repositories whose pin bumps regenerate files.
+- [docs/company.md](docs/company.md): a company's own repositories,
+  their `check.yaml` caller templates and what the gate refuses.
 - [docs/devbox.md](docs/devbox.md) and
   [docs/devbox-update.md](docs/devbox-update.md): one toolchain for
   laptops and CI, and how a Go repository's toolchain triple stays
