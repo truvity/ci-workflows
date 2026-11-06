@@ -79,6 +79,14 @@ jobs:
       - name: runner sizes cases
         run: ./hack/runner-sizes-cases.sh
 
+      # check.yaml's company inputs: the guards of the two company jobs
+      # (a pull request from a fork, an unknown kind, a recipe asked for
+      # without its inputs), each refused and each rule removed in turn,
+      # and the job graph of a caller that opts into nothing against
+      # v6.2.0's.
+      - name: company cases
+        run: ./hack/company-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a
@@ -115,3 +123,15 @@ jobs:
       # the same reason and over its own files.
       - name: leak canary
         run: ./hack/leak-canary.sh
+
+  # check.yaml called with company-kind, as a company repository calls it
+  # and with no recipes: the one path the cases above cannot run, because
+  # it needs GitHub to parse the call. company-boundary judges this very
+  # repository (kind config), and the recipe job, which has no recipe, is
+  # skipped. Not for a pull request from a fork: the guard would refuse
+  # it, by design.
+  company-smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/check.yaml
+    with:
+      company-kind: config

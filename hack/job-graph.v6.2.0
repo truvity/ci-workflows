@@ -1,0 +1,4 @@
+["pins","pins",["runners"],"${{ !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped') }}"]
+["policy-conformance","policy-conformance",["runners"],"inputs.policy-conformance && !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped')"]
+["recipe","${{ matrix.recipe }}",["runners"],"${{ !cancelled() && (needs.runners.result == 'success' || needs.runners.result == 'skipped') }}"]
+["runners","runners",[],"github.event.repository.visibility != 'private'"]
