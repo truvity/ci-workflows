@@ -116,6 +116,10 @@ runner-sizes-check:
 runner-sizes-cases:
     @./hack/runner-sizes-cases.sh
 
+# The company inputs of check.yaml: each refusal, and the job graph at default inputs
+company-cases:
+    @./hack/company-cases.sh
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases
+check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases company-cases
     @echo "✓ All checks passed"
