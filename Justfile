@@ -14,8 +14,10 @@ lint:
           https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
         tar xzf "$tmpdir/actionlint.tgz" -C "$tmpdir" actionlint
         "$tmpdir/actionlint" -color
+        "$tmpdir/actionlint" -color templates/company/*/.github/workflows/*.yaml
     else
         actionlint -color
+        actionlint -color templates/company/*/.github/workflows/*.yaml
     fi
 
 # Verify all pins point to release tags
@@ -120,6 +122,10 @@ runner-sizes-cases:
 company-cases:
     @./hack/company-cases.sh
 
+# The company caller templates: the kits' substance, pull_request only, their recipes
+templates-cases:
+    @./hack/templates-cases.sh
+
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases company-cases
+check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases company-cases templates-cases
     @echo "✓ All checks passed"
