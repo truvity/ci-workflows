@@ -17,7 +17,12 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 fail=0
 
-# The kits of ci-actions v3.11.0, by the commit of the tag.
+# The kits of ci-actions v3.11.0, by the commit of the tag. The commit is
+# fixed on purpose (the kits are fetched over the network, from
+# raw.githubusercontent.com, so a moving ref would change this check without
+# a change here) and renovate does not move it. Bump it by hand with the
+# templates: when the pin of check.yaml in the templates moves to a release,
+# set this to the ci-actions commit whose kits that release's callers match.
 kits=07baa32692f4ad11e5b1a37ceae5bcadb6faefc4
 kinds="config delivery"
 

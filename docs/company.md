@@ -42,10 +42,10 @@ other job is what it was.
    repository code run, no symlink followed. It is a deny-list, not a path
    allow-list, so a runbook, a `Justfile` or validation tooling passes. Both
    kinds refuse an Argo CD or Kargo object, a Namespace, a Secret that
-   carries data, and a symlink that leaves the tree. A `config` repository
-   also refuses a Go `replace` directive and, for the prefixes the company
-   passes, an import, a requirement or a vendored copy. A `delivery`
-   repository also refuses an infrastructure project (`Pulumi.yaml` and its
+   carries data, a symlink that leaves the tree, a Go `replace` directive
+   and, for the prefixes the company passes
+   (`COMPANY_FORBIDDEN_IMPORT_PREFIXES`), an import, a requirement or a
+   vendored copy. A `delivery` repository also refuses an infrastructure project (`Pulumi.yaml` and its
    stack files) and a `tenant/` tree, and holds `pins/` to `pins:` mapping
    names to string versions (the empty string means dormant) and `values/`
    to `values:`. A refusal is one line,
@@ -64,12 +64,20 @@ The recipes stay in the company's `Justfile`, which keeps `check.yaml`
 independent of any validator's version:
 
 - `tenant-validate` validates the candidate against the fetched inputs
-  (`TENANT_INPUTS_DIR`). Switched on with the `tenant-validate` input.
+  (`TENANT_INPUTS_DIR`). Run by the `tenant-validate` input of
+  `check.yaml`.
 - `chart-gate` gates the candidate's charts with the registry login
-  exported. Switched on with the `chart-gate` input.
+  exported. Run by the `chart-gate` input of `check.yaml`.
 
-Asking for a recipe without its input (`tenant-validate` without
-`TENANT_INPUTS`, `chart-gate` without `CHART_PROFILE`) fails the job.
+Both inputs default to false, and the caller template passes neither: the
+caller is copied verbatim and held to the caller-parity kit, so a company
+cannot switch a recipe on by editing its own copy (that would show as drift
+in the parity report). Turning a recipe on is a change to the kit in the
+[truvity/ci-actions](https://github.com/truvity/ci-actions) repository
+first, and then to the template here, together; every company's copy then
+moves with them. Asking for a recipe without its input (`tenant-validate`
+without `tenant-inputs`, `chart-gate` without `chart-profile`) fails the
+job.
 
 ## Pull requests from forks
 
