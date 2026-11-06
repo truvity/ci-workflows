@@ -669,6 +669,21 @@ jobs:
           || (inputs.small-runner != '' && inputs.small-runner || inputs.runner) }}
     timeout-minutes: 5
     steps:
+      # `recipes` is optional only so that a company call (`company-kind`)
+      # may name none. Any other call without it would otherwise go green
+      # having run nothing, so it fails here, loudly.
+      - name: A call without recipes is a company call
+        id: recipes
+        env:
+          COMPANY_KIND: ${{ inputs.company-kind }}
+          RECIPES: ${{ inputs.recipes }}
+        run: |
+          set -euo pipefail
+          # One line per rule; hack/company-cases.sh removes it and expects
+          # a case to go red.
+          true # rule:recipes
+          echo "recipes: named, or a company call"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Reads workflow files only; no LFS objects needed.

@@ -4,7 +4,7 @@
 # refusal here has a paired accepting case, and every rule of a guard is
 # removed in turn and must turn at least one case red.
 #
-# The guards are the `run:` bodies of two steps in check.yaml; this runs
+# The guards are the `run:` bodies of four steps in check.yaml; this runs
 # them as written, with the environment the workflow gives them.
 #
 #   hack/company-cases.sh
@@ -105,6 +105,31 @@ else
   bad "company-validate: no step with id needs"
 fi
 
+# ---- the recipes guard of the pins job ----------------------------------
+# `recipes` is optional so a company call may name none; a call that is not
+# a company call and names none must fail, not go green having run nothing.
+s="$tmp/recipes.sh"; script pins recipes >"$s"
+if [ -s "$s" ]; then
+  recipes_cases() {
+    local g=$1 l=$2
+    case_ "$l recipes named, no company kind" pass "$g" COMPANY_KIND= 'RECIPES=["lint"]'
+    case_ "$l recipes named, company kind set" pass "$g" COMPANY_KIND=config 'RECIPES=["lint"]'
+    case_ "$l no recipes, company kind set" pass "$g" COMPANY_KIND=delivery RECIPES=
+    case_ "$l no recipes, no company kind" "no-recipes" "$g" COMPANY_KIND= RECIPES=
+  }
+  recipes_cases "$s" "recipes:"
+  grep -q '# rule:recipes$' "$s" || bad "recipes: no '# rule:recipes' line"
+  sed '/# rule:recipes$/d' "$s" >"$tmp/recipes-no-rule.sh"
+  before=$fail; fail=0
+  quiet=$(recipes_cases "$tmp/recipes-no-rule.sh" "recipes/no-rule:" 2>&1) || true
+  red=$(grep -c '^FAIL' <<<"$quiet" || true)
+  fail=$before
+  if [ "$red" -gt 0 ]; then ok "recipes: removing the rule turns $red case(s) red"
+  else bad "recipes: removing the rule changed no case: the rule is not tested"; fi
+else
+  bad "pins: no step with id recipes"
+fi
+
 # ---- the wiring the scripts depend on ----------------------------------
 expect_env() { # job step var expression
   local got; got=$(yq ".jobs.\"$1\".steps[] | select(.id == \"$2\") | .env.\"$3\"" "$wf")
@@ -127,6 +152,9 @@ expect_env company-validate needs TENANT_VALIDATE '${{ inputs.tenant-validate }}
 expect_env company-validate needs CHART_GATE '${{ inputs.chart-gate }}'
 expect_env company-validate needs TENANT_INPUTS '${{ inputs.tenant-inputs }}'
 expect_env company-validate needs CHART_PROFILE '${{ inputs.chart-profile }}'
+
+expect_env pins recipes COMPANY_KIND '${{ inputs.company-kind }}'
+expect_env pins recipes RECIPES '${{ inputs.recipes }}'
 
 # The guard must be a step that fails the job, not one that skips it.
 for job in company-boundary company-validate; do
