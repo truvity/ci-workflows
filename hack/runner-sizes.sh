@@ -16,13 +16,14 @@
 # "#" or "*", so neither key can answer a lookup by accident.
 #
 # The table names no repository: a caller names its own sizes in the
-# `runner-sizes` input of check.yaml and integration.yaml, which those jobs
-# read before the literal. `check` refuses a row that names one repository,
-# an <owner>/* row whose owner is not in ORGS (a misspelt owner can never
-# match github.repository_owner, so it would fall through to "*" unseen), a
-# job in CALLER_JOBS whose runs-on does not read the input first, and a
-# copy of the size list (in runs-on, in the "Runner size is a size" step's
-# `if` and in its message) that differs from SIZES.
+# `runner-sizes` input of check.yaml, integration.yaml, renovate-fleet.yaml
+# and parity-fleet.yaml, which those jobs read before the literal. `check`
+# refuses a row that names one repository, an <owner>/* row whose owner is
+# not in ORGS (a misspelt owner can never match github.repository_owner, so
+# it would fall through to "*" unseen), a job in CALLER_JOBS whose runs-on
+# does not read the input first, a "Runner size is a size" step that is
+# missing or checks another entry, and a copy of the size list (in runs-on,
+# in that step's `if` and in its message) that differs from SIZES.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -31,9 +32,12 @@ TABLE=runner-sizes.yaml
 SIZES='XSMALL SMALL MEDIUM LARGE XLARGE MEDIUM_SPOT'
 # The owners an <owner>/* row may name.
 ORGS='truvity trust-form finttech'
-# <workflow>/<job>=<matrix key>: the jobs that read the caller's
-# `runner-sizes` input before the table.
-CALLER_JOBS='check/recipe=matrix.recipe integration/suite=matrix.name'
+# <workflow>/<job>=<key>[@<step job>]: the jobs that read the caller's
+# `runner-sizes` input before the table, by <key> (a matrix key, or the
+# job's one name quoted), and the job whose "Runner size is a size" step
+# refuses a value that is not a size: the job itself, or <step job> (the
+# fleets check once, in `discover`, instead of in every repository's job).
+CALLER_JOBS="check/recipe=matrix.recipe integration/suite=matrix.name renovate-fleet/renovate='renovate'@discover parity-fleet/align='align'@discover"
 
 die() { echo "runner-sizes: $*" >&2; exit 1; }
 
@@ -114,17 +118,21 @@ validate() {
 
   # The caller's input comes first, in the job that the table resolves,
   # and only when it is a size.
-  local pair key input want_list want_text c
+  local pair key input want_list want_text c step_job
   want_list=$(printf '"%s",' $SIZES); want_list="[${want_list%,}]"
   want_text="a size is one of $(sed 's/ /, /g' <<<"$SIZES")."
   for pair in $CALLER_JOBS; do
     wf=${pair%%/*}; job=${pair#*/}; job=${job%%=*}; key=${pair#*=}
+    step_job=$job
+    case "$key" in *@*) step_job=${key#*@}; key=${key%@*} ;; esac
     local f=".github/workflows/$wf.yaml" ro step
     input=$(yq ".on.workflow_call.inputs.\"runner-sizes\" | [.type, .default] | join(\" \")" "$f")
     [ "$input" = "string {}" ] \
       || { echo "NO INPUT     $wf: no string input runner-sizes with default '{}' (have: '$input')"; fail=1; }
     ro=$(yq ".jobs.\"$job\".runs-on // \"\"" "$f" | tr -d ' \n')
-    step=$(yq ".jobs.\"$job\".steps[] | select(.name == \"Runner size is a size\")" "$f")
+    step=$(yq ".jobs.\"$step_job\".steps[] | select(.name == \"Runner size is a size\")" "$f")
+    [ -n "$step" ] \
+      || { echo "NO STEP      $wf/$job: jobs.$step_job has no 'Runner size is a size' step"; fail=1; }
     c="fromJSON(inputs.runner-sizes||'{}')[$key]"
     # The caller's lookup, gated on the size list, then the first literal:
     # in that order. The list itself is SIZE LIST's business, so any list
@@ -134,7 +142,9 @@ validate() {
       echo "NOT CALLER   $wf/$job: runs-on does not read fromJSON(inputs.runner-sizes || '{}')[$key], only when it is a size, before the table"; fail=1
     fi
     # Every copy of the list: one in runs-on, one in the step's `if`, and
-    # the step's message.
+    # the step's message. The step reads the same entry runs-on reads.
+    yq '.if // ""' <<<"$step" | tr -d ' \n' | grep -qF "toJSON($c)!='null'&&!contains(" \
+      || { echo "NOT CALLER   $wf/$job: the 'Runner size is a size' step in jobs.$step_job does not check fromJSON(inputs.runner-sizes || '{}')[$key]"; fail=1; }
     local where have_list
     for where in runs-on if; do
       if [ "$where" = runs-on ]; then have_list=$ro
