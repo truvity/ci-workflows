@@ -123,3 +123,15 @@ jobs:
       # the same reason and over its own files.
       - name: leak canary
         run: ./hack/leak-canary.sh
+
+  # check.yaml called with company-kind, as a company repository calls it
+  # and with no recipes: the one path the cases above cannot run, because
+  # it needs GitHub to parse the call. company-boundary judges this very
+  # repository (kind config), and the recipe job, which has no recipe, is
+  # skipped. Not for a pull request from a fork: the guard would refuse
+  # it, by design.
+  company-smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/check.yaml
+    with:
+      company-kind: config

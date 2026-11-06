@@ -603,6 +603,9 @@ on:
 #     id-token: write    # ONLY if recipes reach AWS/k8s through sluisctl
 #     packages: read     # ONLY if it installs @truvity packages from GitHub Packages
 #
+# A company repository (`company-kind`) grants contents: read, and
+# id-token: write only with `chart-profile`.
+#
 # Public repositories omit id-token: fork PRs never receive it, and
 # nothing in a public repository's recipes should want it. A caller with
 # NO permissions block hands its org-default token to every recipe —
@@ -698,7 +701,11 @@ jobs:
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
-  # STUB: the guard of this job is not written yet.
+  # Opt-in with `company-kind`: what a company repository must not hold,
+  # judged offline. Always a hosted runner: it reads the checkout, runs no
+  # repository code and needs no estate access. The guard is the first
+  # step, before any checkout: a pull request from a fork FAILS this job,
+  # because a skipped required check is green.
   company-boundary:
     name: company-boundary
     needs: runners
@@ -713,9 +720,34 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
-        run: exit 0
+        run: |
+          set -euo pipefail
+          refuse() { echo "::error::$*"; exit 1; }
+          # One line per rule; hack/company-cases.sh removes each in turn
+          # and expects a case to go red.
+          [ "$COMPANY_KIND" = config ] || [ "$COMPANY_KIND" = delivery ] || refuse "company-kind: must be 'config' or 'delivery', not '$(printf %q "$COMPANY_KIND")'" # rule:kind
+          [ "$EVENT_NAME" != pull_request_target ] || refuse "company-target: a company check runs on pull_request, never pull_request_target: it would run the candidate with the base repository's token" # rule:target
+          [ "$EVENT_NAME" != pull_request ] || { [ -n "$HEAD_REPO" ] && [ "${HEAD_REPO,,}" = "${BASE_REPO,,}" ]; } || refuse "company-fork: a company check does not run a pull request from a fork (head repository '$(printf %q "$HEAD_REPO")'): push a branch of this repository" # rule:fork
+          echo "company check for a $COMPANY_KIND repository: $EVENT_NAME from this repository"
 
-  # STUB: the guards of this job are not written yet.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Reads files; no LFS objects, and nothing to push.
+          lfs: false
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: truvity/ci-actions/company-boundary@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+        with:
+          kind: ${{ inputs.company-kind }}
+          forbidden-import-prefixes: ${{ inputs.forbidden-import-prefixes || vars.COMPANY_FORBIDDEN_IMPORT_PREFIXES }}
+
+  # Opt-in with `company-kind`, after `company-boundary`: the company's own
+  # recipes against the platform's published inputs, with a chart-read
+  # credential. Nothing here dispatches to another repository or needs a
+  # token that can: the candidate runs with the read-only token of its own
+  # pull request. The recipes stay in the company's Justfile, which keeps
+  # this workflow independent of the tenant validator and of the chart gate.
   company-validate:
     name: company-validate
     needs: [runners, company-boundary]
@@ -730,8 +762,18 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
-        run: exit 0
+        run: |
+          set -euo pipefail
+          refuse() { echo "::error::$*"; exit 1; }
+          # One line per rule; hack/company-cases.sh removes each in turn
+          # and expects a case to go red.
+          [ "$COMPANY_KIND" = config ] || [ "$COMPANY_KIND" = delivery ] || refuse "company-kind: must be 'config' or 'delivery', not '$(printf %q "$COMPANY_KIND")'" # rule:kind
+          [ "$EVENT_NAME" != pull_request_target ] || refuse "company-target: a company check runs on pull_request, never pull_request_target: it would run the candidate with the base repository's token" # rule:target
+          [ "$EVENT_NAME" != pull_request ] || { [ -n "$HEAD_REPO" ] && [ "${HEAD_REPO,,}" = "${BASE_REPO,,}" ]; } || refuse "company-fork: a company check does not run a pull request from a fork (head repository '$(printf %q "$HEAD_REPO")'): push a branch of this repository" # rule:fork
+          echo "company check for a $COMPANY_KIND repository: $EVENT_NAME from this repository"
 
+      # A recipe the caller asked for must find its inputs: better a red
+      # job here than a recipe that validates against nothing.
       - name: A requested recipe has the inputs it needs
         id: needs
         env:
@@ -739,7 +781,70 @@ jobs:
           CHART_GATE: ${{ inputs.chart-gate }}
           TENANT_INPUTS: ${{ inputs.tenant-inputs }}
           CHART_PROFILE: ${{ inputs.chart-profile }}
-        run: exit 0
+        run: |
+          set -euo pipefail
+          refuse() { echo "::error::$*"; exit 1; }
+          [ "$TENANT_VALIDATE" != true ] || [ -n "$TENANT_INPUTS" ] || refuse "tenant-validate is on but tenant-inputs is empty: there is nothing to validate against" # rule:tenant
+          [ "$CHART_GATE" != true ] || [ -n "$CHART_PROFILE" ] || refuse "chart-gate is on but chart-profile is empty: the gate could not read the private charts" # rule:chart
+          echo "inputs for the requested recipes: present"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: ${{ inputs.lfs }}
+          fetch-depth: ${{ inputs.fetch-depth }}
+          persist-credentials: false
+
+      # Read-only, and never from the checkout: the artifact comes from the
+      # registry by digest and lands outside the workspace, so a copy
+      # committed in this repository neither stands in for it nor changes
+      # the answer. A reference that is a tag, or whose bytes do not match
+      # its digest, is refused here.
+      - uses: truvity/ci-actions/tenant-inputs@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+        id: tenant
+        if: inputs.tenant-inputs != ''
+        with:
+          reference: ${{ inputs.tenant-inputs }}
+
+      # A credential that can read charts and nothing else, from this job's
+      # own identity. A failed login fails the job: it never reads as
+      # "no private charts". The caller grants `id-token: write`.
+      - uses: truvity/ci-actions/chart-auth@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+        if: inputs.chart-profile != ''
+        with:
+          registry: ${{ inputs.chart-registry || vars.CHART_REGISTRY }}
+          issuer: ${{ inputs.access-roster-issuer || vars.ACCESS_ROSTER_ISSUER }}
+          audience: ${{ inputs.chart-profile }}
+          export-env: "true"
+
+      - uses: truvity/ci-actions/setup-devbox@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+        if: inputs.tenant-validate || inputs.chart-gate
+        with:
+          devbox-config: ${{ inputs.devbox-config }}
+          proto: ${{ inputs.proto }}
+          module-app: ${{ inputs.module-app }}
+          module-app-repositories: ${{ inputs.module-app-repositories }}
+          access-roster-issuer: ${{ inputs.access-roster-issuer }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The recipe body is the company's: it reads TENANT_INPUTS_DIR and
+      # nothing else about the platform.
+      - uses: truvity/ci-actions/recipe@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+        if: inputs.tenant-validate
+        env:
+          TENANT_INPUTS_DIR: ${{ steps.tenant.outputs.path }}
+        with:
+          recipe: tenant-validate
+          command: ${{ inputs.command }}
+          devbox-config: ${{ inputs.devbox-config }}
+
+      - uses: truvity/ci-actions/recipe@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+        if: inputs.chart-gate
+        env:
+          TENANT_INPUTS_DIR: ${{ steps.tenant.outputs.path }}
+        with:
+          recipe: chart-gate
+          command: ${{ inputs.command }}
+          devbox-config: ${{ inputs.devbox-config }}
 
   recipe:
     name: ${{ matrix.recipe }}
