@@ -61,6 +61,18 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
+      # The company caller templates are workflows too, outside
+      # .github/workflows, where the pass above does not look. A glob that
+      # matches nothing is an error here, not a pass.
+      - name: actionlint (templates)
+        run: ./actionlint -color templates/company/*/.github/workflows/*.yaml
+
+      # The templates are what truvity/ci-actions' caller-parity kits say
+      # they are, trigger on pull_request only and carry the recipes the
+      # shared workflow calls; each rule is broken on a copy and refused.
+      - name: template cases
+        run: ./hack/templates-cases.sh
+
       # pkl-fleet's wiring: setup-devbox is handed only the job's own token.
       - name: pkl-fleet cases
         run: ./hack/pkl-fleet-cases.sh
