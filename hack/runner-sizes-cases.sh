@@ -31,10 +31,12 @@ case_() {
 
 case_ unchanged "" true
 
-# Each workflow's guards, broken one at a time: <file> <matrix key>.
-for wk in check.yaml:recipe integration.yaml:name; do
+# Each workflow's guards, broken one at a time: <file>:<key, as a perl
+# regex>, the key a matrix key or (the fleets) the job's one name.
+for wk in 'check.yaml:matrix\.recipe' 'integration.yaml:matrix\.name' \
+          'renovate-fleet.yaml:\x27renovate\x27' 'parity-fleet.yaml:\x27align\x27'; do
   wf=${wk%%:*} k=${wk#*:} w=${wk%%.*}
-  c="fromJSON\(inputs\.runner-sizes \|\| \x27\{\}\x27\)\[matrix\.$k\]"
+  c="fromJSON\(inputs\.runner-sizes \|\| \x27\{\}\x27\)\[$k\]"
 
   # runs-on stops reading the caller's input first.
   case_ "$w-no-caller-lookup" "NOT CALLER" \
@@ -61,6 +63,14 @@ for wk in check.yaml:recipe integration.yaml:name; do
   # The step's message forgets one size.
   case_ "$w-size-list-message" "SIZE LIST" \
     "perl -pi -e 's/XLARGE, MEDIUM_SPOT\./XLARGE./ if /::error::runner-sizes/' .github/workflows/$wf"
+
+  # The step is gone: a value that is not a size would pass silently.
+  case_ "$w-no-step" "NO STEP" \
+    "perl -pi -e 's/name: Runner size is a size/name: Runner size/' .github/workflows/$wf"
+
+  # The step checks another entry than the one runs-on reads.
+  case_ "$w-step-other-key" "NOT CALLER" \
+    "perl -pi -e 's/toJSON\($c\)/toJSON(fromJSON(inputs.runner-sizes || \x27{}\x27)[\x27other\x27])/ if /toJSON\(fromJSON/' .github/workflows/$wf"
 done
 
 # A row naming one repository, rendered: the table names none, so refused.

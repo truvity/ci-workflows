@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **`renovate-fleet` and `parity-fleet` take `runner-sizes`: the caller owns its fleet's size.** The same JSON object from name to size as `check`'s and `integration`'s, keyed by the one job each sizes: `'{"renovate":"MEDIUM"}'`, `'{"align":"LARGE"}'`. On the preview tier it is read before `runner-sizes.yaml` (the caller's `<owner>/*` row, then `*`, then MEDIUM). A value that is not one of the six sizes is never looked up, and the run fails once, in `discover`, before any repository's job starts; an absent or null entry means "not named". The default, `'{}'`, changes nothing: a caller that passes nothing keeps the size the table gives it today. `hack/runner-sizes.sh check` now guards both fleets as it guards `check` and `integration`, and also refuses a missing `Runner size is a size` step (NO STEP) and one that checks another entry than `runs-on` reads (NOT CALLER); `hack/runner-sizes-cases.sh` proves each refusal in all four workflows.
+
 ## v6.1.0
 
 - **ci-actions v3.10.0 everywhere** (was v3.9.0; `tagged-pins` stays at v1.8.0). Two `setup-devbox` changes reach every job that runs it, with no input to set. A runner that exports `CI_RUNNER_GRADLE_BUILD_CACHE_TOKEN` has its Gradle builds send it as build cache credentials, only to the runner's own https build cache (`CI_RUNNER_GRADLE_BUILD_CACHE`, never a caller's `gradle-build-cache`); it is masked before anything is printed. A repository with `.moon` whose bazel-remote address is `grpcs://` gets moon's remote cache mTLS (`MOON_REMOTE_MTLS_*`) from the runner's BuildKit client certificate; any other case logs `moon remote mTLS: off (<reason>)` and changes nothing. A runner with neither sees no difference.

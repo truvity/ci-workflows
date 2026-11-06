@@ -140,7 +140,8 @@ checkouts of an enrolment list, and checkouts of a different repository
 On the preview tier a caller passes one label, `runner:
 ${{ vars.CI_RUNNER_LABEL_LARGE }}`, and names the size of each job that
 needs more (or less) than MEDIUM in `runner-sizes`, a JSON object from
-recipe (`check`) or lane (`integration`) to size:
+recipe (`check`), lane (`integration`) or job (`renovate` in
+`renovate-fleet`, `align` in `parity-fleet`) to size:
 
 ```yaml
 with:
@@ -160,13 +161,14 @@ An absent or null entry means "not named". Any other value that is not
 a size (a typo, `""`, `false`) is never looked up: `runs-on` treats it
 as not named, and the job then fails with an error that names the recipe
 or lane. That check runs on every tier, so a typo cannot hide in a caller
-that is only sized on the preview tier.
+that is only sized on the preview tier. The fleets check once, in their
+`discover` job, so a typo fails the run before any repository's job starts.
 
 A job `runner-sizes` does not name gets its size from
 [`runner-sizes.yaml`](runner-sizes.yaml): the `*` row for the recipe,
 lane or job, else MEDIUM. The table names no repository. The fleets
-(`renovate-fleet`, `parity-fleet`) read only this table, and also an
-`<owner>/*` row (the caller's owner) before `*`.
+(`renovate-fleet`, `parity-fleet`) also read an `<owner>/*` row (the
+caller's owner) after their caller's `runner-sizes` and before `*`.
 
 The sizes apply only when `runner` is one of the organisation's
 `CI_RUNNER_LABEL_<SIZE>` labels. A hosted label (every public

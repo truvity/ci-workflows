@@ -1,9 +1,10 @@
 # Which runner size each job of the shared workflows gets, where the caller
 # does not say.
 #
-# The table names no repository. A caller of check.yaml or integration.yaml
-# names the size of each recipe or lane that needs more (or less) in its
-# `runner-sizes` input, which is read before this table.
+# The table names no repository. A caller of check.yaml, integration.yaml,
+# renovate-fleet.yaml or parity-fleet.yaml names the size of each recipe,
+# lane or job that needs more (or less) in its `runner-sizes` input, which
+# is read before this table.
 # `hack/runner-sizes.sh check` refuses a row that names one repository.
 #
 #   <workflow>:            .github/workflows/<workflow>.yaml
@@ -22,9 +23,8 @@
 # CI_RUNNER_LABEL_<SIZE>, so the shapes and labels stay wiring and this
 # file stays mechanism. Resolution, per job:
 #
-#   1. the caller's `runner-sizes` entry for name (check, integration),
-#      else (fleets only) the <owner>/* row, else the "*" row for name,
-#      else MEDIUM;
+#   1. the caller's `runner-sizes` entry for name, else (fleets only)
+#      the <owner>/* row, else the "*" row for name, else MEDIUM;
 #   2. vars.CI_RUNNER_LABEL_<SIZE>; when the organisation has no such
 #      variable (XSMALL and XLARGE arrive later than the other three), the
 #      caller's own `runner` input, exactly as before the table existed.

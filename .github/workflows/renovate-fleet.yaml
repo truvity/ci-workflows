@@ -67,10 +67,29 @@ on:
         required: true
         type: string
       runner:
-        description: Where each repository's job runs. GitHub-hosted for the public estate; the pool label for the private one, where runner-sizes.yaml then picks each job's size (one of the organisation's CI_RUNNER_LABEL_<SIZE> labels, as in check.yaml's runner).
+        description: Where each repository's job runs. GitHub-hosted for the public estate; the pool label for the private one, where the caller's `runner-sizes`, then runner-sizes.yaml, pick each job's size (one of the organisation's CI_RUNNER_LABEL_<SIZE> labels, as in check.yaml's runner).
         required: false
         type: string
         default: ubuntu-latest
+      runner-sizes:
+        description: >-
+          JSON object from job to size, owned by the caller:
+          '{"renovate":"LARGE"}'. The one job this workflow sizes is
+          `renovate` (each repository's Renovate run). A size is a NAME:
+          XSMALL, SMALL, MEDIUM, LARGE, XLARGE or MEDIUM_SPOT. It sizes the
+          job only on the preview tier (see `runner`); when it does not name
+          `renovate` (absent or null) the size comes from runner-sizes.yaml:
+          the caller's owner's <owner>/* row, then the "*" row, then MEDIUM.
+          It is validated on every tier, once, in `discover`: a value that is
+          not a size ("", false and typos included) is ignored by runs-on,
+          which falls through the same way, and fails the run before any
+          repository is touched.
+
+          The default, '{}', leaves the job on the table's size, as
+          before this input existed.
+        required: false
+        type: string
+        default: '{}'
       token-source:
         description: >-
           Where tokens come from: `app-key` (the App keys passed as
@@ -226,6 +245,24 @@ jobs:
       repositories: ${{ steps.discover.outputs.repositories }}
       count: ${{ steps.discover.outputs.count }}
     steps:
+      # The `renovate` job's runs-on ignores a caller entry that is not a size
+      # (it falls through to the table, then MEDIUM), so the entry never
+      # reaches a variable outside the list. Checked here, once, on every
+      # tier, so a typo fails the run before any repository's job starts
+      # instead of failing each of them. An absent or null entry is "not
+      # named"; any other value that is not a size ("", false, 0, a typo)
+      # is refused. The list is hack/runner-sizes.sh's SIZES; its check
+      # keeps every copy (runs-on, this `if`, the message) equal to it.
+      - name: Runner size is a size
+        if: >-
+          ${{ toJSON(fromJSON(inputs.runner-sizes || '{}')['renovate']) != 'null'
+                    && !contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')['renovate']) }}
+        run: |
+          echo "::error::runner-sizes names '$SIZE' for job 'renovate'; a size is one of XSMALL, SMALL, MEDIUM, LARGE, XLARGE, MEDIUM_SPOT."
+          exit 1
+        env:
+          SIZE: ${{ fromJSON(inputs.runner-sizes || '{}')['renovate'] }}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.list != ''
         with:
@@ -303,16 +340,20 @@ jobs:
   renovate:
     needs: discover
     if: needs.discover.outputs.count != '0'
-    # runner-sizes.yaml (see check.yaml's `recipe` job for the rule), with
-    # one more step for the fleets: the caller's owner's "<owner>/*" row,
-    # then "*". The literal is rendered by hack/runner-sizes.sh.
+    # On the preview tier the size is the caller's own `runner-sizes` entry
+    # for "renovate", else runner-sizes.yaml (see check.yaml's `recipe` job
+    # for the rule), with one more step for the fleets: the caller's owner's
+    # "<owner>/*" row, then "*", then MEDIUM. `discover` refuses an entry that
+    # is not a size. The literal is rendered by hack/runner-sizes.sh.
     runs-on: >-
       ${{ (inputs.runner != ''
            && (inputs.runner == vars.CI_RUNNER_LABEL_XSMALL || inputs.runner == vars.CI_RUNNER_LABEL_SMALL
                || inputs.runner == vars.CI_RUNNER_LABEL_MEDIUM || inputs.runner == vars.CI_RUNNER_LABEL_LARGE
                || inputs.runner == vars.CI_RUNNER_LABEL_XLARGE)
            && vars[format('CI_RUNNER_LABEL_{0}',
-                fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"SMALL"}')[format('{0}/*:renovate', github.repository_owner)]
+                (contains(fromJSON('["XSMALL","SMALL","MEDIUM","LARGE","XLARGE","MEDIUM_SPOT"]'), fromJSON(inputs.runner-sizes || '{}')['renovate'])
+                 && fromJSON(inputs.runner-sizes || '{}')['renovate'])
+                || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"SMALL"}')[format('{0}/*:renovate', github.repository_owner)]
                 || fromJSON('{"#":"renovate-fleet/renovate","*:renovate":"SMALL"}')['*:renovate']
                 || 'MEDIUM')])
           || inputs.runner }}

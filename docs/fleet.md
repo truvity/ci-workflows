@@ -276,6 +276,7 @@ gives a green PR a run that finds it green.
 | `global-config` | `""` | the estate policy file in the caller repository |
 | `max-parallel` | `4` | repositories processed at once |
 | `runner` | `ubuntu-latest` | hosted for the public estate, the pool label for the private one |
+| `runner-sizes` | `'{}'` | the caller's sizes on the preview tier, e.g. `'{"renovate":"MEDIUM"}'`; unnamed, the job keeps `runner-sizes.yaml`'s size — see the README's [Runner sizes](../README.md#runner-sizes) |
 | `token-source` | `app-key` | `app-key` or `access-roster` — see [Where the tokens come from](#where-the-tokens-come-from) |
 | `access-roster-issuer` | `""` | the issuer URL (`access-roster`) |
 | `github-app` | `""` | the renovate App's catalogue id (`access-roster`) |
@@ -344,15 +345,17 @@ check exists — read from
 when neither answers. The push runs inside devbox so the repository's own
 pre-push hooks vet the result — they are the safety net, not an obstacle.
 
-Inputs: `estate`, `runner`, `token-source` (`app-key|access-roster`),
-`access-roster-issuer`, `github-app`, `client-id`, `debug-oidc-claims`,
-`list`, `repositories-file`, `mode` (`auto|full|align`), `full-update-day`
-(`1`), `filter`, `require-check` (`true`), `git-user`, `git-email`,
-`timeout-minutes`, and the four `caller-parity*` inputs of the
-[second check](#caller-parity--the-shared-caller-files) this workflow
-carries. The commit author is an input because it should be the
-App's bot identity, which this library cannot know: `git-user` is the bot
-login, `<app name>[bot]`; an empty `git-email` is looked up from it
+Inputs: `estate`, `runner`, `runner-sizes` (`'{}'`; the key is `align`,
+as in [renovate-fleet](#renovate-fleetyaml)), `token-source`
+(`app-key|access-roster`), `access-roster-issuer`, `github-app`,
+`client-id`, `debug-oidc-claims`, `list`, `repositories-file`, `mode`
+(`auto|full|align`), `full-update-day` (`1`), `filter`, `require-check`
+(`true`), `git-user`, `git-email`, `timeout-minutes`, and the four
+`caller-parity*` inputs of the [second
+check](#caller-parity--the-shared-caller-files) this workflow carries.
+The commit author is an input because it should be the App's bot
+identity, which this library cannot know: `git-user` is the bot login,
+`<app name>[bot]`; an empty `git-email` is looked up from it
 (`<bot user id>+<login>@users.noreply.github.com`).
 
 ### `.devbox-parity.json`
