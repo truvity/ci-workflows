@@ -45,7 +45,9 @@ on:
 
           Required for every caller but one: a company repository
           (`company-kind`) runs the company jobs below and may name no
-          recipe at all, so an empty value runs no recipe job.
+          recipe at all, so an empty value runs no recipe job. A call
+          with neither `recipes` nor `company-kind` fails in `pins`: it
+          would run nothing and still be green.
         required: false
         type: string
         default: ''
@@ -508,7 +510,10 @@ on:
           digest, is refused. Fetched read-only, anonymously, into a
           directory outside the workspace and handed to the company's
           recipes as TENANT_INPUTS_DIR; a copy committed in the repository
-          is never read. Empty fetches nothing. Only with `company-kind`.
+          is never read. The fetch is anonymous: this workflow has no
+          input to pass a pull credential, so an artifact in a registry
+          that requires one cannot be served. Empty fetches nothing. Only
+          with `company-kind`.
         required: false
         type: string
         default: ''
@@ -534,9 +539,8 @@ on:
         default: ''
       forbidden-import-prefixes:
         description: >-
-          For `company-kind: config`: Go module path prefixes that no
-          import, requirement or vendored copy may name, comma or space
-          separated. The caller says what is foreign; nothing is built in.
+          Go module path prefixes that no import, requirement or vendored
+          copy may name (both kinds), comma or space separated. The caller says what is foreign; nothing is built in.
           Empty reads the organisation variable
           COMPANY_FORBIDDEN_IMPORT_PREFIXES; empty again switches those
           rules off.
@@ -681,7 +685,7 @@ jobs:
           set -euo pipefail
           # One line per rule; hack/company-cases.sh removes it and expects
           # a case to go red.
-          true # rule:recipes
+          [ -n "$COMPANY_KIND" ] || [ -n "$RECIPES" ] || { echo "::error::no-recipes: this call names no \`recipes\` and no \`company-kind\`, so it would run nothing and still be green: pass \`recipes\`, or \`company-kind\` for a company repository"; exit 1; } # rule:recipes
           echo "recipes: named, or a company call"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
