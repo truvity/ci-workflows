@@ -5,7 +5,7 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v6.2.0
 
 - **`renovate-fleet` and `parity-fleet` take `runner-sizes`: the caller owns its fleet's size.** The same JSON object from name to size as `check`'s and `integration`'s, keyed by the one job each sizes: `'{"renovate":"MEDIUM"}'`, `'{"align":"LARGE"}'`. On the preview tier it is read before `runner-sizes.yaml` (the caller's `<owner>/*` row, then `*`, then MEDIUM). A value that is not one of the six sizes is never looked up, and the run fails once, in `discover`, before any repository's job starts; an absent or null entry means "not named". The default, `'{}'`, changes nothing: a caller that passes nothing keeps the size the table gives it today. `hack/runner-sizes.sh check` now guards both fleets as it guards `check` and `integration`, and also refuses a missing `Runner size is a size` step (NO STEP) and one that checks another entry than `runs-on` reads (NOT CALLER); `hack/runner-sizes-cases.sh` proves each refusal in all four workflows.
 
