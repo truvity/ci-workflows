@@ -122,10 +122,14 @@ runner-sizes-cases:
 company-cases:
     @./hack/company-cases.sh
 
+# The tenant validator step of check.yaml: it runs the pinned validator and fails a bad bundle
+tenant-validate-cases:
+    @./hack/tenant-validate-cases.sh
+
 # The company caller templates: the kits' substance, pull_request only, their recipes
 templates-cases:
     @./hack/templates-cases.sh
 
 # Run all checks (the merge gate)
-check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases company-cases templates-cases
+check: lint pins runners leak-canary pkl-fleet-cases runner-sizes-check runner-sizes-cases company-cases tenant-validate-cases templates-cases
     @echo "✓ All checks passed"

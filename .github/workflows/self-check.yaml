@@ -99,6 +99,15 @@ jobs:
       - name: company cases
         run: ./hack/company-cases.sh
 
+      # The tenant validator step of company-validate, proved: the pinned
+      # truvity/policy validator is built exactly as the job builds it, the
+      # step runs it on acme and globex bundles and fails a bad one, and
+      # the call and each rule are removed in turn and must turn a case
+      # red. A green run also states what it did not validate; that is
+      # held here too.
+      - name: tenant validate cases
+        run: ./hack/tenant-validate-cases.sh
+
       # The rule this library asks of every caller, asked of itself: a pin
       # into the shared CI library must name a RELEASE. A pin to an
       # untagged commit works perfectly until somebody asks what version a

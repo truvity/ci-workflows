@@ -1,0 +1,15 @@
+groups:
+  - name: shop-team
+    members:
+      - ada@acme.example
+  - name: ledger-team
+    members:
+      - alan@acme.example
+grants:
+  - group: shop-team
+    project: shop
+    scope: write
+    why: The team that ships the storefront.
+  - group: ledger-team
+    project: ledger
+    scope: read

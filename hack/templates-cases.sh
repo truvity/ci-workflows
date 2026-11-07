@@ -63,10 +63,11 @@ for kind in $kinds; do
   on=$(yq -o=json '.on | keys' "$wf" | jq -c .)
   if [ "$on" = '["pull_request"]' ]; then ok "$kind: triggers on pull_request only"; else bad "$kind: triggers on $on"; fi
 
-  # The recipes the shared workflow calls. They are stubs that fail
-  # loudly until the validators exist: a stub that passes would read as a
-  # gate that ran.
-  for r in tenant-validate chart-gate; do
+  # The recipe the shared workflow calls. It is a stub that fails loudly
+  # until the chart gate exists: a stub that passes would read as a gate
+  # that ran. The tenant bundle is validated by the shared workflow itself,
+  # so a recipe of that name would be dead text that reads as the gate.
+  for r in chart-gate; do
     if grep -qE "^$r:" "$d/Justfile"; then
       body=$(sed -n "/^$r:/,/^[^[:space:]]/p" "$d/Justfile")
       if grep -q 'exit 1' <<<"$body"; then ok "$kind: recipe $r is a stub that fails"; else bad "$kind: recipe $r does not fail"; fi
@@ -74,6 +75,7 @@ for kind in $kinds; do
       bad "$kind: Justfile has no recipe $r"
     fi
   done
+  if grep -qE '^tenant-validate:' "$d/Justfile"; then bad "$kind: Justfile has a tenant-validate recipe, which nothing runs"; else ok "$kind: no tenant-validate recipe: the shared workflow validates the bundle"; fi
 
   # Mutations of the caller, each of which caller-parity would call drift.
   m() { local f="$tmp/$kind-$1.yaml"; cp "$wf" "$f"; shift; "$@" "$f"; echo "$f"; }

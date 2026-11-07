@@ -15,7 +15,7 @@ what is not built yet.
 | delivery | release pins and values: `pins/<service>/<cluster>.yaml` and `values/<service>/<cluster>.yaml`, and nothing of the platform | `delivery` | [`templates/company/delivery`](../templates/company/delivery) |
 
 Each template is the repository's `.github/workflows/check.yaml`, and a
-`Justfile` with the two recipes below. Copy the caller verbatim into a new
+`Justfile` with the `chart-gate` recipe below. Copy the caller verbatim into a new
 repository. It is the same file in every company; the company's own
 settings are repository variables:
 
@@ -58,26 +58,65 @@ other job is what it was.
    the digest are refused, and a copy committed in the repository is never
    read. With `CHART_PROFILE` it exchanges the job's own identity token for
    the chart-read role and logs in to the registry, refusing any long-lived
-   AWS key. Then it runs the company's recipes when asked.
+   AWS key. Then it validates the tenant bundle and runs the company's
+   chart recipe, when asked.
 
-The recipes stay in the company's `Justfile`, which keeps `check.yaml`
-independent of any validator's version:
+Two inputs of `check.yaml` switch those on:
 
-- `tenant-validate` validates the candidate against the fetched inputs
-  (`TENANT_INPUTS_DIR`). Run by the `tenant-validate` input of
-  `check.yaml`.
-- `chart-gate` gates the candidate's charts with the registry login
-  exported. Run by the `chart-gate` input of `check.yaml`.
+- `tenant-validate` validates the `tenant/` directory of a `config`
+  repository with the validator of
+  [truvity/policy](https://github.com/truvity/policy), the
+  `tenant-validate` command. The workflow builds it from the module at a
+  version it pins (`POLICY_VERSION`, which renovate moves), with `go
+  install`, from outside the checkout: the Go checksum database vouches for
+  the bytes, and nothing of the candidate is built or run, only read. It
+  runs before the chart login, so it never sees that credential. The
+  command loads the bundle and validates it (the files it may hold, their
+  shapes and schemas, every refusal with its stable code) and prints the
+  company and the bundle's pin. Exit status 1 is a refused bundle, every
+  failure printed one per line, and 2 a check that could not run; both fail
+  the job. It fails too when the repository has no `tenant/` directory, when
+  it is a link, and when the repository is a `delivery` one, which holds no
+  bundle: a validation that would check nothing is not a pass. The input
+  needs `tenant-inputs`; asking for it without fails the job.
+- `chart-gate` runs the company's `chart-gate` recipe with the registry
+  login exported (`DOCKER_CONFIG`, `HELM_REGISTRY_CONFIG`). The recipe stays
+  in the company's `Justfile`, which keeps `check.yaml` independent of the
+  chart gate's version.
 
 Both inputs default to false, and the caller template passes neither: the
 caller is copied verbatim and held to the caller-parity kit, so a company
-cannot switch a recipe on by editing its own copy (that would show as drift
-in the parity report). Turning a recipe on is a change to the kit in the
+cannot switch a validation on by editing its own copy (that would show as
+drift in the parity report). Turning one on is a change to the kit in the
 [truvity/ci-actions](https://github.com/truvity/ci-actions) repository
 first, and then to the template here, together; every company's copy then
-moves with them. Asking for a recipe without its input (`tenant-validate`
+moves with them. Asking for a validation without its input (`tenant-validate`
 without `tenant-inputs`, `chart-gate` without `chart-profile`) fails the
 job.
+
+### What a green run did not validate
+
+The job ends with a step that says what its green does not mean, as a
+notice annotation and a line of the step summary for each, on every run:
+
+- `tenant-validate` off: no tenant bundle was validated.
+- `tenant-validate` on: the bundle was not checked against the platform's
+  record of the company (its zones, e-mail domains, registries and
+  ceilings). The platform runs that when it takes the bundle: a company's
+  repository does not hold the record. The fetched `tenant-inputs` were not
+  read either: the validator takes the bundle alone.
+- `chart-gate` off: no chart was gated. On: the company's own recipe ran,
+  and no validator of the platform's stands behind it yet.
+- A `delivery` repository: `pins/` and `values/` were judged by the
+  boundary's shape rules only, and no validator reads their content.
+
+`hack/tenant-validate-cases.sh` proves the validation step: it builds the
+pinned validator the way the job does, runs the step on acme and globex
+bundles (one accepted, two refused, and a missing, a linked and a wrong-kind
+`tenant/`), and removes the call to the validator and each rule of the step
+in turn, which must turn a case red. It cannot run GitHub parsing the call,
+the fetch of the inputs artifact or the chart login; `hack/company-cases.sh`
+holds the wiring around the step.
 
 ## Pull requests from forks
 
@@ -99,18 +138,23 @@ is strict: `success`, nothing else. The ruleset requires `check`.
 
 ## Not built yet
 
-- **`tenant-validate` is a stub.** The input defaults to false because the
-  validator it calls is not released. The template recipe fails on purpose
-  until it is replaced, so that switching the input on early reads as a
-  failure, not as a gate that passed.
-- **`chart-gate` waits for a chart gate that takes explicit inputs.** Same
-  default, same stub.
+- **The registration check.** `tenant-validate` checks the bundle alone. The
+  comparison with the platform's record of the company is the platform's
+  and has no command a company's CI can run, so the fetched `tenant-inputs`
+  are not compared with the bundle, and a green run says so.
+- **`chart-gate` waits for a chart gate that takes explicit inputs.** It
+  stays a stub in the templates' `Justfile`, which fails on purpose, and
+  off by default.
 - **The inputs artifact is fetched by digest.** `TENANT_INPUTS` carries the
   digest. Resolving a moving tag and verifying its signature is a separate
   step that does not exist yet; the variable's meaning changes with it.
   The fetch is anonymous: a registry that wants a credential is not served.
+- **No caller switches `tenant-validate` on yet.** The kit in
+  truvity/ci-actions passes neither input. It gains `tenant-validate: true`
+  for a `config` repository first, then the template follows it.
 - **The templates pin v6.2.0**, which predates these inputs, as the
-  caller-parity kits do. Move the pin to the first release whose changelog
-  names `company-kind`; nothing else in the file changes.
+  caller-parity kits do. Move the pin to the first release that carries the
+  validation wiring (the CHANGELOG says which); nothing else in the file
+  changes except what the kit changes.
 - **No fleet template.** Dependency updates and version parity for a
   company are not part of this gate.

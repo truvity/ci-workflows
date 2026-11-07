@@ -1,0 +1,13 @@
+projects:
+  - name: shop
+    description: The storefront.
+    colour: blue
+    environments: [stage, prod]
+    endpoints:
+      - name: web
+        host: shop.acme.example
+        visibility: public
+  - name: ledger
+    endpoints:
+      - name: api
+        host: ledger.acme.example
