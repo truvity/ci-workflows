@@ -149,12 +149,10 @@ is strict: `success`, nothing else. The ruleset requires `check`.
   digest. Resolving a moving tag and verifying its signature is a separate
   step that does not exist yet; the variable's meaning changes with it.
   The fetch is anonymous: a registry that wants a credential is not served.
-- **No caller switches `tenant-validate` on yet.** The kit in
-  truvity/ci-actions passes neither input. It gains `tenant-validate: true`
-  for a `config` repository first, then the template follows it.
-- **The templates pin v6.2.0**, which predates these inputs, as the
-  caller-parity kits do. Move the pin to the first release that carries the
-  validation wiring (the CHANGELOG says which); nothing else in the file
-  changes except what the kit changes.
+- **The kits are not enabled.** The `config` template passes
+  `tenant-validate: true` and pins v6.4.0, and both templates match the
+  caller-parity kits of truvity/ci-actions. The kits stay `enabled: false`
+  there until `TENANT_INPUTS` can be a moving tag whose signature is verified;
+  no company repository is switched on by this.
 - **No fleet template.** Dependency updates and version parity for a
   company are not part of this gate.
