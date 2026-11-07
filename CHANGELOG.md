@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **The company caller templates follow v6.4.0.** `templates/company/config` and `templates/company/delivery` pin v6.4.0, and the `config` template passes `tenant-validate: true` (a `delivery` repository holds no bundle, and the job refuses the input there). The "not yet usable" paragraph is gone from both; each says what a green run still does not validate. `hack/templates-cases.sh` holds them to the truvity/ci-actions kits at the commit that carries those lines. The kits stay `enabled: false` until `TENANT_INPUTS` can be a moving tag with a verified signature.
+
 ## v6.4.0
 
 - **`tenant-validate` runs the real validator.** With `company-kind: config` and `tenant-validate: true`, `company-validate` builds truvity/policy's `tenant-validate` command at v1.57.0 (`go install` from the module, outside the checkout, checked by the Go checksum database; renovate moves the pin) and runs it on the `tenant/` bundle before the chart login. It loads and validates the bundle and prints the company and its pin; a refused bundle (exit 1) or a check that could not run (exit 2) fails the job, and so do a missing or linked `tenant/` and a `delivery` repository, which holds no bundle. It replaces the company's `tenant-validate` recipe, which the job no longer runs (setup-devbox now runs for `chart-gate` alone), so the templates' `Justfile` keeps only `chart-gate`. The input still defaults to false, still needs `tenant-inputs`, and no caller template passes it yet.
