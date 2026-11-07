@@ -1,21 +1,15 @@
-# The recipes that check.yaml's `company-validate` job runs when the caller
-# switches them on (`tenant-validate: true`, `chart-gate: true`). Both are
-# STUBS that fail on purpose: a stub that passed would read as a gate that
-# ran. Replace each body when the validator it names is released, and only
-# then switch the input on.
+# The recipe that check.yaml's `company-validate` job runs when the caller
+# switches it on (`chart-gate: true`). It is a STUB that fails on purpose: a
+# stub that passed would read as a gate that ran. Replace its body when the
+# chart gate that takes explicit inputs is released, and only then switch
+# the input on.
+#
+# There is no `tenant-validate` recipe: the shared workflow validates the
+# `tenant/` bundle itself, with truvity/policy's validator at a version it
+# pins, so a company's copy has nothing to keep in step with it.
 
 default:
     @just --list
-
-# Validate this candidate against the published tenant inputs.
-# TENANT_INPUTS_DIR is the verified artifact, outside the checkout; nothing
-# committed here stands in for it.
-tenant-validate:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    : "${TENANT_INPUTS_DIR:?not set: tenant-validate runs in check.yaml's company-validate job}"
-    echo "tenant-validate: the tenant validator is not released yet; this recipe is a stub" >&2
-    exit 1
 
 # Render this candidate's charts and gate them, reading private charts with
 # the credential the job logged in with (DOCKER_CONFIG, HELM_REGISTRY_CONFIG).

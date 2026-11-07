@@ -84,14 +84,15 @@ s="$tmp/needs.sh"; script company-validate needs >"$s"
 if [ -s "$s" ]; then
   needs_cases() {
     local g=$1 l=$2
-    case_ "$l nothing requested" pass "$g" TENANT_VALIDATE=false CHART_GATE=false TENANT_INPUTS= CHART_PROFILE=
-    case_ "$l tenant-validate with a pinned reference" pass "$g" TENANT_VALIDATE=true CHART_GATE=false TENANT_INPUTS=registry.example/acme/tenant@sha256:abc CHART_PROFILE=
-    case_ "$l chart-gate with a profile" pass "$g" TENANT_VALIDATE=false CHART_GATE=true TENANT_INPUTS= CHART_PROFILE=aws:acme:charts-read
-    case_ "$l tenant-validate without tenant-inputs" "tenant-inputs" "$g" TENANT_VALIDATE=true CHART_GATE=false TENANT_INPUTS= CHART_PROFILE=
-    case_ "$l chart-gate without chart-profile" "chart-profile" "$g" TENANT_VALIDATE=false CHART_GATE=true TENANT_INPUTS= CHART_PROFILE=
+    case_ "$l nothing requested" pass "$g" COMPANY_KIND=delivery TENANT_VALIDATE=false CHART_GATE=false TENANT_INPUTS= CHART_PROFILE=
+    case_ "$l tenant-validate with a pinned reference" pass "$g" COMPANY_KIND=config TENANT_VALIDATE=true CHART_GATE=false TENANT_INPUTS=registry.example/acme/tenant@sha256:abc CHART_PROFILE=
+    case_ "$l chart-gate with a profile, delivery" pass "$g" COMPANY_KIND=delivery TENANT_VALIDATE=false CHART_GATE=true TENANT_INPUTS= CHART_PROFILE=aws:acme:charts-read
+    case_ "$l tenant-validate without tenant-inputs" "tenant-inputs" "$g" COMPANY_KIND=config TENANT_VALIDATE=true CHART_GATE=false TENANT_INPUTS= CHART_PROFILE=
+    case_ "$l chart-gate without chart-profile" "chart-profile" "$g" COMPANY_KIND=config TENANT_VALIDATE=false CHART_GATE=true TENANT_INPUTS= CHART_PROFILE=
+    case_ "$l tenant-validate on a delivery repository" "holds no tenant/ bundle" "$g" COMPANY_KIND=delivery TENANT_VALIDATE=true CHART_GATE=false TENANT_INPUTS=registry.example/acme/tenant@sha256:abc CHART_PROFILE=
   }
   needs_cases "$s" "needs:"
-  for rule in tenant chart; do
+  for rule in tenant chart bundle; do
     grep -q "# rule:$rule\$" "$s" || { bad "needs: no '# rule:$rule' line"; continue; }
     sed "/# rule:$rule\$/d" "$s" >"$tmp/needs-no-$rule.sh"
     before=$fail; fail=0
@@ -148,6 +149,7 @@ for job in company-boundary company-validate; do
     *) bad "$job: its if does not start with the company-kind gate: $gate" ;;
   esac
 done
+expect_env company-validate needs COMPANY_KIND '${{ inputs.company-kind }}'
 expect_env company-validate needs TENANT_VALIDATE '${{ inputs.tenant-validate }}'
 expect_env company-validate needs CHART_GATE '${{ inputs.chart-gate }}'
 expect_env company-validate needs TENANT_INPUTS '${{ inputs.tenant-inputs }}'

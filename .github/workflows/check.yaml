@@ -549,10 +549,19 @@ on:
         default: ''
       tenant-validate:
         description: >-
-          Run the company's `tenant-validate` recipe in `company-validate`,
-          with TENANT_INPUTS_DIR set, after the inputs are fetched. OFF by
-          default: the recipe calls truvity/policy's tenant validator,
-          which is not released yet, so this is a stub until it is. Needs
+          Validate the company's `tenant/` bundle in `company-validate`
+          with truvity/policy's `tenant-validate` command, built from the
+          module at the version this workflow pins (the Go checksum
+          database vouches for the bytes). Only for `company-kind: config`,
+          which holds the bundle; on a `delivery` repository the job
+          fails, because nothing would be validated. The command runs
+          `Load`, `Validate` and the digest (the bundle's shape, its
+          schemas, its stable refusal codes and its pin); it does not run
+          the platform's registration check, which needs the platform's
+          record of the company, and it does not read the fetched
+          `tenant-inputs`. The job says so in its output on every green
+          run. OFF by default: a caller turns it on only when its
+          truvity/ci-actions caller-parity kit does. Needs
           `tenant-inputs`; asking for it without fails the job.
         required: false
         type: boolean
@@ -561,10 +570,11 @@ on:
         description: >-
           Run the company's `chart-gate` recipe in `company-validate`, with
           the chart registry login exported (DOCKER_CONFIG and
-          HELM_REGISTRY_CONFIG). OFF by default, for the same reason as
-          `tenant-validate`: the chart gate waits for a release that takes
-          explicit inputs. Needs `chart-profile`; asking for it without
-          fails the job.
+          HELM_REGISTRY_CONFIG). OFF by default: the chart gate waits for a
+          release that takes explicit inputs, so what this runs is the
+          company's own `chart-gate` recipe and nothing platform-owned; no
+          validator of the platform's stands behind it yet. Needs
+          `chart-profile`; asking for it without fails the job.
         required: false
         type: boolean
         default: false
@@ -796,6 +806,7 @@ jobs:
       - name: A requested recipe has the inputs it needs
         id: needs
         env:
+          COMPANY_KIND: ${{ inputs.company-kind }}
           TENANT_VALIDATE: ${{ inputs.tenant-validate }}
           CHART_GATE: ${{ inputs.chart-gate }}
           TENANT_INPUTS: ${{ inputs.tenant-inputs }}
@@ -803,7 +814,8 @@ jobs:
         run: |
           set -euo pipefail
           refuse() { echo "::error::$*"; exit 1; }
-          [ "$TENANT_VALIDATE" != true ] || [ -n "$TENANT_INPUTS" ] || refuse "tenant-validate is on but tenant-inputs is empty: there is nothing to validate against" # rule:tenant
+          [ "$TENANT_VALIDATE" != true ] || [ -n "$TENANT_INPUTS" ] || refuse "tenant-validate is on but tenant-inputs is empty: the gate fetches the company's published inputs beside the bundle, and is not asked for without them" # rule:tenant
+          [ "$TENANT_VALIDATE" != true ] || [ "$COMPANY_KIND" = config ] || refuse "tenant-validate is on for a $(printf %q "$COMPANY_KIND") repository, which holds no tenant/ bundle: nothing would be validated" # rule:bundle
           [ "$CHART_GATE" != true ] || [ -n "$CHART_PROFILE" ] || refuse "chart-gate is on but chart-profile is empty: the gate could not read the private charts" # rule:chart
           echo "inputs for the requested recipes: present"
 
@@ -824,6 +836,64 @@ jobs:
         with:
           reference: ${{ inputs.tenant-inputs }}
 
+      # The platform's tenant validator, built from truvity/policy at the
+      # version below. It is a Go module, not a release asset, so it is
+      # built from the module with `go install`; the Go checksum database
+      # vouches for the bytes of the tag, which is why the variables that
+      # would switch that off (GOPRIVATE, GONOSUMDB, GOFLAGS) are cleared
+      # for this one command. It runs from outside the checkout, so no
+      # go.mod, go.work or tool configuration of the candidate is read, and
+      # before the chart login, so it never sees that credential. Nothing
+      # of the candidate is built or run: the validator only reads the
+      # candidate's files.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: inputs.tenant-validate
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install the tenant validator
+        id: validator
+        if: inputs.tenant-validate
+        env:
+          # renovate: datasource=github-releases depName=truvity/policy
+          POLICY_VERSION: "1.57.0"
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tenant-validate"
+          cd "$RUNNER_TEMP"
+          GOBIN="$RUNNER_TEMP/tenant-validate" GOWORK=off GOFLAGS= GOPRIVATE= GONOPROXY= GONOSUMDB= GOSUMDB=sum.golang.org \
+            go install "github.com/truvity/policy/cmd/tenant-validate@v${POLICY_VERSION}"
+          echo "tenant-validate: truvity/policy v${POLICY_VERSION}, built from the module"
+
+      # The company's bundle is the `tenant/` directory of the checkout.
+      # Exit 1 is a refused bundle (every failure is printed, one per line
+      # with its code), 2 a check that could not run; both fail the job.
+      # What a pass means is said in the log and is the same on every green
+      # run, because a pass that reads as more than it checked is a hole:
+      # the registration check against the platform's record of the company
+      # is the platform's, and runs when the platform takes the bundle.
+      - name: Validate the tenant bundle
+        id: bundle
+        if: inputs.tenant-validate
+        env:
+          COMPANY_KIND: ${{ inputs.company-kind }}
+        run: |
+          set -euo pipefail
+          refuse() { echo "::error::$*"; exit 1; }
+          validator="$RUNNER_TEMP/tenant-validate/tenant-validate"
+          # One line per rule; hack/tenant-validate-cases.sh removes each in
+          # turn and expects a case to go red.
+          [ "$COMPANY_KIND" = config ] || refuse "tenant-validate: a $(printf %q "$COMPANY_KIND") repository holds no tenant/ bundle: nothing would be validated" # rule:kind
+          { [ -d tenant ] && [ ! -L tenant ]; } || refuse "tenant-validate: this repository has no tenant/ directory (or it is a link): there is no bundle to validate" # rule:dir
+          [ -x "$validator" ] || refuse "tenant-validate: the validator is not installed at $validator"
+          rc=0
+          pin=$("$validator" tenant) || rc=$?
+          [ "$rc" = 0 ] || refuse "tenant-validate: tenant/ is refused by truvity/policy (exit $rc; 1 is a refused bundle, 2 a check that could not run): every failure is printed above, one per line with its code" # rule:exit
+          echo "tenant-validate: tenant/ is accepted: company and pin: $pin"
+          echo "tenant-validate: checked: the bundle's files, shapes, schemas and refusal codes, and its pin"
+          echo "tenant-validate: NOT checked: the registration check (zones, e-mail domains, registries, ceilings), which the platform runs when it takes the bundle"
+
       # A credential that can read charts and nothing else, from this job's
       # own identity. A failed login fails the job: it never reads as
       # "no private charts". The caller grants `id-token: write`.
@@ -836,7 +906,7 @@ jobs:
           export-env: "true"
 
       - uses: truvity/ci-actions/setup-devbox@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
-        if: inputs.tenant-validate || inputs.chart-gate
+        if: inputs.chart-gate
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -846,16 +916,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # The recipe body is the company's: it reads TENANT_INPUTS_DIR and
-      # nothing else about the platform.
-      - uses: truvity/ci-actions/recipe@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
-        if: inputs.tenant-validate
-        env:
-          TENANT_INPUTS_DIR: ${{ steps.tenant.outputs.path }}
-        with:
-          recipe: tenant-validate
-          command: ${{ inputs.command }}
-          devbox-config: ${{ inputs.devbox-config }}
-
+      # nothing else about the platform. It runs only the chart gate; the
+      # tenant bundle is judged by the platform's own validator, above.
       - uses: truvity/ci-actions/recipe@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
         if: inputs.chart-gate
         env:
@@ -864,6 +926,29 @@ jobs:
           recipe: chart-gate
           command: ${{ inputs.command }}
           devbox-config: ${{ inputs.devbox-config }}
+
+      # The last word of a green run: what it validated and what it did
+      # not. A gate that is green because a recipe was off must not read as
+      # one that passed it.
+      - name: Say what this gate did not validate
+        id: coverage
+        env:
+          COMPANY_KIND: ${{ inputs.company-kind }}
+          TENANT_VALIDATE: ${{ inputs.tenant-validate }}
+          CHART_GATE: ${{ inputs.chart-gate }}
+        run: |
+          set -euo pipefail
+          gaps=()
+          [ "$TENANT_VALIDATE" = true ] || gaps+=("tenant-validate is off: no tenant bundle was validated")
+          [ "$TENANT_VALIDATE" != true ] || gaps+=("the tenant bundle was not checked against the platform's record of the company (zones, e-mail domains, registries, ceilings): the platform does that when it takes the bundle, and the fetched tenant-inputs were not read")
+          [ "$CHART_GATE" = true ] || gaps+=("chart-gate is off: no chart was gated")
+          [ "$CHART_GATE" != true ] || gaps+=("chart-gate ran the company's own recipe: the platform has no chart validator behind it yet")
+          [ "$COMPANY_KIND" != delivery ] || gaps+=("pins/ and values/ were judged by company-boundary's shape rules only: no validator reads their content")
+          for g in "${gaps[@]+"${gaps[@]}"}"; do
+            echo "::notice title=Not validated::$g"
+            echo "not validated: $g"
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "- Not validated: $g" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
 
   recipe:
     name: ${{ matrix.recipe }}

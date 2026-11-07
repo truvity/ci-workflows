@@ -1,0 +1,3 @@
+schema: tenant.v1
+company: acme
+interface: 1
