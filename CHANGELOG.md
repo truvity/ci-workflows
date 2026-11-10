@@ -5,7 +5,7 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v6.5.0
 
 - **The company caller templates follow v6.4.0.** `templates/company/config` and `templates/company/delivery` pin v6.4.0, and the `config` template passes `tenant-validate: true` (a `delivery` repository holds no bundle, and the job refuses the input there). The "not yet usable" paragraph is gone from both; each says what a green run still does not validate. `hack/templates-cases.sh` holds them to the truvity/ci-actions kits at the commit that carries those lines. The kits stay `enabled: false` until `TENANT_INPUTS` can be a moving tag with a verified signature.
 - **ci-actions v3.13.0 everywhere** (was v3.10.0 in most workflows and v3.11.0 in the `company-*` jobs of `check`; `tagged-pins` stays at v1.8.0). Three changes reach every job that runs these actions, with no input to set. A `recipe` that runs a moon task now runs `moon setup` first, so moon's own proto install has finished before it starts tasks; before, a caller such as trust-form/wallet failed with `proto-shim: Failed to execute proto ... Permission denied (os error 13)`. GitHub release downloads (v3.13.0's #119) go through the runner's mirror when the runner sets `CI_RUNNER_GITHUB_RELEASES`; a runner that does not set it sees no difference. `setup-devbox` retries a 5xx from its downloads.
