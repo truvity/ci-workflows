@@ -649,7 +649,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: truvity/ci-actions/public-runners@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/public-runners@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         with:
           runners: >-
             ${{ inputs.runner }} ${{ inputs.small-runner }} ${{ inputs.medium-runner }}
@@ -726,7 +726,7 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      - uses: truvity/ci-actions/policy-conformance@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/policy-conformance@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         with:
           strict: ${{ inputs.policy-conformance-strict && 'true' || 'false' }}
 
@@ -766,7 +766,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: truvity/ci-actions/company-boundary@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+      - uses: truvity/ci-actions/company-boundary@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         with:
           kind: ${{ inputs.company-kind }}
           forbidden-import-prefixes: ${{ inputs.forbidden-import-prefixes || vars.COMPANY_FORBIDDEN_IMPORT_PREFIXES }}
@@ -830,7 +830,7 @@ jobs:
       # committed in this repository neither stands in for it nor changes
       # the answer. A reference that is a tag, or whose bytes do not match
       # its digest, is refused here.
-      - uses: truvity/ci-actions/tenant-inputs@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+      - uses: truvity/ci-actions/tenant-inputs@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         id: tenant
         if: inputs.tenant-inputs != ''
         with:
@@ -897,7 +897,7 @@ jobs:
       # A credential that can read charts and nothing else, from this job's
       # own identity. A failed login fails the job: it never reads as
       # "no private charts". The caller grants `id-token: write`.
-      - uses: truvity/ci-actions/chart-auth@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+      - uses: truvity/ci-actions/chart-auth@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: inputs.chart-profile != ''
         with:
           registry: ${{ inputs.chart-registry || vars.CHART_REGISTRY }}
@@ -905,7 +905,7 @@ jobs:
           audience: ${{ inputs.chart-profile }}
           export-env: "true"
 
-      - uses: truvity/ci-actions/setup-devbox@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+      - uses: truvity/ci-actions/setup-devbox@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: inputs.chart-gate
         with:
           devbox-config: ${{ inputs.devbox-config }}
@@ -918,7 +918,7 @@ jobs:
       # The recipe body is the company's: it reads TENANT_INPUTS_DIR and
       # nothing else about the platform. It runs only the chart gate; the
       # tenant bundle is judged by the platform's own validator, above.
-      - uses: truvity/ci-actions/recipe@07baa32692f4ad11e5b1a37ceae5bcadb6faefc4 # v3.11.0
+      - uses: truvity/ci-actions/recipe@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: inputs.chart-gate
         env:
           TENANT_INPUTS_DIR: ${{ steps.tenant.outputs.path }}
@@ -1047,10 +1047,10 @@ jobs:
           lfs: ${{ inputs.lfs }}
           fetch-depth: ${{ inputs.fetch-depth }}
 
-      - uses: truvity/ci-actions/stable-mtimes@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/stable-mtimes@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: inputs.stable-mtimes
 
-      - uses: truvity/ci-actions/setup-devbox@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/setup-devbox@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         with:
           devbox-config: ${{ inputs.devbox-config }}
           proto: ${{ inputs.proto }}
@@ -1160,7 +1160,7 @@ jobs:
       # when the caller passes go-cache-bucket (traffic stays inside the
       # region, none of it through the NAT) and GitHub's cache everywhere
       # else.
-      - uses: truvity/ci-actions/s3-cache/restore@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/s3-cache/restore@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         id: golangci-cache
         if: matrix.recipe == inputs.lint-recipe
         with:
@@ -1179,7 +1179,7 @@ jobs:
       # empty), so a change of a dependency starts a new cache and the newest
       # earlier one of the same recipe warms it. Nothing runs without
       # `cache-paths`.
-      - uses: truvity/ci-actions/s3-cache/restore@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/s3-cache/restore@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         id: caller-cache
         if: inputs.cache-paths != ''
         with:
@@ -1260,7 +1260,7 @@ jobs:
       # to a fresh directory and exported as CI_BUILDKIT_TLS_DIR, which the
       # next step reads. With CI_BUILDKIT_TLS_DIR already set, or none of
       # them, it changes nothing; a half-set certificate fails here.
-      - uses: truvity/ci-actions/setup-buildkit-tls@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/setup-buildkit-tls@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: contains(fromJSON(inputs.remote-builder-recipes), matrix.recipe)
 
       # The CI plane's BuildKit builders as one remote-driver buildx builder
@@ -1399,7 +1399,7 @@ jobs:
             esac
           done
 
-      - uses: truvity/ci-actions/recipe@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/recipe@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         with:
           recipe: ${{ matrix.recipe }}
           command: ${{ inputs.command }}
@@ -1486,7 +1486,7 @@ jobs:
       # someone is iterating and most wants it warm. cache-hit is true only
       # on an exact key, so the save runs when the devbox.lock + go.sum key
       # is missing and not otherwise (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/s3-cache/save@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: always() && matrix.recipe == inputs.lint-recipe && steps.golangci-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/golangci-lint
@@ -1498,7 +1498,7 @@ jobs:
 
       # Saved also when the recipe failed, and only when the exact key was
       # missing (a restore-keys match is a miss here).
-      - uses: truvity/ci-actions/s3-cache/save@6dfd9fae63770f7e3d81a59ee661dc37ec51a516 # v3.10.0
+      - uses: truvity/ci-actions/s3-cache/save@0305b08f77aedff9009d3f44d53f881ad2844c14 # v3.13.0
         if: always() && inputs.cache-paths != '' && steps.caller-cache.outputs.cache-hit != 'true'
         with:
           path: ${{ inputs.cache-paths }}
