@@ -15,6 +15,7 @@ also carries the shared renovate preset, `github>truvity/ci-workflows`.
 | [`release-private.yaml`](.github/workflows/release-private.yaml) | On a tag: the release command with tag-scoped GitHub OIDC into an ECR account, optionally on the remote BuildKit builders, gated on the tagged commit's checks being green | `contents: read`, `id-token: write`, `checks: read` | `role-to-assume`, `ecr-registries`, `command`; secret `goreleaser-key` for goreleaser-pro | a private repository's `release.yaml` |
 | [`release-pkl.yaml`](.github/workflows/release-pkl.yaml) | On a tag: refuses unless the tag is `v` plus the declared version and the CHANGELOG has its heading, runs the caller's `just` recipe, checks every asset is checksummed and named for the version, publishes the GitHub Release with the assets under their exact names (resumable, never overwriting), then resolves the packages from github.com | `contents: write` | none; `package-recipe`, `output-dir`, `version-command`, `pkl-command`, `smoke-import` as the repository needs them | a public repository's `release.yaml` for Pkl packages |
 | [`auto-release.yaml`](.github/workflows/auto-release.yaml) | Cuts the next patch tag weekly when `master` has moved past the latest release, and at once for a merged `security`-labelled pull request or a hand-written conventional `fix:` (renovate's never), first giving the CHANGELOG its `## vX.Y.Z` heading by pull request (`changelog-heading: never` opts out); an optional `version-bump-command` (run in devbox with `VERSION` and `TAG`) lands a version declared in files in that same pull request, before the tag | `contents: read`; `id-token: write` with `token-source: access-roster` | `token-source: access-roster` needs `access-roster-issuer` and `github-app`; `app-key` needs `app-id` and secret `CI_AUTOMATION_PRIVATE_KEY` | a repository's `auto-release.yaml`, guarded by `vars.AUTO_RELEASE` |
+| [`sign-images.yaml`](.github/workflows/sign-images.yaml) | Opt-in. Signs the images a release published, by digest, with cosign (keyless) and a GitHub build-provenance attestation; fails the run on an empty list or an entry without a digest unless `require-images` is false (see [Signed images](#signed-images)) | `contents: read`, `packages: write`, `id-token: write`, `attestations: write` | none; `images` (the `images` output of `release-public`), `require-images` | a second job in a public repository's `release.yaml`, after `release-public` |
 | [`pkl-fleet.yaml`](.github/workflows/pkl-fleet.yaml) | Moves every repository that consumes a Pkl contracts library to its newest release: rewrites the `PklProject` dependency URIs, runs `pkl project resolve` and the repository's `generate` recipe, opens one pull request per repository on a stable branch, auto-merge armed only for a non-breaking bump (a new 0.x minor is breaking) | `contents: read`, `id-token: write` | `estate`, `git-user`; the token inputs, or secret `RENOVATE_APP_PRIVATE_KEY`; `version` (default: latest release), `dry-run`, `source` | an estate's `ci-caller` repository, on a schedule and `workflow_dispatch` |
 | [`renovate-fleet.yaml`](.github/workflows/renovate-fleet.yaml) | Renovate for a whole estate from one caller: a matrix job per enrolled repository, estate policy in the caller | `contents: read`, `id-token: write` | `estate`; the token inputs, or secrets `RENOVATE_APP_PRIVATE_KEY` (and an optional approver key) | an estate's `ci-caller` repository |
 | [`parity-fleet.yaml`](.github/workflows/parity-fleet.yaml) | Version parity for a whole estate: devbox leads, the other manifests follow, one pull request per repository that moved; optionally reports caller-workflow drift | `contents: read`, `id-token: write` | `estate`, `git-user`; the token inputs, or secret `RENOVATE_APP_PRIVATE_KEY` | an estate's `ci-caller` repository |
@@ -35,7 +36,7 @@ passes its own as inputs and organisation variables.
 
 A repository carries a few **thin callers**: `ci.yaml` calling
 `check.yaml`, `security.yaml` calling `check.yaml` with the `vuln`
-recipe on a schedule, `release.yaml` calling one of the two release
+recipe on a schedule, `release.yaml` calling one of the release
 workflows on a tag, and `auto-release.yaml`. Dependency updates and
 version parity are **not** callers in each repository: one job per
 estate runs them from that estate's `ci-caller` repository, over an
@@ -75,7 +76,7 @@ permissions:
 
 jobs:
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ca380502b911e44d9ce430aeabd08e4c362c2d76 # v6.5.0
     with:
       recipes: '["build","test","lint"]'
 
@@ -107,8 +108,8 @@ To hold a component repository to the component contract as well:
 ```
 
 `policy-conformance` runs truvity/ci-actions' action of that name on a
-hosted runner and prints one line per rule, C1 to C12, pinned to its
-v1.3.0 release.
+hosted runner and prints one line per rule it evaluates (C1 to C13 and
+C18). `check.yaml` pins the action to a ci-actions release.
 
 ### Required checks
 
@@ -192,32 +193,41 @@ owner never matches, so it would fall through to `*` unseen);
 `hack/runner-sizes-cases.sh` proves each of the last refusals by breaking
 a copy.
 
+## Platform part and company part
+
+**Platform part.** None applied from this repository: it holds workflows and a renovate preset, with no chart, stack or service. The platform runs the runners and caches these workflows run on, and the fleet workflows run from one private caller repository per estate; see [Neighbours](#neighbours) and [docs/fleet.md](docs/fleet.md).
+
+**Company part.** A company's repositories call `check.yaml` from the caller templates in [`templates/company`](templates/company) (`config` for authored configuration, `delivery` for release pins and values) and set the repository variables the gate reads, such as `TENANT_INPUTS`, `CHART_PROFILE` and `CHART_REGISTRY`. [docs/company.md](docs/company.md) has the gate and the variables.
+
 ## Consumers
 
-As of 2026-09-29, by a code search of each organisation's workflow
-files:
+As of 2026-11-11, by reading the workflow files on the default branch of
+each organisation's repositories that are not archived:
 
 | consumer | through |
 | -- | -- |
-| truvity public repositories: access-roster, amazon-eks-pod-identity-webhook, argocd-ecr-updater, cloudflare, cnpg, gateway, gemaal, github-structure, nats, observability, ocictl, openbao, tailscale | `check`, `release-public`, `auto-release` |
-| truvity/audit, truvity/policy | `check`, `integration` (kind tier), `release-public` |
-| truvity/ci-plane | `check`, `auto-release` |
-| truvity/workstation | `check` |
-| four private truvity repositories, gitops among them | `check`, `integration` (shared tier), `release-private`, `auto-release` |
-| 19 private trust-form repositories | `check` |
-| `ci-caller` in each organisation | `renovate-fleet`, `parity-fleet` |
+| truvity public repositories: amazon-eks-pod-identity-webhook, argocd-ecr-updater, artifacts, asg, aws-structure, cd, cnpg, edge, gemaal, github-structure, k8s, nats, observability, ocictl, policy, pulumi-pipeline, secrets, tailscale, url-shortener | `check`, `release-public`, `auto-release` (k8s also `sign-images`) |
+| truvity/sluis | `check`, `integration` (kind tier), `release-public` |
+| truvity/pkl-contracts | `check`, `auto-release`, `release-pkl` |
+| truvity/ci-support, truvity/grun, truvity/workstation | `check` |
+| six private truvity repositories | `check`; between them also `integration` (shared tier), `release-private` and `auto-release` |
+| 22 private trust-form repositories | `check` |
+| `ci-caller` in each organisation | `renovate-fleet`, `parity-fleet`; truvity's also `pkl-fleet` |
 | every repository that extends `github>truvity/ci-workflows` in `renovate.json` | the preset, `default.json` |
 
 ## Neighbours
 
-- **ci-workflows → ci-actions → ci-cache; ci-plane hosts the runners.**
+- **ci-workflows → ci-actions; ci-support and grun serve the runners.**
   This repository is the only thing a caller pins.
   [ci-actions](https://github.com/truvity/ci-actions) holds the
-  composite steps these workflows call;
-  [ci-cache](https://github.com/truvity/ci-cache) (archived) held the cache
-  engine; cache wiring is ci-actions' `setup-cache`, called from `setup-devbox`;
-  [ci-plane](https://github.com/truvity/ci-plane) is where work executes
-  (runner and nix-worker images, `ci-builders`).
+  composite steps these workflows call; cache wiring is ci-actions'
+  `setup-cache`, called from `setup-devbox`;
+  [ci-support](https://github.com/truvity/ci-support) holds the caches and
+  docker builders the runners use;
+  [grun](https://github.com/truvity/grun) holds the runner image and runs
+  runners on serverless containers. [ci-plane](https://github.com/truvity/ci-plane)
+  (retired 2026-10-29) and [ci-cache](https://github.com/truvity/ci-cache)
+  (archived) held the earlier runner images and the cache engine.
 - **[policy](https://github.com/truvity/policy)**: the component contract
   every public repository is held to, and the `hack/kind/` box the kind
   tier of `integration.yaml` runs.
@@ -319,12 +329,11 @@ check.
 
 ## Status
 
-Used in production by both organisations. The latest tag is v3.14.2
-(2026-09-29). There are 82 tags; GitHub releases exist for v1.0.0 to
-v2.6.0 and, resuming at v3.14.0, for v3.14.0 to v3.14.2 — nothing
-between v3.0.0 and v3.13.1 has one. The release GitHub marks "Latest"
-is now v3.14.2, so it agrees with the tags again; read the tags and
-[CHANGELOG.md](CHANGELOG.md) for anything earlier.
+Used in production by both organisations. The newest version is the top
+heading of [CHANGELOG.md](CHANGELOG.md) and the latest tag. GitHub
+[releases](https://github.com/truvity/ci-workflows/releases) exist for some
+tags only, so the release GitHub marks "Latest" can trail the newest tag;
+the tags and the changelog are the complete record.
 
 ## Development
 
@@ -342,6 +351,14 @@ The recipes are:
   `just runner-sizes` renders them.
 - `just runner-sizes-cases` — each guard of the caller's `runner-sizes`
   input, broken on a copy and expected to refuse.
+- `just pkl-fleet-cases` — `pkl-fleet`'s setup-devbox gets only the job's own
+  token.
+- `just company-cases` — each refusal of the company inputs of `check.yaml`,
+  and the job graph at default inputs.
+- `just tenant-validate-cases` — the tenant validator step runs the pinned
+  validator and fails a bad bundle.
+- `just templates-cases` — the company caller templates hold the kits'
+  substance, run on `pull_request` only, and name their recipes.
 - `just check` — run all recipes (the merge gate).
 
 `check` green is the whole merge gate: no approving review is required,
