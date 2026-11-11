@@ -197,7 +197,7 @@ a copy.
 
 **Platform part.** None applied from this repository: it holds workflows and a renovate preset, with no chart, stack or service. The platform runs the runners and caches these workflows run on, and the fleet workflows run from one private caller repository per estate; see [Neighbours](#neighbours) and [docs/fleet.md](docs/fleet.md).
 
-**Company part.** A company's repositories call `check.yaml` from the caller templates in [`templates/company`](templates/company) (`config` for authored configuration, `delivery` for release pins and values) and set the repository variables the template reads, such as `TENANT_INPUTS`, `CHART_PROFILE` and `CHART_REGISTRY`. [docs/company.md](docs/company.md) has the gate and the variables.
+**Company part.** A company's repositories call `check.yaml` from the caller templates in [`templates/company`](templates/company) (`config` for authored configuration, `delivery` for release pins and values) and set the repository variables the gate reads, such as `TENANT_INPUTS`, `CHART_PROFILE` and `CHART_REGISTRY`. [docs/company.md](docs/company.md) has the gate and the variables.
 
 ## Consumers
 
