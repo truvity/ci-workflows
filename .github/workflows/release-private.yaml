@@ -196,36 +196,68 @@ on:
         required: false
         type: boolean
         default: false
+      ssm-issuer:
+        description: >-
+          The sluis issuer that mints the token the goreleaser-pro licence
+          read is exchanged for. Empty falls back to `openbao-issuer`, so a
+          caller that already passes that one keeps working. Set it, with
+          `ssm-account` and `ssm-region`, to read the licence at run time
+          instead of passing it as a secret (docs/secrets.md).
+        required: false
+        type: string
+        default: ""
+      ssm-account:
+        description: >-
+          The 12-digit AWS account id of the role that reads the licence,
+          from a caller variable. Empty skips the read and keeps the
+          `goreleaser-key` secret.
+        required: false
+        type: string
+        default: ""
+      ssm-region:
+        description: The AWS region of the Parameter Store the licence is read from.
+        required: false
+        type: string
+        default: ""
+      goreleaser-secret-role:
+        description: The IAM role name (not an ARN) the job assumes to read the licence.
+        required: false
+        type: string
+        default: ci-reader-goreleaser
+      goreleaser-secret-path:
+        description: >-
+          The SSM path whose `goreleaser-key` parameter holds the
+          goreleaser-pro licence, read as the job itself. While
+          `ssm-account` is set the read may fail and the
+          `goreleaser-key` secret still stands behind it, so a first
+          rollout cannot break a release.
+        required: false
+        type: string
+        default: /shared/internal/infra/ci/goreleaser
       openbao-issuer:
         description: >-
-          The access-roster issuer that mints the token the OpenBAO login
-          presents. Set it, with the three below, to read the
-          goreleaser-pro licence at run time instead of passing it as a
-          secret (docs/secrets.md).
+          Deprecated: use `ssm-issuer`. Still read, as the issuer, when
+          `ssm-issuer` is empty. Removed in a later release.
         required: false
         type: string
         default: ""
       openbao-address:
-        description: The OpenBAO API base URL — a private endpoint, so a self-hosted runner.
+        description: "Deprecated and unused: the licence is no longer read from OpenBAO. Removed in a later release."
         required: false
         type: string
         default: ""
       openbao-namespace:
-        description: The OpenBAO namespace the licence path lives in.
+        description: "Deprecated and unused: the licence is no longer read from OpenBAO. Removed in a later release."
         required: false
         type: string
         default: ""
       openbao-ca:
-        description: PEM of the CA that signed OpenBAO's certificate, where the runner's trust store does not cover it.
+        description: "Deprecated and unused: the licence is no longer read from OpenBAO. Removed in a later release."
         required: false
         type: string
         default: ""
       goreleaser-licence-path:
-        description: >-
-          KV path holding the goreleaser-pro licence, read as the job
-          itself. Empty keeps the `goreleaser-key` secret. While both are
-          set the read may fail and the secret still stands behind it, so
-          a first rollout cannot break a release.
+        description: "Deprecated and unused: see `goreleaser-secret-path`. Removed in a later release."
         required: false
         type: string
         default: ""
@@ -555,25 +587,26 @@ jobs:
           "$RUNNER_TEMP/goreleaser-pro/goreleaser" --version
 
       # The licence as something this job READS, not as a copy every
-      # caller holds: the run's own OIDC identity exchanged at
-      # access-roster, one login, one read of one path (docs/secrets.md).
-      # The issuer's grants and one read-only policy decide it; no input
-      # here can widen that.
+      # caller holds: the run's own OIDC identity exchanged at the sluis
+      # issuer, assumed as one AWS role, one read of one SSM path
+      # (docs/secrets.md). The issuer's grants and the role's read-only
+      # policy decide it; no input here can widen that.
       #
       # `continue-on-error` is the rollout, not the destination. A caller
       # that has proven the read drops its `goreleaser-key` secret, and
       # the fallback below then resolves to empty on its own.
-      - name: Read the goreleaser licence from OpenBAO
+      - name: Read the goreleaser licence from SSM
         id: licence
-        if: inputs.goreleaser-licence-path != ''
+        if: inputs.ssm-account != '' && inputs.goreleaser-secret-path != ''
         continue-on-error: true
-        uses: truvity/ci-actions/openbao-secrets@576891256d95a4b615dcbbf63cabd71fad9bfa4f # v3.14.2
+        uses: truvity/ci-actions/ssm-secrets@3152a8b146886d783af7d999cd1b594c4d89d228 # v3.15.0
         with:
-          issuer: ${{ inputs.openbao-issuer }}
-          address: ${{ inputs.openbao-address }}
-          namespace: ${{ inputs.openbao-namespace }}
-          ca-cert: ${{ inputs.openbao-ca }}
-          path: ${{ inputs.goreleaser-licence-path }}
+          issuer: ${{ inputs.ssm-issuer || inputs.openbao-issuer }}
+          account: ${{ inputs.ssm-account }}
+          role: ${{ inputs.goreleaser-secret-role }}
+          region: ${{ inputs.ssm-region }}
+          path: ${{ inputs.goreleaser-secret-path }}
+          keys: goreleaser-key
 
       # Which BuildKit cache this job uses: the runner's own (CI_RUNNER_BUILDX_CACHE) over the
       # input. A stable runner names the stable registry account's, a preview runner the
