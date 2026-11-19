@@ -12,6 +12,53 @@ reads one path of secrets at run time, as the job itself, from an
 OpenBAO KV v2 mount. Nothing is stored in the repository, and what a job
 may read is decided outside it.
 
+[`ssm-secrets`](https://github.com/truvity/ci-actions/tree/master/ssm-secrets)
+does the same against AWS SSM Parameter Store and is the one to use for
+new work: it needs no private endpoint, so any runner can reach it. The
+OpenBAO sections below describe `openbao-secrets`, which stays for
+callers that have not moved.
+
+## Reading from SSM
+
+```
+the job's GitHub OIDC identity token
+  → sluisctl token --audience aws:<account>:<role>   (exchanged at the issuer)
+  → sts:AssumeRoleWithWebIdentity                    (the role's trust policy)
+  → ssm:GetParametersByPath, decrypted, one level    (the role's policy)
+```
+
+The temporary credentials live in the action's own process; nothing is
+written to an AWS config file or exported to a later step. The same three
+things decide the outcome: the issuer's grants, the role's trust policy
+and the role's policy.
+
+```yaml
+permissions:
+  contents: read
+  id-token: write # the read IS an exchange of the job's identity token
+
+steps:
+  - uses: truvity/ci-actions/setup-devbox@<sha>
+    with: { github-token: "${{ secrets.GITHUB_TOKEN }}" }
+
+  - uses: truvity/ci-actions/ssm-secrets@<sha>
+    id: publish
+    with:
+      issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
+      account: ${{ vars.CI_SECRETS_ACCOUNT }}
+      role: ci-reader-example
+      region: ${{ vars.CI_SECRETS_REGION }}
+      path: /example/ci/publish
+      keys: publish-username publish-password # empty takes every parameter under the path
+```
+
+The outputs are those of `openbao-secrets`: `value` when exactly one
+parameter is taken, and `env-file`, one `NAME='value'` line per
+parameter, the name being the parameter's last path segment upper-cased
+with dashes turned into underscores (`publish-username` →
+`PUBLISH_USERNAME`). Source the file as shown for `openbao-secrets`
+below. A named key that is missing fails the step.
+
 ## The chain
 
 ```
@@ -105,28 +152,35 @@ multi-line secret is masked whole. The file is owner-only, lives under
 ## Through release-private.yaml
 
 A private release does not need the step at all: the reusable workflow
-reads the goreleaser-pro licence itself when the caller names a path.
+reads the goreleaser-pro licence itself (parameter `goreleaser-key`,
+exported as `GORELEASER_KEY`) when the caller names the account.
 
 ```yaml
     with:
-      openbao-issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
-      openbao-address: ${{ vars.CI_OPENBAO_ADDRESS }}
-      openbao-namespace: ${{ vars.CI_OPENBAO_NAMESPACE }}
-      openbao-ca: ${{ vars.CI_OPENBAO_CA }}
-      goreleaser-licence-path: ci/goreleaser
+      ssm-issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
+      ssm-account: ${{ vars.CI_SECRETS_ACCOUNT }}
+      ssm-region: ${{ vars.CI_SECRETS_REGION }}
+      # goreleaser-secret-role defaults to ci-reader-goreleaser and
+      # goreleaser-secret-path to /shared/internal/infra/ci/goreleaser
     secrets:
       goreleaser-key: ${{ secrets.GORELEASER_KEY }} # until a run has read the path
 ```
 
-The read is allowed to fail while both are set, and the secret stands
-behind it. Drop the `secrets:` line once a release run shows the read
+Without `ssm-account` the read is skipped and the secret is used. The
+read is allowed to fail while both are set, and the secret stands behind
+it. Drop the `secrets:` line once a release run shows the read
 succeeded — the fallback then resolves to empty and the licence has one
 home.
+
+The `openbao-*` inputs and `goreleaser-licence-path` are still declared
+so a caller that passes them does not break, but they are no longer read
+(`openbao-issuer` still serves as the issuer when `ssm-issuer` is empty).
+Remove them from the caller; they leave the workflow in a later release.
 
 ## Keeping the GitHub secret until it is proven
 
 Move one consumer at a time, and keep passing the GitHub secret while
-you do: a step that reads OpenBAO and a fallback to `secrets.X` live
+you do: a step that reads OpenBAO or SSM and a fallback to `secrets.X` live
 together happily. Delete the secret only after a real run has read the
 path — a deleted secret is a broken release, and the read is the only
 proof that the identity, the policy and the value all line up.

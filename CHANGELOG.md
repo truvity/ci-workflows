@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **`release-private` reads the goreleaser-pro licence from SSM, through ci-actions' `ssm-secrets` (v3.15.0).** New inputs: `ssm-account` and `ssm-region` (empty `ssm-account` skips the read and keeps the `goreleaser-key` secret), `goreleaser-secret-role` (default `ci-reader-goreleaser`), `goreleaser-secret-path` (default `/shared/internal/infra/ci/goreleaser`) and `ssm-issuer` (empty falls back to `openbao-issuer`). The read keeps its `continue-on-error` and the `goreleaser-key` secret behind it. The caller job still needs `id-token: write`, and the role and the issuer's grant must exist before a caller sets `ssm-account`; the licence arrives as `GORELEASER_KEY` as before. The `openbao-issuer`, `openbao-address`, `openbao-namespace`, `openbao-ca` and `goreleaser-licence-path` inputs are deprecated: still declared, no longer read (except `openbao-issuer` as the `ssm-issuer` fallback), and removed in a later release. **Upgrade:** a caller that passed the `openbao-*` inputs and `goreleaser-licence-path` swaps them for `ssm-issuer`, `ssm-account` and `ssm-region`; until it does, the licence comes from the `goreleaser-key` secret alone. docs/secrets.md describes both.
+
 ## v6.5.2
 
 - **ci-actions v3.14.2 everywhere** (was v3.14.1; `tagged-pins` stays at v1.8.0). `publish-nix-flakes` in `release-public` hands `nix-store --add-fixed` absolute archive paths: v3.14.1 passed them relative to the checkout while running in the flake directory, and truvity/sluis v1.82.2 failed with `opening file ".../nix-flakes/dist/<archive>": No such file or directory`. **Upgrade:** none.
