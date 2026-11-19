@@ -334,6 +334,9 @@ on:
         default: auto
     secrets:
       goreleaser-key:
+        description: >-
+          Deprecated: a repository on the free goreleaser needs no
+          licence. Removed in the next major release.
         required: false
       module-app-private-key:
         required: false

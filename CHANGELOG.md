@@ -5,6 +5,10 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
+## Unreleased
+
+- **The goreleaser-pro licence is deprecated.** The `install-goreleaser-pro`, `goreleaser-secret-role` and `goreleaser-secret-path` inputs and the `goreleaser-key` secret of `release-private` (and the `goreleaser-key` secret of `integration`) are marked deprecated in their descriptions. Nothing else changes: they are still declared and still read, and they are removed in the next major release. **Upgrade:** a repository whose `.goreleaser.yaml` uses no Pro-only feature installs the free goreleaser through its own toolchain (devbox) and stops passing these inputs and the secret.
+
 ## v6.6.0
 
 - **`release-private` reads the goreleaser-pro licence from SSM, through ci-actions' `ssm-secrets` (v3.15.0).** New inputs: `ssm-account` and `ssm-region` (empty `ssm-account` skips the read and keeps the `goreleaser-key` secret), `goreleaser-secret-role` (default `ci-reader-goreleaser`), `goreleaser-secret-path` (default `/shared/internal/infra/ci/goreleaser`) and `ssm-issuer` (empty falls back to `openbao-issuer`). The read keeps its `continue-on-error` and the `goreleaser-key` secret behind it. The caller job still needs `id-token: write`, and the role and the issuer's grant must exist before a caller sets `ssm-account`; the licence arrives as `GORELEASER_KEY` as before. The `openbao-issuer`, `openbao-address`, `openbao-namespace`, `openbao-ca` and `goreleaser-licence-path` inputs are deprecated: still declared, no longer read (except `openbao-issuer` as the `ssm-issuer` fallback), and removed in a later release. **Upgrade:** a caller that passed the `openbao-*` inputs and `goreleaser-licence-path` swaps them for `ssm-issuer`, `ssm-account` and `ssm-region`; until it does, the licence comes from the `goreleaser-key` secret alone. docs/secrets.md describes both.

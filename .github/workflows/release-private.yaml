@@ -188,11 +188,14 @@ on:
         default: 30
       install-goreleaser-pro:
         description: >-
-          Install the goreleaser-pro binary at job time (pinned version,
+          Deprecated: use the free goreleaser from the repository's own
+          toolchain (devbox) and drop the licence. Install the
+          goreleaser-pro binary at job time (pinned version,
           verified). The Pro EULA forbids redistribution, so the binary
           must NOT be baked into the public runner image —
           fetching it here, on the licensee's own runner, is plain
           internal use. Callers that pass goreleaser-key set this.
+          Removed in the next major release.
         required: false
         type: boolean
         default: false
@@ -220,13 +223,17 @@ on:
         type: string
         default: ""
       goreleaser-secret-role:
-        description: The IAM role name (not an ARN) the job assumes to read the licence.
+        description: >-
+          Deprecated together with `goreleaser-key`; removed in the next
+          major release. The IAM role name (not an ARN) the job assumes
+          to read the licence.
         required: false
         type: string
         default: ci-reader-goreleaser
       goreleaser-secret-path:
         description: >-
-          The SSM path whose `goreleaser-key` parameter holds the
+          Deprecated together with `goreleaser-key`; removed in the next
+          major release. The SSM path whose `goreleaser-key` parameter holds the
           goreleaser-pro licence, read as the job itself. While
           `ssm-account` is set the read may fail and the
           `goreleaser-key` secret still stands behind it, so a first
@@ -263,7 +270,10 @@ on:
         default: ""
     secrets:
       goreleaser-key:
-        description: goreleaser-pro licence, for callers that use it.
+        description: >-
+          Deprecated: a repository on the free goreleaser needs no
+          licence. goreleaser-pro licence, for callers that use it.
+          Removed in the next major release.
         required: false
 
 # NO permissions block, deliberately — the check.yaml rule. A reusable
