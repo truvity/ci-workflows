@@ -333,11 +333,6 @@ on:
         type: string
         default: auto
     secrets:
-      goreleaser-key:
-        description: >-
-          Deprecated: a repository on the free goreleaser needs no
-          licence. Removed in the next major release.
-        required: false
       module-app-private-key:
         required: false
 
@@ -843,7 +838,6 @@ jobs:
         env:
           LANE_BUILD: ${{ matrix.build }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_KEY: ${{ secrets.goreleaser-key }}
           CI_BUILDX_CACHE: ${{ steps.bkcache.outputs.ref }}
           CODEARTIFACT_AUTH_TOKEN: ${{ steps.codeartifact.outputs.token }}
         run: eval "$LANE_BUILD"
