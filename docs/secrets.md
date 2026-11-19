@@ -151,6 +151,12 @@ multi-line secret is masked whole. The file is owner-only, lives under
 
 ## Through release-private.yaml
 
+> **Deprecated.** A repository whose `.goreleaser.yaml` uses no Pro-only
+> feature needs no licence: install the free goreleaser through the
+> repository toolchain (devbox) and pass none of the goreleaser inputs
+> or the `goreleaser-key` secret. This section stays for callers that
+> still hold a licence; the inputs go in the next major release.
+
 A private release does not need the step at all: the reusable workflow
 reads the goreleaser-pro licence itself (parameter `goreleaser-key`,
 exported as `GORELEASER_KEY`) when the caller names the account.
