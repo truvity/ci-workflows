@@ -5,9 +5,9 @@ tag (`git rev-parse vX.Y.Z^{commit}`), with the version in a trailing
 comment. Entries from v3.0.0 to v3.13.1 are reconstructed from `git log`:
 those tags have no GitHub release; v3.14.0 on do.
 
-## Unreleased
+## v7.0.0
 
-- **The goreleaser-pro licence is deprecated.** The `install-goreleaser-pro`, `goreleaser-secret-role` and `goreleaser-secret-path` inputs and the `goreleaser-key` secret of `release-private` (and the `goreleaser-key` secret of `integration`) are marked deprecated in their descriptions. Nothing else changes: they are still declared and still read, and they are removed in the next major release. **Upgrade:** a repository whose `.goreleaser.yaml` uses no Pro-only feature installs the free goreleaser through its own toolchain (devbox) and stops passing these inputs and the secret.
+- **Breaking: the goreleaser-pro licence and the SSM read that served it are removed from `release-private`, and the licence secret from `integration`.** Callers read their secrets through the `ssm-secrets` action in their own steps, and goreleaser OSS is used, so no licence is read. Removed from `release-private`: the inputs `install-goreleaser-pro`, `goreleaser-secret-role`, `goreleaser-secret-path`, `goreleaser-licence-path`, `ssm-issuer`, `ssm-account` and `ssm-region` (the last three only fed the licence read), the OpenBao inputs `openbao-issuer`, `openbao-address`, `openbao-namespace` and `openbao-ca`, the `goreleaser-key` secret, and the steps "Install goreleaser-pro" and "Read the goreleaser licence from SSM" (with `GORELEASER_KEY` in the release step's environment). Removed from `integration`: the `goreleaser-key` secret and `GORELEASER_KEY` in the lane build step. A caller that still passes a removed input or secret fails at workflow validation once it moves to this release; a caller pinned to an earlier release commit is unaffected. The workflow no longer references any `ci-actions/ssm-secrets` or `openbao-secrets` pin. docs/secrets.md now describes only the `ssm-secrets` action. **Upgrade:** drop the removed inputs and the `goreleaser-key` secret from the calling job, and install the free goreleaser through the repository's own toolchain (devbox); a repository that does not use a Pro-only feature needs nothing else.
 
 ## v6.6.0
 
