@@ -50,31 +50,49 @@
 # nobody decided to keep. This estate names access-roster everywhere and
 # has held no CI_AUTOMATION_PRIVATE_KEY since 2026-09-20.
 #
-#   jobs:
-#     tag:
-#       # DOUBLY GUARDED, off by default: the App credentials must be
-#       # configured AND vars.AUTO_RELEASE must be "true" — flipping it
-#       # is the deliberate policy act.
-#       if: vars.AUTO_RELEASE == 'true' && vars.CI_AUTOMATION_APP_ID != ''
-#       uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@<sha> # vX.Y.Z
-#       with:
-#         app-id: ${{ vars.CI_AUTOMATION_APP_ID }}
-#       secrets:
-#         CI_AUTOMATION_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
-#
-# or, with no key anywhere:
-#
 #   permissions:
 #     contents: read
 #     id-token: write           # the exchange needs it
 #   jobs:
 #     tag:
-#       if: vars.AUTO_RELEASE == 'true'
+#       # NO `if:`. The arming check below decides, and says why.
 #       uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@<sha> # vX.Y.Z
 #       with:
+#         auto-release: ${{ vars.AUTO_RELEASE }}
 #         token-source: access-roster
-#         access-roster-issuer: https://access.example
-#         github-app: ci-automation
+#         access-roster-issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
+#         github-app: ${{ vars.AUTO_RELEASE_APP }}
+#
+# or, with the App's key held as a secret:
+#
+#   jobs:
+#     tag:
+#       uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@<sha> # vX.Y.Z
+#       with:
+#         auto-release: ${{ vars.AUTO_RELEASE }}
+#         app-id: ${{ vars.CI_AUTOMATION_APP_ID }}
+#       secrets:
+#         CI_AUTOMATION_PRIVATE_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY }}
+#
+# ARMING, and why it FAILS rather than skips. Turning automatic releases
+# on is a deliberate act: `vars.AUTO_RELEASE` set to "true". A caller
+# that guards the job with its own `if:` on that variable and on the
+# token inputs turns every missing piece into a SKIPPED job, and a
+# skipped job is green. A repository whose variables never arrived then
+# looks healthy and never releases, and nobody is told. Passing
+# `auto-release` instead hands the decision to the `preflight` job:
+#
+#   "true"          armed: the token inputs are checked (each missing one
+#                   is named, all at once) and the tag job runs;
+#   "false"         opted out on purpose: one notice, a green run, no tag;
+#   anything else   (an unset variable arrives as "") RED, naming what is
+#                   missing. A repository that has the caller but means
+#                   not to release yet says so with "false".
+#
+# Leaving `auto-release` out keeps the old contract exactly (the
+# default `caller-guarded`): the caller's own `if:` decides, and this
+# workflow checks only the token inputs, as before. To adopt, drop the
+# `if:` and pass the variable, in the same change.
 #
 # Secrets are passed explicitly, always: a caller in another organisation
 # cannot inherit, and a same-org caller holds exactly what it passes.
@@ -149,8 +167,9 @@
 #       sed -i "s/^version = \".*\"/version = \"$VERSION\"/" packages/Release.pkl
 #       && just resolve
 #
-# Two estate-side prerequisites per adopting repo, or the tag push is
-# rejected / the secrets arrive empty:
+# Estate-side prerequisites per adopting repo, or the tag push is
+# rejected / the secrets arrive empty (docs/estate-lifecycle.md, step 5,
+# lists them with the arming variable):
 #   - the repo's v* tag ruleset carries the App that cuts the tag as a
 #     bypass actor (github-structure's `bypass_apps`,
 #     github-structure >= v0.2.0). The two sources are two DIFFERENT
@@ -165,6 +184,18 @@ name: auto-release
 on:
   workflow_call:
     inputs:
+      auto-release:
+        description: >-
+          The arming switch, passed from the caller's `vars.AUTO_RELEASE`
+          with no `if:` on the calling job. `true`: check the token
+          inputs and tag. `false`: opted out, a green run with a notice
+          and no tag. Anything else, the empty value of an unset variable
+          included: the run fails and names what is missing.
+          `caller-guarded` (default): the caller's own `if:` decided, and
+          only the token inputs are checked, as before this input existed.
+        required: false
+        type: string
+        default: caller-guarded
       token-source:
         description: >-
           Where the token comes from: `app-key` (the App key passed as
@@ -264,12 +295,69 @@ permissions:
 
 jobs:
   # Before either tag job, and outside both: a token-source neither job
-  # matches would otherwise skip both and report success.
+  # matches would otherwise skip both and report success. The same holds
+  # for arming (see ARMING in the header): an unarmed repository fails
+  # here, by name, instead of skipping green.
   preflight:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 5
+    outputs:
+      armed: ${{ steps.arming.outputs.armed }}
     steps:
+      - name: Check the arming
+        id: arming
+        env:
+          AUTO_RELEASE: ${{ inputs.auto-release }}
+          SOURCE: ${{ inputs.token-source }}
+          ISSUER: ${{ inputs.access-roster-issuer }}
+          APP: ${{ inputs.github-app }}
+          APP_ID: ${{ inputs.app-id }}
+          HAS_KEY: ${{ secrets.CI_AUTOMATION_PRIVATE_KEY != '' }}
+          DOCS: https://github.com/truvity/ci-workflows/blob/master/docs/estate-lifecycle.md#5-autopilot--arm-auto-release
+        run: |
+          set -euo pipefail
+          case "$AUTO_RELEASE" in
+            caller-guarded)
+              echo "armed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            false)
+              echo "::notice title=auto-release opted out::AUTO_RELEASE is \"false\": this repository does not release automatically, nothing is tagged."
+              echo "armed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          faults=()
+          if [ "$AUTO_RELEASE" != "true" ]; then
+            if [ -z "$AUTO_RELEASE" ]; then
+              faults+=("the auto-release input is empty: the caller passes vars.AUTO_RELEASE and that variable is not set for this repository (\"true\" arms it, \"false\" opts out)")
+            else
+              faults+=("the auto-release input is \"$AUTO_RELEASE\": only \"true\" (armed) and \"false\" (opted out) are understood")
+            fi
+          fi
+          case "$SOURCE" in
+            access-roster)
+              [ -n "$ISSUER" ] || faults+=("access-roster-issuer is empty (the caller usually passes vars.ACCESS_ROSTER_ISSUER)")
+              [ -n "$APP" ] || faults+=("github-app is empty (the tagging App's catalogue id, usually vars.AUTO_RELEASE_APP)")
+              ;;
+            app-key)
+              [ -n "$APP_ID" ] || faults+=("app-id is empty (usually vars.CI_AUTOMATION_APP_ID)")
+              [ "$HAS_KEY" = "true" ] || faults+=("the secret CI_AUTOMATION_PRIVATE_KEY is not passed or is empty")
+              ;;
+          esac
+
+          if [ "${#faults[@]}" -gt 0 ]; then
+            for f in "${faults[@]}"; do
+              echo "::error title=auto-release is not armed::$f"
+            done
+            echo "auto-release is not armed (${#faults[@]} missing). What a repository needs: $DOCS"
+            exit 1
+          fi
+          echo "armed=true" >> "$GITHUB_OUTPUT"
+
       - name: Check the token inputs
+        if: steps.arming.outputs.armed == 'true'
         uses: truvity/ci-actions/token-inputs@576891256d95a4b615dcbbf63cabd71fad9bfa4f # v3.14.2
         with:
           source: ${{ inputs.token-source }}
@@ -287,7 +375,7 @@ jobs:
   # ── token-source: app-key ────────────────────────────────────────────
   tag:
     needs: preflight
-    if: inputs.token-source == 'app-key'
+    if: inputs.token-source == 'app-key' && needs.preflight.outputs.armed == 'true'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     permissions:
@@ -357,7 +445,7 @@ jobs:
   # file for why this is a second job and not a second `if:`.
   tag-roster:
     needs: preflight
-    if: inputs.token-source == 'access-roster'
+    if: inputs.token-source == 'access-roster' && needs.preflight.outputs.armed == 'true'
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     permissions:

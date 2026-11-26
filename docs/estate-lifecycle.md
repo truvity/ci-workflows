@@ -179,7 +179,27 @@ declared, none hand-set:
 
 1. the tag ruleset carries the App in `bypass_apps` (step 1)
 2. the repo can get a token of that App — see below
-3. `vars.AUTO_RELEASE == "true"` — the deliberate arming act
+3. `vars.AUTO_RELEASE == "true"` — the deliberate arming act, plus the
+   token inputs the caller passes (`ACCESS_ROSTER_ISSUER` and the App's
+   catalogue id, or the App id and its key)
+
+**An unarmed caller fails; it does not skip.** The caller passes
+`auto-release: ${{ vars.AUTO_RELEASE }}` and carries no `if:` of its own.
+The workflow's `preflight` then decides:
+
+| `auto-release` | the run |
+|---|---|
+| `true` | checks the token inputs, naming every missing one, and tags |
+| `false` | opted out on purpose: a notice, green, no tag |
+| anything else, the empty value of an unset variable included | **red**, naming what is missing |
+
+A caller that guards the job with its own `if:` on these variables turns
+every missing piece into a skipped job, and a skipped job is green: a
+repository whose arming never arrived looks healthy and never releases.
+That is why the guard moved into the workflow. A repository that has the
+caller but is not meant to release yet sets `AUTO_RELEASE` to `false`.
+Leaving the input out (its default, `caller-guarded`) keeps the old
+contract, for callers that have not moved yet.
 
 Two pushes to the default branch release at once instead of waiting for
 the batch: a merged `security`-labelled PR, and a hand-written
